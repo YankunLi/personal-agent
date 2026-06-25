@@ -68,6 +68,14 @@ def main():
     parser = argparse.ArgumentParser(
         description="Personal Agent - Multi-pattern AI agent framework",
     )
+    subparsers = parser.add_subparsers(dest="command", help="Subcommands")
+
+    # pa init
+    init_parser = subparsers.add_parser("init", help="Initialize current directory for personal-agent")
+    init_parser.add_argument("--name", "-n", help="Project name (defaults to directory name)")
+    init_parser.add_argument("--description", "-d", default="", help="Project description")
+
+    # pa (default: run task or interactive)
     parser.add_argument("task", nargs="?", help="Task for the agent to execute")
     parser.add_argument("-c", "--config", help="Path to config file (JSON or YAML)")
     parser.add_argument("-p", "--pattern", choices=["auto", "react", "plan_execute", "reflection"], help="Agent pattern (default: auto)")
@@ -78,6 +86,10 @@ def main():
     parser.add_argument("--interactive", "-i", action="store_true", help="Run in interactive mode")
 
     args = parser.parse_args()
+
+    if args.command == "init":
+        _cmd_init(args)
+        return
 
     if args.list_providers:
         from personal_agent.providers.registry import PROVIDER_REGISTRY
@@ -109,22 +121,87 @@ def _build_overrides(args) -> dict:
     return overrides
 
 
+def _cmd_init(args) -> None:
+    """Handle the `pa init` command."""
+    from personal_agent.project import init_project, PA_FILE
+    from personal_agent.session import SessionManager
+
+    # Check if already initialized
+    existing = Path.cwd() / PA_FILE
+    if existing.exists():
+        print(f"{C_YELLOW}Already initialized:{C_RESET} {existing}")
+        return
+
+    # Create a session for this project
+    name = args.name or Path.cwd().name
+    session_mgr = SessionManager()
+    session = session_mgr.create(name)
+
+    # Create pa.json
+    pa_path = init_project(
+        name=name,
+        description=args.description,
+        session_id=session.id,
+    )
+
+    print(f"{C_GREEN}✓{C_RESET} Initialized personal-agent project")
+    print(f"  {C_BOLD}Project:{C_RESET}  {C_CYAN}{name}{C_RESET}")
+    print(f"  {C_BOLD}Session:{C_RESET}  {C_CYAN}{session.name}{C_RESET} {C_DIM}({session.id}){C_RESET}")
+    print(f"  {C_BOLD}Config:{C_RESET}   {C_DIM}{pa_path}{C_RESET}")
+    print()
+    print(f"  {C_DIM}Run {C_GREEN}pa -i{C_RESET}{C_DIM} to start interactive mode with this session.{C_RESET}")
+
+
 async def interactive_loop(config_path: str | None, overrides: dict) -> None:
     """Run an interactive agent session with full-featured REPL."""
     from personal_agent.providers.registry import PROVIDER_REGISTRY
+    from personal_agent.project import find_project_root, load_project
+    from personal_agent.session import SessionManager
 
     settings = load_config(config_path)
     loaded_path = config_path or _find_config_file()
 
+    # Session manager
+    session_mgr = SessionManager()
+    session_mgr.load_all()
+
+    # Try to find project-linked session via pa.json
+    project_root = find_project_root()
+    project_data = load_project() if project_root else None
+    project_session_id = project_data.get("session_id") if project_data else None
+
+    if project_session_id and project_session_id in session_mgr._sessions:
+        # Load the project-linked session
+        session_mgr.switch(project_session_id)
+    elif project_session_id:
+        # Session ID exists but file not found — create a new session and update pa.json
+        session = session_mgr.create(project_data.get("project", {}).get("name", "default"))
+        from personal_agent.project import save_project
+        project_data["session_id"] = session.id
+        if project_root:
+            save_project(project_data, project_root)
+    elif session_mgr.list_sessions():
+        # No pa.json — resume last session
+        sessions = session_mgr.list_sessions()
+        session_mgr.switch(sessions[0].id)
+    else:
+        session_mgr.create("default")
+
     # For auto mode, create agent with "react" as default (will be shown per-task)
     agent = await create_agent(settings, **overrides)
+
+    # Restore session memory into agent
+    current = session_mgr.current
+    if current:
+        agent.short_term = current.short_term
+        agent.working = current.working
 
     # Session state
     session_tasks: list[dict] = []
     multiline_buffer: list[str] = []
     in_multiline = False
 
-    _print_banner(settings, agent, loaded_path)
+    _print_banner(settings, agent, loaded_path, session_mgr, project_data)
 
     while True:
         try:
@@ -160,7 +237,7 @@ async def interactive_loop(config_path: str | None, overrides: dict) -> None:
 
         # Handle slash commands
         if line.startswith("/"):
-            should_continue = await _handle_command(agent, line, settings, overrides, session_tasks)
+            should_continue = await _handle_command(agent, line, settings, overrides, session_tasks, session_mgr)
             if not should_continue:
                 break
             continue
@@ -195,6 +272,7 @@ async def interactive_loop(config_path: str | None, overrides: dict) -> None:
         await _process_task(agent, line.strip(), session_tasks, settings)
 
     # Cleanup
+    session_mgr.save_current()
     await agent.close()
 
 
@@ -246,7 +324,7 @@ async def _process_task(agent, task: str, session_tasks: list[dict], settings: S
 
 
 async def _handle_command(
-    agent, line: str, settings: Settings, overrides: dict, session_tasks: list[dict]
+    agent, line: str, settings: Settings, overrides: dict, session_tasks: list[dict], session_mgr=None
 ) -> bool:
     """Handle slash commands. Returns False if should exit."""
     parts = line.split(maxsplit=1)
@@ -315,6 +393,43 @@ async def _handle_command(
         else:
             print(f"{C_DIM}No tools available.{C_RESET}")
 
+    elif cmd == "/skills":
+        _list_skills(agent, settings)
+
+    elif cmd == "/skill":
+        if not arg:
+            _list_skills(agent, settings)
+        else:
+            sub_parts = arg.split(maxsplit=1)
+            sub = sub_parts[0].lower()
+            sub_arg = sub_parts[1] if len(sub_parts) > 1 else ""
+
+            if sub == "list":
+                _list_skills(agent, settings)
+            elif sub == "install":
+                if sub_arg:
+                    _install_skill(agent, settings, sub_arg)
+                else:
+                    print(f"{C_RED}Usage: /skill install <path>{C_RESET}")
+            elif sub == "remove":
+                if sub_arg:
+                    _remove_skill(agent, settings, sub_arg)
+                else:
+                    print(f"{C_RED}Usage: /skill remove <name>{C_RESET}")
+            elif sub == "activate":
+                if sub_arg:
+                    _activate_skill(agent, settings, sub_arg)
+                else:
+                    print(f"{C_RED}Usage: /skill activate <name>{C_RESET}")
+            elif sub == "deactivate":
+                if sub_arg:
+                    _deactivate_skill(agent, settings, sub_arg)
+                else:
+                    print(f"{C_RED}Usage: /skill deactivate <name>{C_RESET}")
+            else:
+                print(f"{C_RED}Unknown subcommand: /skill {sub}{C_RESET}")
+                print(f"Available: {C_GREEN}list{C_RESET}, {C_GREEN}install{C_RESET}, {C_GREEN}remove{C_RESET}, {C_GREEN}activate{C_RESET}, {C_GREEN}deactivate{C_RESET}")
+
     elif cmd == "/memory":
         print(f"{C_BOLD}Memory status:{C_RESET}")
         print(f"  Short-term: {C_CYAN}{len(agent.short_term)}{C_RESET} messages")
@@ -322,6 +437,43 @@ async def _handle_command(
         if agent.long_term:
             count = await agent.long_term.count()
             print(f"  Long-term: {C_CYAN}{count}{C_RESET} entries")
+
+    elif cmd == "/session":
+        if not arg:
+            _session_info(session_mgr)
+        else:
+            sub_parts = arg.split(maxsplit=1)
+            sub = sub_parts[0].lower()
+            sub_arg = sub_parts[1] if len(sub_parts) > 1 else ""
+
+            if sub == "list":
+                _session_list(session_mgr)
+            elif sub == "create":
+                if sub_arg:
+                    _session_create(agent, session_mgr, sub_arg)
+                else:
+                    print(f"{C_RED}Usage: /session create <name>{C_RESET}")
+            elif sub == "switch":
+                if sub_arg:
+                    await _session_switch(agent, session_mgr, sub_arg)
+                else:
+                    print(f"{C_RED}Usage: /session switch <name>{C_RESET}")
+            elif sub == "delete":
+                if sub_arg:
+                    _session_delete(agent, session_mgr, sub_arg)
+                else:
+                    print(f"{C_RED}Usage: /session delete <name>{C_RESET}")
+            elif sub == "rename":
+                rename_parts = sub_arg.split(maxsplit=1)
+                if len(rename_parts) == 2:
+                    _session_rename(session_mgr, rename_parts[0], rename_parts[1])
+                else:
+                    print(f"{C_RED}Usage: /session rename <old_name> <new_name>{C_RESET}")
+            elif sub == "current":
+                _session_info(session_mgr)
+            else:
+                print(f"{C_RED}Unknown subcommand: /session {sub}{C_RESET}")
+                print(f"Available: {C_GREEN}list{C_RESET}, {C_GREEN}create{C_RESET}, {C_GREEN}switch{C_RESET}, {C_GREEN}delete{C_RESET}, {C_GREEN}rename{C_RESET}, {C_GREEN}current{C_RESET}")
 
     elif cmd == "/status":
         print(f"{C_BOLD}Session status:{C_RESET}")
@@ -358,7 +510,7 @@ async def _handle_command(
     return True
 
 
-def _print_banner(settings: Settings, agent, config_path: Path | None = None) -> None:
+def _print_banner(settings: Settings, agent, config_path: Path | None = None, session_mgr=None, project_data: dict | None = None) -> None:
     """Print the interactive mode banner."""
     print()
     print(f"{C_BOLD}{C_CYAN}╔══════════════════════════════════════════╗{C_RESET}")
@@ -367,6 +519,11 @@ def _print_banner(settings: Settings, agent, config_path: Path | None = None) ->
     print()
     if config_path:
         print(f"  {C_BOLD}Config:{C_RESET}   {C_DIM}{config_path}{C_RESET}")
+    if project_data:
+        proj = project_data.get("project", {})
+        print(f"  {C_BOLD}Project:{C_RESET}  {C_CYAN}{proj.get('name', 'unknown')}{C_RESET}")
+    if session_mgr and session_mgr.current:
+        print(f"  {C_BOLD}Session:{C_RESET}  {C_GREEN}{session_mgr.current.name}{C_RESET}  {C_DIM}({session_mgr.current.id}){C_RESET}")
     print(f"  {C_BOLD}Pattern:{C_RESET}  {C_GREEN}{settings.agent.pattern}{C_RESET}")
     print(f"  {C_BOLD}Model:{C_RESET}    {C_GREEN}{agent.provider.model_name}{C_RESET}")
     print(f"  {C_BOLD}Provider:{C_RESET} {C_GREEN}{settings.agent.provider}{C_RESET}")
@@ -389,10 +546,16 @@ def _print_help() -> None:
   {C_GREEN}\"\"\"{C_RESET}                Start multiline input (empty line to submit)
 
 {C_BOLD}Slash Commands:{C_RESET}
-  {C_GREEN}/help{C_RESET}             Show this help
-  {C_GREEN}/status{C_RESET}           Show current session status
-  {C_GREEN}/tools{C_RESET}            List available tools
-  {C_GREEN}/memory{C_RESET}           Show memory usage
+  {C_GREEN}/help{C_RESET}                    Show this help
+  {C_GREEN}/status{C_RESET}                  Show current session status
+  {C_GREEN}/tools{C_RESET}                   List available tools
+  {C_GREEN}/skills{C_RESET}                  List all skills and their status
+  {C_GREEN}/skill list{C_RESET}              Same as /skills
+  {C_GREEN}/skill install <path>{C_RESET}    Install a skill from JSON/YAML file
+  {C_GREEN}/skill remove <name>{C_RESET}     Remove an installed skill
+  {C_GREEN}/skill activate <name>{C_RESET}   Activate a skill
+  {C_GREEN}/skill deactivate <name>{C_RESET} Deactivate a skill
+  {C_GREEN}/memory{C_RESET}                  Show memory usage
   {C_GREEN}/history{C_RESET}          Show session task history
   {C_GREEN}/pattern <name>{C_RESET}   View or set agent pattern (react|plan_execute|reflection)
   {C_GREEN}/provider <name>{C_RESET}  View or set LLM provider
@@ -402,6 +565,14 @@ def _print_help() -> None:
   {C_GREEN}/load <path>{C_RESET}      Load session history from JSON file
   {C_GREEN}/clear{C_RESET}            Clear conversation memory
   {C_GREEN}/quit{C_RESET}, {C_GREEN}/exit{C_RESET}   Exit interactive mode
+
+{C_BOLD}Session Commands:{C_RESET}
+  {C_GREEN}/session current{C_RESET}         Show current session info
+  {C_GREEN}/session list{C_RESET}            List all sessions
+  {C_GREEN}/session create <name>{C_RESET}   Create a new session
+  {C_GREEN}/session switch <name>{C_RESET}   Switch to another session
+  {C_GREEN}/session rename <old> <new>{C_RESET}  Rename a session
+  {C_GREEN}/session delete <name>{C_RESET}   Delete a session
 
 {C_BOLD}Tips:{C_RESET}
   - Start input with {C_DIM}\"\"\"{C_RESET} for multiline tasks
@@ -453,6 +624,221 @@ async def _confirm_and_exit(agent) -> None:
     """Confirm exit and clean up."""
     print(f"{C_YELLOW}Goodbye!{C_RESET}")
     await agent.close()
+
+
+# ── Skill management helpers ──────────────────────────────────────────────────
+
+def _list_skills(agent, settings: Settings) -> None:
+    """List all registered skills and their status."""
+    from personal_agent.skills.builtin import BUILTIN_SKILLS
+
+    all_skills = list(BUILTIN_SKILLS)
+    # Also include dynamically installed skills from the skill_manager
+    registered = agent.skill_manager.list_names() if agent.skill_manager else []
+    for name in registered:
+        skill = agent.skill_manager.get(name)
+        if skill and skill not in all_skills:
+            all_skills.append(skill)
+
+    active = settings.agent.skills
+    print(f"{C_BOLD}Skills ({len(all_skills)} available, {len(active)} active):{C_RESET}")
+    for s in all_skills:
+        marker = f"{C_GREEN}● active{C_RESET}" if s.name in active else f"{C_DIM}○ inactive{C_RESET}"
+        print(f"  {C_CYAN}{s.name:16s}{C_RESET} {marker}  {C_DIM}{s.description[:60]}{C_RESET}")
+    if not active:
+        print()
+        print(f"  {C_DIM}Tip: /skill activate <name> to enable a skill{C_RESET}")
+
+
+def _install_skill(agent, settings: Settings, path: str) -> None:
+    """Install a skill from a JSON or YAML file."""
+    import json
+    from pathlib import Path
+
+    from personal_agent.skills.base import Skill
+
+    p = Path(path).expanduser()
+    if not p.exists():
+        print(f"{C_RED}File not found: {path}{C_RESET}")
+        return
+
+    try:
+        if p.suffix == ".json":
+            with open(p) as f:
+                data = json.load(f)
+        elif p.suffix in (".yaml", ".yml"):
+            import yaml  # type: ignore
+            with open(p) as f:
+                data = yaml.safe_load(f)
+        else:
+            print(f"{C_RED}Unsupported format: {p.suffix}. Use .json or .yaml{C_RESET}")
+            return
+
+        skill = Skill(
+            name=data["name"],
+            description=data.get("description", ""),
+            prompt=data.get("prompt", ""),
+            dependencies=data.get("dependencies", []),
+        )
+        agent.skill_manager.register(skill)
+        print(f"{C_GREEN}✓{C_RESET} Skill installed: {C_CYAN}{skill.name}{C_RESET}")
+        print(f"  {C_DIM}Use /skill activate {skill.name} to enable it{C_RESET}")
+    except KeyError as e:
+        print(f"{C_RED}Missing required field in skill file: {e}{C_RESET}")
+    except Exception as e:
+        print(f"{C_RED}Failed to install skill: {e}{C_RESET}")
+
+
+def _remove_skill(agent, settings: Settings, name: str) -> None:
+    """Remove a dynamically installed skill."""
+    from personal_agent.skills.builtin import BUILTIN_SKILLS
+
+    # Don't allow removing builtin skills
+    builtin_names = {s.name for s in BUILTIN_SKILLS}
+    if name in builtin_names:
+        print(f"{C_YELLOW}Cannot remove builtin skill '{name}'. Use /skill deactivate instead.{C_RESET}")
+        return
+
+    if not agent.skill_manager or name not in agent.skill_manager.list_names():
+        print(f"{C_RED}Skill not found: {name}{C_RESET}")
+        return
+
+    agent.skill_manager.deactivate(name)
+    # Remove from settings so it stays removed after restart
+    if name in settings.agent.skills:
+        settings.agent.skills.remove(name)
+    print(f"{C_GREEN}✓{C_RESET} Skill removed: {C_CYAN}{name}{C_RESET}")
+
+
+def _activate_skill(agent, settings: Settings, name: str) -> None:
+    """Activate a skill."""
+    if not agent.skill_manager:
+        print(f"{C_RED}No skill manager available{C_RESET}")
+        return
+
+    if name not in agent.skill_manager.list_names():
+        print(f"{C_RED}Skill not found: {name}{C_RESET}")
+        print(f"  {C_DIM}Available: {', '.join(agent.skill_manager.list_names())}{C_RESET}")
+        return
+
+    try:
+        agent.skill_manager.activate(name)
+        if name not in settings.agent.skills:
+            settings.agent.skills.append(name)
+        print(f"{C_GREEN}✓{C_RESET} Skill activated: {C_CYAN}{name}{C_RESET}")
+        print(f"  {C_DIM}Use /restart for the skill prompt to take effect{C_RESET}")
+    except Exception as e:
+        print(f"{C_RED}Failed to activate skill: {e}{C_RESET}")
+
+
+def _deactivate_skill(agent, settings: Settings, name: str) -> None:
+    """Deactivate a skill."""
+    if not agent.skill_manager:
+        print(f"{C_RED}No skill manager available{C_RESET}")
+        return
+
+    agent.skill_manager.deactivate(name)
+    if name in settings.agent.skills:
+        settings.agent.skills.remove(name)
+    print(f"{C_GREEN}✓{C_RESET} Skill deactivated: {C_CYAN}{name}{C_RESET}")
+    print(f"  {C_DIM}Use /restart for the change to take effect{C_RESET}")
+
+
+# ── Session management helpers ─────────────────────────────────────────────────
+
+def _session_info(session_mgr) -> None:
+    """Show current session info."""
+    current = session_mgr.current if session_mgr else None
+    if not current:
+        print(f"{C_DIM}No active session. Use /session create <name> to create one.{C_RESET}")
+        return
+
+    print(f"{C_BOLD}Current session:{C_RESET}")
+    print(f"  Name: {C_CYAN}{current.name}{C_RESET}")
+    print(f"  ID:   {C_DIM}{current.id}{C_RESET}")
+    print(f"  Messages: {C_CYAN}{len(current.short_term)}{C_RESET}")
+    print(f"  Working keys: {C_CYAN}{len(current.working)}{C_RESET}")
+    import datetime
+    created = datetime.datetime.fromtimestamp(current.created_at).strftime("%Y-%m-%d %H:%M")
+    updated = datetime.datetime.fromtimestamp(current.updated_at).strftime("%Y-%m-%d %H:%M")
+    print(f"  Created: {C_DIM}{created}{C_RESET}")
+    print(f"  Updated: {C_DIM}{updated}{C_RESET}")
+
+
+def _session_list(session_mgr) -> None:
+    """List all sessions."""
+    if not session_mgr:
+        return
+    sessions = session_mgr.list_sessions()
+    if not sessions:
+        print(f"{C_DIM}No sessions found. Use /session create <name> to create one.{C_RESET}")
+        return
+
+    current = session_mgr.current
+    print(f"{C_BOLD}Sessions ({len(sessions)}):{C_RESET}")
+    for s in sessions:
+        marker = f"{C_GREEN}● current{C_RESET}" if current and s.id == current.id else " "
+        msg_count = len(s.short_term)
+        print(f"  {marker} {C_CYAN}{s.name:20s}{C_RESET} {C_DIM}{s.id}{C_RESET}  ({msg_count} msgs)")
+
+
+def _session_create(agent, session_mgr, name: str) -> None:
+    """Create a new session."""
+    if not session_mgr:
+        return
+    session = session_mgr.create(name)
+    # Update agent memory to use the new session
+    agent.short_term = session.short_term
+    agent.working = session.working
+    print(f"{C_GREEN}✓{C_RESET} Session created: {C_CYAN}{session.name}{C_RESET} ({session.id})")
+
+
+async def _session_switch(agent, session_mgr, name: str) -> None:
+    """Switch to another session."""
+    if not session_mgr:
+        return
+    # Save current
+    session_mgr.save_current()
+    # Update current session's memory from agent
+    current = session_mgr.current
+    if current:
+        current.short_term = agent.short_term
+        current.working = agent.working
+
+    target = session_mgr.switch(name)
+    if target is None:
+        print(f"{C_RED}Session not found: {name}{C_RESET}")
+        return
+    # Update agent memory to use the target session
+    agent.short_term = target.short_term
+    agent.working = target.working
+    print(f"{C_GREEN}✓{C_RESET} Switched to: {C_CYAN}{target.name}{C_RESET} ({target.id})")
+    print(f"  {C_DIM}{len(target.short_term)} messages, {len(target.working)} working keys{C_RESET}")
+
+
+def _session_delete(agent, session_mgr, name: str) -> None:
+    """Delete a session."""
+    if not session_mgr:
+        return
+    current = session_mgr.current
+    if current and (current.name == name or current.id == name):
+        print(f"{C_RED}Cannot delete the active session. Switch to another session first.{C_RESET}")
+        return
+
+    if session_mgr.delete(name):
+        print(f"{C_GREEN}✓{C_RESET} Session deleted: {C_CYAN}{name}{C_RESET}")
+    else:
+        print(f"{C_RED}Session not found: {name}{C_RESET}")
+
+
+def _session_rename(session_mgr, old_name: str, new_name: str) -> None:
+    """Rename a session."""
+    if not session_mgr:
+        return
+    if session_mgr.rename(old_name, new_name):
+        print(f"{C_GREEN}✓{C_RESET} Session renamed: {C_CYAN}{old_name}{C_RESET} → {C_CYAN}{new_name}{C_RESET}")
+    else:
+        print(f"{C_RED}Session not found: {old_name}{C_RESET}")
 
 
 if __name__ == "__main__":

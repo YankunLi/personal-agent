@@ -35,6 +35,47 @@ class ShortTermMemory:
         """Clear all messages."""
         self._messages.clear()
 
+    def to_dict(self) -> dict:
+        """Serialize to a dict for persistence."""
+        return {
+            "max_messages": self.max_messages,
+            "messages": [
+                {
+                    "role": m.role.value if hasattr(m.role, 'value') else str(m.role),
+                    "content": m.content,
+                    "tool_call_id": m.tool_call_id,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "name": tc.name,
+                            "arguments": tc.arguments,
+                        }
+                        for tc in m.tool_calls
+                    ] if m.tool_calls else None,
+                }
+                for m in self._messages
+            ],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ShortTermMemory":
+        """Restore from a serialized dict."""
+        from personal_agent.types import Role, ToolCall
+
+        mem = cls(max_messages=data.get("max_messages", 100))
+        for m in data.get("messages", []):
+            role = Role(m["role"])
+            tool_calls = None
+            if m.get("tool_calls"):
+                tool_calls = [ToolCall(**tc) for tc in m["tool_calls"]]
+            mem._messages.append(Message(
+                role=role,
+                content=m["content"],
+                tool_call_id=m.get("tool_call_id"),
+                tool_calls=tool_calls,
+            ))
+        return mem
+
     def __len__(self) -> int:
         return len(self._messages)
 
