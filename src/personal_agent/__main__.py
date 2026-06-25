@@ -28,15 +28,45 @@ C_CYAN = "\033[36m"
 C_WHITE = "\033[37m"
 
 
-async def run_agent(task: str, config_path: str | None = None) -> None:
+async def run_agent(task: str, config_path: str | None = None, workdir: Path | None = None) -> None:
+    """Run a one-shot agent task, optionally with project session context."""
+    from personal_agent.project import find_project_root, load_project, PA_FILE
+    from personal_agent.session import SessionManager
+
     settings = load_config(config_path)
     loaded_path = config_path or _find_config_file()
+
+    wd = workdir or Path.cwd()
+
+    # Try to load project session
+    session_mgr = SessionManager()
+    session_mgr.load_all()
+
+    project_data = None
+    if (wd / PA_FILE).exists():
+        project_data = load_project(path=wd)
+    else:
+        project_root = find_project_root(start=wd)
+        if project_root:
+            project_data = load_project()
+
+    if project_data:
+        sid = project_data.get("session_id")
+        if sid and sid in session_mgr._sessions:
+            session_mgr.switch(sid)
 
     # Show which config was loaded
     if loaded_path:
         print(f"{C_DIM}Config:{C_RESET} {loaded_path}")
     elif config_path:
         print(f"{C_YELLOW}Config not found:{C_RESET} {config_path}")
+
+    # Show project info
+    if project_data:
+        proj = project_data.get("project", {})
+        print(f"{C_DIM}Project:{C_RESET} {C_CYAN}{proj.get('name', 'unknown')}{C_RESET}")
+    if session_mgr.current:
+        print(f"{C_DIM}Session:{C_RESET} {C_GREEN}{session_mgr.current.name}{C_RESET}")
 
     # Show auto-selection
     pattern = settings.agent.pattern
@@ -53,7 +83,20 @@ async def run_agent(task: str, config_path: str | None = None) -> None:
     print(f"{C_DIM}{'─' * 60}{C_RESET}")
 
     agent = await create_agent(settings, task=task)
+
+    # Restore session memory into agent if available
+    current = session_mgr.current
+    if current:
+        agent.short_term = current.short_term
+        agent.working = current.working
+
     result = await agent.run(task)
+
+    # Save session
+    if current:
+        current.short_term = agent.short_term
+        current.working = agent.working
+        session_mgr.save_current()
 
     print(f"{C_DIM}{'─' * 60}{C_RESET}")
     print(f"{C_DIM}Completed in {result.elapsed_ms:.0f}ms, {len(result.steps)} steps{C_RESET}")
@@ -74,10 +117,12 @@ def main():
     init_parser = subparsers.add_parser("init", help="Initialize current directory for personal-agent")
     init_parser.add_argument("--name", "-n", help="Project name (defaults to directory name)")
     init_parser.add_argument("--description", "-d", default="", help="Project description")
+    init_parser.add_argument("-w", "--workdir", help="Working directory (defaults to current directory)")
 
     # pa (default: run task or interactive)
     parser.add_argument("task", nargs="?", help="Task for the agent to execute")
     parser.add_argument("-c", "--config", help="Path to config file (JSON or YAML)")
+    parser.add_argument("-w", "--workdir", help="Working directory (defaults to current directory)")
     parser.add_argument("-p", "--pattern", choices=["auto", "react", "plan_execute", "reflection"], help="Agent pattern (default: auto)")
     parser.add_argument("--provider", help="LLM provider (openai, deepseek, qwen, zhipu, hunyuan, anthropic, wenxin)")
     parser.add_argument("-m", "--model", help="Model name")
@@ -87,8 +132,13 @@ def main():
 
     args = parser.parse_args()
 
+    # Resolve workdir: check both main parser and init subparser
+    workdir = Path.cwd()
+    if hasattr(args, "workdir") and args.workdir:
+        workdir = Path(args.workdir).resolve()
+
     if args.command == "init":
-        _cmd_init(args)
+        _cmd_init(args, workdir)
         return
 
     if args.list_providers:
@@ -101,9 +151,9 @@ def main():
     overrides = _build_overrides(args)
 
     if args.interactive:
-        asyncio.run(interactive_loop(args.config, overrides))
+        asyncio.run(interactive_loop(args.config, overrides, workdir))
     elif args.task:
-        asyncio.run(run_agent(args.task, args.config))
+        asyncio.run(run_agent(args.task, args.config, workdir))
     else:
         parser.print_help()
 
@@ -121,41 +171,126 @@ def _build_overrides(args) -> dict:
     return overrides
 
 
-def _cmd_init(args) -> None:
+def _cmd_init(args, workdir: Path) -> None:
     """Handle the `pa init` command."""
     from personal_agent.project import init_project, PA_FILE
     from personal_agent.session import SessionManager
 
     # Check if already initialized
-    existing = Path.cwd() / PA_FILE
+    existing = workdir / PA_FILE
     if existing.exists():
         print(f"{C_YELLOW}Already initialized:{C_RESET} {existing}")
         return
 
+    # Auto-detect project info from workdir
+    name = args.name
+    description = args.description
+    if not name or not description:
+        detected = _detect_project_info(workdir)
+        if not name:
+            name = detected["name"]
+        if not description:
+            description = detected["description"]
+
     # Create a session for this project
-    name = args.name or Path.cwd().name
     session_mgr = SessionManager()
     session = session_mgr.create(name)
 
     # Create pa.json
     pa_path = init_project(
         name=name,
-        description=args.description,
+        description=description,
         session_id=session.id,
+        directory=workdir,
     )
 
     print(f"{C_GREEN}✓{C_RESET} Initialized personal-agent project")
     print(f"  {C_BOLD}Project:{C_RESET}  {C_CYAN}{name}{C_RESET}")
+    if description:
+        print(f"  {C_BOLD}Description:{C_RESET} {C_DIM}{description}{C_RESET}")
     print(f"  {C_BOLD}Session:{C_RESET}  {C_CYAN}{session.name}{C_RESET} {C_DIM}({session.id}){C_RESET}")
     print(f"  {C_BOLD}Config:{C_RESET}   {C_DIM}{pa_path}{C_RESET}")
     print()
     print(f"  {C_DIM}Run {C_GREEN}pa -i{C_RESET}{C_DIM} to start interactive mode with this session.{C_RESET}")
 
 
-async def interactive_loop(config_path: str | None, overrides: dict) -> None:
+def _detect_project_info(workdir: Path) -> dict[str, str]:
+    """Auto-detect project name and description from common project files."""
+    import json
+    import configparser
+
+    # Try pyproject.toml
+    pyproject = workdir / "pyproject.toml"
+    if pyproject.exists():
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore
+        with open(pyproject, "rb") as f:
+            data = tomllib.load(f)
+        project = data.get("project", {})
+        name = project.get("name", "")
+        desc = project.get("description", "")
+        if name:
+            return {"name": name, "description": desc}
+
+    # Try package.json
+    pkg_json = workdir / "package.json"
+    if pkg_json.exists():
+        with open(pkg_json) as f:
+            data = json.load(f)
+        name = data.get("name", "")
+        desc = data.get("description", "")
+        if name:
+            return {"name": name, "description": desc}
+
+    # Try Cargo.toml
+    cargo = workdir / "Cargo.toml"
+    if cargo.exists():
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib  # type: ignore
+        with open(cargo, "rb") as f:
+            data = tomllib.load(f)
+        pkg = data.get("package", {})
+        name = pkg.get("name", "")
+        desc = pkg.get("description", "")
+        if name:
+            return {"name": name, "description": desc}
+
+    # Try setup.cfg
+    setup_cfg = workdir / "setup.cfg"
+    if setup_cfg.exists():
+        cfg = configparser.ConfigParser()
+        cfg.read(setup_cfg)
+        if cfg.has_section("metadata"):
+            name = cfg.get("metadata", "name", fallback="")
+            desc = cfg.get("metadata", "description", fallback="")
+            if name:
+                return {"name": name, "description": desc}
+
+    # Fallback: use directory name
+    return {"name": workdir.name, "description": ""}
+
+
+def _prompt_init(workdir: Path) -> None:
+    """Prompt the user to run pa init when no pa.json is found."""
+    from personal_agent.project import PA_FILE
+
+    pa_path = workdir / PA_FILE
+    print(f"{C_YELLOW}No pa.json found in {workdir}{C_RESET}")
+    print()
+    print(f"  {C_DIM}This directory has not been initialized for personal-agent.{C_RESET}")
+    print(f"  {C_DIM}Run {C_GREEN}pa init{C_RESET}{C_DIM} to initialize it with a project session.{C_RESET}")
+    print()
+    print(f"  {C_DIM}Expected config file: {pa_path}{C_RESET}")
+
+
+async def interactive_loop(config_path: str | None, overrides: dict, workdir: Path) -> None:
     """Run an interactive agent session with full-featured REPL."""
     from personal_agent.providers.registry import PROVIDER_REGISTRY
-    from personal_agent.project import find_project_root, load_project
+    from personal_agent.project import find_project_root, load_project, PA_FILE
     from personal_agent.session import SessionManager
 
     settings = load_config(config_path)
@@ -165,27 +300,33 @@ async def interactive_loop(config_path: str | None, overrides: dict) -> None:
     session_mgr = SessionManager()
     session_mgr.load_all()
 
-    # Try to find project-linked session via pa.json
-    project_root = find_project_root()
-    project_data = load_project() if project_root else None
+    # Try to find project-linked session via pa.json in workdir
+    project_root = find_project_root(start=workdir)
+    project_data = load_project(path=workdir) if (workdir / PA_FILE).exists() else (load_project() if project_root else None)
     project_session_id = project_data.get("session_id") if project_data else None
 
     if project_session_id and project_session_id in session_mgr._sessions:
         # Load the project-linked session
         session_mgr.switch(project_session_id)
     elif project_session_id:
-        # Session ID exists but file not found — create a new session and update pa.json
+        # Session ID exists in pa.json but file not found on disk
+        # Create a new session and update pa.json
         session = session_mgr.create(project_data.get("project", {}).get("name", "default"))
         from personal_agent.project import save_project
         project_data["session_id"] = session.id
-        if project_root:
-            save_project(project_data, project_root)
-    elif session_mgr.list_sessions():
-        # No pa.json — resume last session
-        sessions = session_mgr.list_sessions()
-        session_mgr.switch(sessions[0].id)
+        save_root = project_root or workdir
+        save_project(project_data, save_root)
+    elif project_data:
+        # pa.json exists but no session_id — create one
+        session = session_mgr.create(project_data.get("project", {}).get("name", "default"))
+        from personal_agent.project import save_project
+        project_data["session_id"] = session.id
+        save_root = project_root or workdir
+        save_project(project_data, save_root)
     else:
-        session_mgr.create("default")
+        # No pa.json found — prompt user to init
+        _prompt_init(workdir)
+        return
 
     # For auto mode, create agent with "react" as default (will be shown per-task)
     agent = await create_agent(settings, **overrides)
