@@ -1,0 +1,189 @@
+"""Base agent class and agent loop orchestrator."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from abc import ABC, abstractmethod
+from typing import Any
+
+from personal_agent.context.manager import ContextManager
+from personal_agent.memory.long_term import LongTermMemory
+from personal_agent.memory.short_term import ShortTermMemory
+from personal_agent.memory.working import WorkingMemory
+from personal_agent.providers.base import ChatResponse, Provider
+from personal_agent.skills.manager import SkillManager
+from personal_agent.tools.executor import ToolExecutor
+from personal_agent.tools.registry import ToolRegistry
+from personal_agent.types import (
+    AgentResult,
+    AgentState,
+    AgentStep,
+    Message,
+    Role,
+    ToolCall,
+    ToolResult,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class BaseAgent(ABC):
+    """Abstract base for all agent implementations."""
+
+    def __init__(
+        self,
+        provider: Provider,
+        tools: ToolRegistry | None = None,
+        tool_executor: ToolExecutor | None = None,
+        short_term_memory: ShortTermMemory | None = None,
+        working_memory: WorkingMemory | None = None,
+        long_term_memory: LongTermMemory | None = None,
+        context_manager: ContextManager | None = None,
+        skill_manager: SkillManager | None = None,
+        max_steps: int = 50,
+        system_prompt: str = "",
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ):
+        self.provider = provider
+        self.tools = tools or ToolRegistry()
+        self.tool_executor = tool_executor or ToolExecutor(self.tools)
+        self.short_term = short_term_memory or ShortTermMemory()
+        self.working = working_memory or WorkingMemory()
+        self.long_term = long_term_memory
+        self.context_manager = context_manager
+        self.skill_manager = skill_manager
+        self.max_steps = max_steps
+        self._base_system_prompt = system_prompt
+        self._temperature = temperature
+        self._max_tokens = max_tokens
+        self._mcp_source = None  # Set by factory if MCP is enabled
+        self._total_usage: dict[str, int] = {}
+
+    @abstractmethod
+    async def run(self, task: str, **kwargs: Any) -> AgentResult:
+        """Execute the agent on the given task."""
+
+    async def _call_llm(self, state: AgentState) -> ChatResponse:
+        """Prepare context and call the LLM provider."""
+        messages = state.messages
+        if self.context_manager:
+            messages = await self.context_manager.prepare(messages)
+
+        specs = self.tools.list_specs() if len(self.tools) > 0 else None
+        response = await self.provider.chat(
+            messages, tools=specs,
+            temperature=self._temperature,
+            max_tokens=self._max_tokens,
+        )
+
+        # Accumulate token usage
+        if response.usage:
+            for key, val in response.usage.items():
+                self._total_usage[key] = self._total_usage.get(key, 0) + val
+
+        return response
+
+    async def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
+        """Execute tool calls via the executor."""
+        return await self.tool_executor.execute_all(tool_calls)
+
+    def _build_system_prompt(self) -> str:
+        """Build the full system prompt from base prompt + skills."""
+        parts = [self._base_system_prompt] if self._base_system_prompt else []
+
+        if self.skill_manager:
+            skill_prompt = self.skill_manager.build_prompt()
+            if skill_prompt:
+                parts.append(skill_prompt)
+
+        self_instruction = self.working.get("self_instruction")
+        if self_instruction:
+            parts.append(f"\n[Self-Instruction]\n{self_instruction}")
+
+        return "\n\n".join(parts)
+
+    def _init_state(self, task: str) -> AgentState:
+        """Initialize agent state with system prompt and user task."""
+        system_prompt = self._build_system_prompt()
+        messages = []
+        if system_prompt:
+            messages.append(Message(role=Role.SYSTEM, content=system_prompt))
+        messages.append(Message(role=Role.USER, content=task))
+        return AgentState(messages=messages)
+
+    def _make_message(self, role: Role, content: str) -> Message:
+        """Create a Message. Shared across all agent subclasses."""
+        return Message(role=role, content=content)
+
+    def _add_tool_results_to_messages(
+        self, messages: list[Message], results: list[ToolResult]
+    ) -> None:
+        """Append tool results as tool messages."""
+        for result in results:
+            content = str(result.output) if not result.error else f"Error: {result.error}"
+            messages.append(
+                Message(
+                    role=Role.TOOL,
+                    content=content,
+                    tool_call_id=result.call_id,
+                )
+            )
+
+    def _add_assistant_message(
+        self, messages: list[Message], response: ChatResponse
+    ) -> None:
+        """Append assistant response (with optional tool calls) to messages."""
+        msg = Message(
+            role=Role.ASSISTANT,
+            content=response.content,
+            tool_calls=response.tool_calls if response.tool_calls else None,
+        )
+        messages.append(msg)
+
+    async def _finalize(
+        self, state: AgentState, start_time: float, task: str = ""
+    ) -> AgentResult:
+        """Build the final AgentResult from state."""
+        answer = state.final_answer or "No answer produced."
+        elapsed_ms = (time.time() - start_time) * 1000
+
+        # Store only the user task and final answer in short-term memory
+        self.short_term.add(Message(role=Role.USER, content=task))
+        self.short_term.add(Message(role=Role.ASSISTANT, content=answer[:500]))
+
+        # Store the result in long-term memory if available
+        if self.long_term:
+            await self.long_term.remember(
+                content=f"Q: {task[:200]}\nA: {answer[:200]}",
+                metadata={"type": "task_result", "elapsed_ms": elapsed_ms},
+            )
+
+        return AgentResult(
+            answer=answer,
+            steps=state.steps,
+            token_usage=dict(self._total_usage),
+            elapsed_ms=elapsed_ms,
+        )
+
+    async def close(self) -> None:
+        """Clean up resources: MCP connections, provider clients, memory backends."""
+        if self._mcp_source:
+            try:
+                await self._mcp_source.disconnect_all()
+            except Exception as e:
+                logger.warning("Error disconnecting MCP: %s", e)
+
+        if hasattr(self.provider, "close"):
+            try:
+                await self.provider.close()
+            except Exception as e:
+                logger.warning("Error closing provider: %s", e)
+
+    async def __aenter__(self) -> "BaseAgent":
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        await self.close()

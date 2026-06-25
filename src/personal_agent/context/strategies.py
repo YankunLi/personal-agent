@@ -1,0 +1,100 @@
+"""Context compression strategies."""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+
+from personal_agent.types import Message
+
+
+class ContextStrategy(ABC):
+    """Abstract strategy for managing context window."""
+
+    @abstractmethod
+    async def apply(self, messages: list[Message]) -> list[Message]:
+        """Apply the strategy to fit messages within context limits."""
+
+
+class SlidingWindowStrategy(ContextStrategy):
+    """Keep only the most recent N messages, preserving the system prompt."""
+
+    def __init__(self, max_messages: int = 50):
+        self.max_messages = max_messages
+
+    async def apply(self, messages: list[Message]) -> list[Message]:
+        if len(messages) <= self.max_messages:
+            return list(messages)
+
+        # Always preserve the system message if present
+        system_msgs = [m for m in messages if m.role.value == "system"]
+        non_system = [m for m in messages if m.role.value != "system"]
+
+        kept = non_system[-(self.max_messages - len(system_msgs)):]
+        return system_msgs + kept
+
+
+class CompressionStrategy(ContextStrategy):
+    """Summarize older messages when the context exceeds a threshold."""
+
+    def __init__(
+        self,
+        compressor,  # ContextCompressor
+        threshold_tokens: int = 4096,
+        keep_recent: int = 10,
+    ):
+        self.compressor = compressor
+        self.threshold_tokens = threshold_tokens
+        self.keep_recent = keep_recent
+
+    async def apply(self, messages: list[Message]) -> list[Message]:
+        estimated = self._estimate_tokens(messages)
+        if estimated <= self.threshold_tokens:
+            return list(messages)
+
+        system_msgs = [m for m in messages if m.role.value == "system"]
+        non_system = [m for m in messages if m.role.value != "system"]
+
+        if len(non_system) <= self.keep_recent:
+            return list(messages)
+
+        recent = non_system[-self.keep_recent:]
+        older = non_system[:-self.keep_recent]
+
+        summary = await self.compressor.summarize(older)
+        from personal_agent.types import Role
+        summary_msg = Message(
+            role=Role.SYSTEM,
+            content=f"[Compressed conversation history]\n{summary}",
+        )
+
+        return system_msgs + [summary_msg] + recent
+
+    @staticmethod
+    def _estimate_tokens(messages: list[Message]) -> int:
+        """Rough token estimation: ~4 chars per token."""
+        return sum(len(m.content) // 4 for m in messages)
+
+
+class HybridStrategy(ContextStrategy):
+    """Combine sliding window + compression. Sliding window as hard cap, compression as soft cap."""
+
+    def __init__(
+        self,
+        compressor,  # ContextCompressor
+        max_messages: int = 100,
+        compression_threshold: int = 4096,
+        keep_recent: int = 10,
+    ):
+        self._sliding = SlidingWindowStrategy(max_messages=max_messages)
+        self._compression = CompressionStrategy(
+            compressor=compressor,
+            threshold_tokens=compression_threshold,
+            keep_recent=keep_recent,
+        )
+
+    async def apply(self, messages: list[Message]) -> list[Message]:
+        # First apply sliding window (hard cap)
+        messages = await self._sliding.apply(messages)
+        # Then apply compression (soft cap)
+        messages = await self._compression.apply(messages)
+        return messages

@@ -1,0 +1,39 @@
+# Bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Environment
+.env
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Memory persistence
+memory.json
+chroma_db/
+
+# Workspace
+workspace/
+
+# MyPy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
+
+# pytest
+.pytest_cache/

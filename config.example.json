@@ -1,0 +1,112 @@
+{
+  "agent": {
+    "pattern": "auto",
+    "provider": "openai",
+    "model": "gpt-4o",
+    "max_tokens": 4096,
+    "temperature": 0.7,
+    "max_steps": 50,
+    "workspace": "./workspace",
+    "system_prompt": "",
+    "skills": []
+  },
+
+  "providers": {
+    "openai": {
+      "api_key": "",
+      "api_base": null,
+      "extra_headers": null,
+      "timeout": 120.0,
+      "max_retries": 3
+    },
+    "deepseek": {
+      "api_key": "",
+      "api_base": null,
+      "extra_headers": null,
+      "timeout": 120.0,
+      "max_retries": 3
+    },
+    "qwen": {
+      "api_key": "",
+      "api_base": null,
+      "extra_headers": null,
+      "timeout": 120.0,
+      "max_retries": 3
+    },
+    "zhipu": {
+      "api_key": "",
+      "api_base": null,
+      "extra_headers": null,
+      "timeout": 120.0,
+      "max_retries": 3
+    },
+    "hunyuan": {
+      "api_key": "",
+      "api_base": null,
+      "extra_headers": null,
+      "timeout": 120.0,
+      "max_retries": 3
+    },
+    "anthropic": {
+      "api_key": "",
+      "api_base": null,
+      "extra_headers": null,
+      "timeout": 120.0,
+      "max_retries": 3
+    },
+    "wenxin": {
+      "api_key": "",
+      "api_base": null,
+      "extra_headers": null,
+      "timeout": 120.0,
+      "max_retries": 3
+    }
+  },
+
+  "tools": {
+    "enabled": [],
+    "timeout": 60.0,
+    "max_retries": 1,
+    "restrict_to_workspace": false,
+    "web_search": {
+      "timeout": 30.0,
+      "rate_limit": 2.0
+    },
+    "code_exec": {
+      "timeout": 30.0
+    }
+  },
+
+  "memory": {
+    "short_term_max_messages": 100,
+    "long_term": {
+      "backend": "in_memory",
+      "persist_path": null,
+      "chroma_path": null,
+      "embedding_model": "text-embedding-3-small",
+      "embedding_api_key": ""
+    }
+  },
+
+  "context": {
+    "strategy": "hybrid",
+    "max_messages": 100,
+    "max_tokens": 8192,
+    "compression_threshold_tokens": 4096,
+    "compression_keep_recent": 10,
+    "compression_model": "gpt-4o-mini"
+  },
+
+  "mcp": {
+    "servers": []
+  },
+
+  "plan": {
+    "max_substeps": 5
+  },
+
+  "reflection": {
+    "max_iterations": 3,
+    "min_score": 6.0
+  }
+}
