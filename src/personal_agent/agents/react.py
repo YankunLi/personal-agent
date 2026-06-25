@@ -60,6 +60,8 @@ class ReActAgent(BaseAgent):
             step_count += 1
             logger.info("ReAct step %d/%d", step_count, self.max_steps)
 
+            await self._fire("on_step_start", step_count, self.max_steps)
+
             # 1. Call the LLM
             response = await self._call_llm(state)
 
@@ -68,6 +70,13 @@ class ReActAgent(BaseAgent):
 
             # 3. Check for tool calls
             if response.has_tool_calls:
+                # Fire thought before tool execution
+                if response.content:
+                    await self._fire("on_thought", response.content)
+
+                for tc in response.tool_calls:
+                    await self._fire("on_tool_call", tc.name, tc.arguments)
+
                 # Execute tools
                 results = await self._execute_tool_calls(response.tool_calls)
 
@@ -80,6 +89,7 @@ class ReActAgent(BaseAgent):
                         tc.name,
                         "OK" if not result.error else f"ERROR: {result.error}",
                     )
+                    await self._fire("on_tool_result", tc.name, result.output, result.error)
 
                 # Add tool results to messages
                 self._add_tool_results_to_messages(state.messages, results)
@@ -90,6 +100,7 @@ class ReActAgent(BaseAgent):
                 state.steps.append(
                     AgentStep(thought=response.content[:200], action=None, observation=None)
                 )
+                await self._fire("on_answer", response.content)
                 logger.info("ReAct complete after %d steps", step_count)
 
         if step_count >= self.max_steps and not state.done:

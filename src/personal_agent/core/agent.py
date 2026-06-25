@@ -17,6 +17,7 @@ from personal_agent.skills.manager import SkillManager
 from personal_agent.tools.executor import ToolExecutor
 from personal_agent.tools.registry import ToolRegistry
 from personal_agent.types import (
+    AgentCallbacks,
     AgentResult,
     AgentState,
     AgentStep,
@@ -46,6 +47,7 @@ class BaseAgent(ABC):
         system_prompt: str = "",
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        callbacks: AgentCallbacks | None = None,
     ):
         self.provider = provider
         self.tools = tools or ToolRegistry()
@@ -59,8 +61,15 @@ class BaseAgent(ABC):
         self._base_system_prompt = system_prompt
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._callbacks = callbacks or AgentCallbacks()
         self._mcp_source = None  # Set by factory if MCP is enabled
         self._total_usage: dict[str, int] = {}
+
+    async def _fire(self, event: str, *args: Any) -> None:
+        """Fire a callback event if it's set."""
+        cb = getattr(self._callbacks, event, None)
+        if cb is not None:
+            await cb(*args)
 
     @abstractmethod
     async def run(self, task: str, **kwargs: Any) -> AgentResult:

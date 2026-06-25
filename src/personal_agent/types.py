@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 
 class Role(str, Enum):
@@ -90,3 +90,14 @@ class MemoryEntry:
     content: str
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: float = 0.0
+
+
+@dataclass
+class AgentCallbacks:
+    """Hooks for observing agent execution. All are optional async callables."""
+
+    on_step_start: Callable[[int, int], Awaitable[None]] | None = None
+    on_thought: Callable[[str], Awaitable[None]] | None = None
+    on_tool_call: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
+    on_tool_result: Callable[[str, Any, str | None], Awaitable[None]] | None = None
+    on_answer: Callable[[str], Awaitable[None]] | None = None

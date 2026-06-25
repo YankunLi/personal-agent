@@ -90,6 +90,19 @@ async def run_agent(task: str, config_path: str | None = None, workdir: Path | N
         agent.short_term = current.short_term
         agent.working = current.working
 
+    # Wire up rich terminal display
+    from personal_agent.display import TerminalDisplay
+    from personal_agent.types import AgentCallbacks
+
+    display = TerminalDisplay()
+    agent._callbacks = AgentCallbacks(
+        on_step_start=display.on_step_start,
+        on_thought=display.on_thought,
+        on_tool_call=display.on_tool_call,
+        on_tool_result=display.on_tool_result,
+        on_answer=display.on_answer,
+    )
+
     result = await agent.run(task)
 
     # Save session
@@ -419,6 +432,9 @@ async def interactive_loop(config_path: str | None, overrides: dict, workdir: Pa
 
 async def _process_task(agent, task: str, session_tasks: list[dict], settings: Settings | None = None) -> None:
     """Process a single task and display the result."""
+    from personal_agent.display import TerminalDisplay
+    from personal_agent.types import AgentCallbacks
+
     start = time.time()
 
     # Show auto-selected pattern if in auto mode
@@ -426,7 +442,15 @@ async def _process_task(agent, task: str, session_tasks: list[dict], settings: S
         suggested = classify(task)
         print(f"{C_DIM}Auto pattern:{C_RESET} {C_GREEN}{suggested}{C_RESET} {C_DIM}— {explain(task)}{C_RESET}")
 
-    print(f"{C_DIM}Thinking...{C_RESET}", end="\r")
+    # Wire up rich terminal display
+    display = TerminalDisplay()
+    agent._callbacks = AgentCallbacks(
+        on_step_start=display.on_step_start,
+        on_thought=display.on_thought,
+        on_tool_call=display.on_tool_call,
+        on_tool_result=display.on_tool_result,
+        on_answer=display.on_answer,
+    )
 
     try:
         result = await agent.run(task)
@@ -436,21 +460,14 @@ async def _process_task(agent, task: str, session_tasks: list[dict], settings: S
 
     elapsed = (time.time() - start) * 1000
 
-    # Clear "Thinking..." line
-    print(" " * 20, end="\r")
-
-    # Print result
-    print(f"\n{C_BOLD}Response:{C_RESET}")
-    print(result.answer)
-    print()
-
     # Status line
-    status_parts = [f"{C_DIM}{elapsed:.0f}ms{C_RESET}"]
+    status_parts = []
     if result.token_usage:
         tokens = result.token_usage
         total = tokens.get("total_tokens", tokens.get("input_tokens", 0) + tokens.get("output_tokens", 0))
         status_parts.append(f"{C_DIM}{total} tokens{C_RESET}")
     status_parts.append(f"{C_DIM}{len(result.steps)} steps{C_RESET}")
+    status_parts.append(f"{C_DIM}{elapsed:.0f}ms{C_RESET}")
     print("  ".join(status_parts))
     print()
 
