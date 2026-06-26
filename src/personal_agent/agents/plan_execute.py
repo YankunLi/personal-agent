@@ -106,6 +106,7 @@ class PlanAndExecuteAgent(BaseAgent):
                     self.working.set("plan", plan)
                     i = 0  # Restart from beginning of new plan
                     replan_count += 1
+                    step_results = []  # Reset results for new plan
                     del state.messages[base_msg_count:]  # Prune replan messages
                     continue
                 else:
