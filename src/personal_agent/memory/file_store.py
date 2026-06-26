@@ -91,20 +91,25 @@ class FileMemoryStore:
         if self._name_to_path is not None:
             return self._name_to_path
 
-        cache: dict[str, Path] = {}
-        for f in self._dir.glob("*.md"):
-            if f.name == "MEMORY.md":
-                continue
-            try:
-                text = await asyncio.to_thread(f.read_text)
-                meta, _ = _parse_frontmatter(text)
-                name = meta.get("name", f.stem)
-                cache[name] = f
-            except Exception:
-                continue
+        async with self._lock:
+            # Double-check: another task may have built the cache while we waited
+            if self._name_to_path is not None:
+                return self._name_to_path
 
-        self._name_to_path = cache
-        return cache
+            cache: dict[str, Path] = {}
+            for f in self._dir.glob("*.md"):
+                if f.name == "MEMORY.md":
+                    continue
+                try:
+                    text = await asyncio.to_thread(f.read_text)
+                    meta, _ = _parse_frontmatter(text)
+                    name = meta.get("name", f.stem)
+                    cache[name] = f
+                except Exception:
+                    continue
+
+            self._name_to_path = cache
+            return cache
 
     # ── CRUD operations ──────────────────────────────────────────────────────
 
