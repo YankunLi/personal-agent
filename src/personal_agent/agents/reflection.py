@@ -195,7 +195,7 @@ class ReflectionAgent(BaseAgent):
                 "strengths": ["Response generated"],
                 "weaknesses": ["Unable to parse detailed critique"],
                 "improvement_suggestions": ["Review the response for accuracy"],
-                "is_satisfactory": True,
+                "is_satisfactory": False,
             }
 
     def _is_satisfactory(self, critique: dict) -> bool:
