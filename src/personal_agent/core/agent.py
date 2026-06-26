@@ -140,6 +140,7 @@ class BaseAgent(ABC):
 
         accumulated_content = ""
         accumulated_tool_calls: dict[str, ToolCall] = {}  # id -> ToolCall
+        call_usage: dict[str, int] = {}
 
         async for chunk in self.provider.chat_stream(
             messages, tools=specs,
@@ -157,13 +158,14 @@ class BaseAgent(ABC):
 
             if chunk.usage:
                 for key, val in chunk.usage.items():
+                    call_usage[key] = call_usage.get(key, 0) + val
                     self._total_usage[key] = self._total_usage.get(key, 0) + val
 
         tool_calls = list(accumulated_tool_calls.values())
         return ChatResponse(
             content=accumulated_content,
             tool_calls=tool_calls if tool_calls else None,
-            usage=dict(self._total_usage),
+            usage=call_usage,
         )
 
     async def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
