@@ -205,6 +205,9 @@ class DebateAgent(BaseAgent):
         )
         try:
             result = await judge_agent.run(judge_task)
+            if result.token_usage:
+                for key, val in result.token_usage.items():
+                    self._total_usage[key] = self._total_usage.get(key, 0) + val
             return result.answer
         finally:
             await judge_agent.close()
