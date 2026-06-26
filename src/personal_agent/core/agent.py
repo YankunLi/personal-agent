@@ -309,12 +309,19 @@ class BaseAgent(ABC):
                         conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
                 # Prune completed tasks before adding new ones
                 self._consolidation_tasks = [t for t in self._consolidation_tasks if not t.done()]
-                cons_task = asyncio.create_task(
-                    self._run_consolidation(
-                        consolidator, conversation, existing, self.agent_knowledge
+                # Cap concurrent consolidations to prevent resource exhaustion
+                if len(self._consolidation_tasks) < 3:
+                    cons_task = asyncio.create_task(
+                        self._run_consolidation(
+                            consolidator, conversation, existing, self.agent_knowledge
+                        )
                     )
-                )
-                self._consolidation_tasks.append(cons_task)
+                    self._consolidation_tasks.append(cons_task)
+                else:
+                    logger.debug(
+                        "Skipping consolidation: %d tasks already in progress",
+                        len(self._consolidation_tasks),
+                    )
             except Exception as e:
                 logger.warning("Memory consolidation failed: %s", e)
 
