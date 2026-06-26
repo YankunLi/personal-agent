@@ -102,12 +102,17 @@ class PlanAndExecuteAgent(BaseAgent):
             if step_result.get("error"):
                 logger.warning("Step %d failed: %s", i + 1, step_result["error"])
                 if i < len(plan) - 1 and replan_count < 3:
-                    plan = await self._replan(state, plan, step_results, step)
-                    self.working.set("plan", plan)
-                    i = 0  # Restart from beginning of new plan
+                    new_plan = await self._replan(state, plan, step_results, step)
                     replan_count += 1
-                    step_results = []  # Reset results for new plan
                     del state.messages[base_msg_count:]  # Prune replan messages
+                    if new_plan is plan:
+                        # Replan returned the same plan (fallback) — skip the failed step
+                        i += 1
+                    else:
+                        plan = new_plan
+                        self.working.set("plan", plan)
+                        i = 0  # Restart from beginning of new plan
+                        step_results = []  # Reset results for new plan
                     continue
                 else:
                     logger.warning(
