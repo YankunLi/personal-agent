@@ -242,9 +242,16 @@ class FileMemoryStore:
 
     def load_index_text(self) -> str:
         """Read MEMORY.md as plain text for injection into system prompt."""
-        if not self.index_path.exists():
-            self.index_path.write_text("# Memory Index\n\nNo memories stored yet.\n")
-        return self.index_path.read_text()
+        try:
+            return self.index_path.read_text()
+        except FileNotFoundError:
+            # Create atomically: if another process creates it first, just read theirs
+            try:
+                with open(self.index_path, "x") as f:
+                    f.write("# Memory Index\n\nNo memories stored yet.\n")
+            except FileExistsError:
+                pass
+            return self.index_path.read_text()
 
     async def repair_index(self) -> int:
         """Remove stale index entries that point to non-existent files.
