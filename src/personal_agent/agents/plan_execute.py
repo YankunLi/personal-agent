@@ -70,6 +70,9 @@ class PlanAndExecuteAgent(BaseAgent):
                     self._make_message(Role.SYSTEM, memory_context),
                 )
 
+        # Snapshot base message count to prune phase-specific messages
+        base_msg_count = len(state.messages)
+
         # Phase 1: Generate plan
         plan = await self._generate_plan(state)
         if not plan:
@@ -79,6 +82,9 @@ class PlanAndExecuteAgent(BaseAgent):
 
         logger.info("Plan generated with %d steps", len(plan))
         self.working.set("plan", plan)
+
+        # Prune plan generation messages to prevent context growth
+        del state.messages[base_msg_count:]
 
         # Phase 2: Execute each step
         step_results = []
@@ -100,6 +106,7 @@ class PlanAndExecuteAgent(BaseAgent):
                     self.working.set("plan", plan)
                     i = 0  # Restart from beginning of new plan
                     replan_count += 1
+                    del state.messages[base_msg_count:]  # Prune replan messages
                     continue
                 else:
                     logger.warning(
@@ -107,6 +114,8 @@ class PlanAndExecuteAgent(BaseAgent):
                         "max replans reached" if replan_count >= 3 else "last step failed",
                     )
             i += 1
+            # Prune step execution messages to prevent context growth
+            del state.messages[base_msg_count:]
 
         if total_steps >= self.max_steps:
             logger.warning("Plan execution reached max_steps limit (%d)", self.max_steps)
