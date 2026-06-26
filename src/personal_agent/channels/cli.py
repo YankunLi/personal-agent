@@ -177,7 +177,13 @@ class CLIChannel(Channel):
         """Create the agent from settings."""
         from personal_agent.factory import create_agent
 
-        self._agent = await create_agent(self._settings, **self._overrides)
+        try:
+            self._agent = await create_agent(self._settings, **self._overrides)
+        except Exception as e:
+            logger.exception("Failed to create agent: %s", e)
+            print(f"\n{C_RED}Error creating agent: {e}{C_RESET}")
+            print(f"{C_DIM}Check your provider configuration and API key.{C_RESET}")
+            raise
 
         # Restore session memory into agent
         current = self._router.session_manager.current
