@@ -65,7 +65,7 @@ class ToolSpec:
 class AgentStep:
     thought: str | None = None
     action: ToolCall | None = None
-    observation: ToolResult | None = None
+    observation: ToolResult | str | None = None
 
 
 @dataclass
