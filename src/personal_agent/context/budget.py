@@ -9,6 +9,7 @@ Addresses transformer attention weaknesses by:
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 
 from personal_agent.types import Message, Role
 
@@ -162,11 +163,11 @@ class ContextBudgetManager:
         if messages:
             last = messages[-1]
             if last.role == Role.USER:
-                last.content = (
+                messages[-1] = replace(last, content=(
                     f"{SECTION_TASK_OPEN}\n"
                     f"{last.content}\n"
                     f"{SECTION_TASK_CLOSE}"
-                )
+                ))
 
         # 4. Compress conversation if over budget
         conv_tokens = estimate_message_tokens(messages)
