@@ -254,9 +254,15 @@ class SessionManager:
         """Write a session to disk atomically."""
         path = self._session_path(session.id)
         tmp_path = path.with_suffix(path.suffix + ".tmp")
-        with open(tmp_path, "w") as f:
-            json.dump(session.to_dict(), f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, path)
+        try:
+            with open(tmp_path, "w") as f:
+                json.dump(session.to_dict(), f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, path)
+        except Exception:
+            # Clean up partial temp file on failure
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise
 
     def _load_session_file(self, path: Path) -> Session:
         """Load a session from a JSON file."""
