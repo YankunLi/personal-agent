@@ -35,6 +35,7 @@ async def _run_command(cmd: list[str], timeout: float = 30) -> tuple[str, str, i
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
         proc.kill()
+        await proc.wait()
         return "", f"Timeout: execution exceeded {timeout} seconds", -1
     return stdout.decode(), stderr.decode(), proc.returncode or 0
 
