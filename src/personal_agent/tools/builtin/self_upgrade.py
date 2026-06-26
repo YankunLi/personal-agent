@@ -84,9 +84,19 @@ def create_self_upgrade_tool(
             return "Working memory cleared."
 
         if action == "delete":
-            if _working_memory:
-                _working_memory.delete(key)
-            return f"Key '{key}' removed from working memory."
+            if memory_type in ("working", "both"):
+                if _working_memory:
+                    _working_memory.delete(key)
+                results.append(f"Key '{key}' removed from working memory.")
+            if memory_type in ("long_term", "both"):
+                if _long_term_memory:
+                    await _long_term_memory.forget(key)
+                    results.append(f"Key '{key}' removed from long-term memory.")
+                else:
+                    results.append("Long-term memory not available.")
+            if memory_type in ("agent_knowledge", "both"):
+                results.append("Agent knowledge entries cannot be deleted by key. Edit AGENT.md directly.")
+            return "\n".join(results) if results else f"Key '{key}' removed."
 
         # action == "set"
         if memory_type in ("working", "both"):
