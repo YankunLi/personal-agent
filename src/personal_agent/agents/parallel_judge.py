@@ -147,24 +147,28 @@ class ParallelJudgeAgent(BaseAgent):
             credentials=creds,
         )
 
-        responses = "\n\n".join(
-            f"### {name}\n{answer}" for name, answer in answers.items()
-        )
-        judge_prompt = (
-            f"Original task: {task}\n\n"
-            f"Answers from {len(answers)} agents:\n\n{responses}\n\n"
-            f"Evaluate these answers and provide the best result. "
-            f"If multiple answers are good, synthesize the best parts into one."
-        )
+        try:
+            responses = "\n\n".join(
+                f"### {name}\n{answer}" for name, answer in answers.items()
+            )
+            judge_prompt = (
+                f"Original task: {task}\n\n"
+                f"Answers from {len(answers)} agents:\n\n{responses}\n\n"
+                f"Evaluate these answers and provide the best result. "
+                f"If multiple answers are good, synthesize the best parts into one."
+            )
 
-        messages = [
-            Message(role=Role.SYSTEM, content=JUDGE_SYSTEM_PROMPT),
-            Message(role=Role.USER, content=judge_prompt),
-        ]
+            messages = [
+                Message(role=Role.SYSTEM, content=JUDGE_SYSTEM_PROMPT),
+                Message(role=Role.USER, content=judge_prompt),
+            ]
 
-        response = await judge_provider.chat(
-            messages,
-            temperature=self._judge_temperature,
-            max_tokens=8192,
-        )
-        return response.content
+            response = await judge_provider.chat(
+                messages,
+                temperature=self._judge_temperature,
+                max_tokens=8192,
+            )
+            return response.content
+        finally:
+            if hasattr(judge_provider, "close"):
+                await judge_provider.close()
