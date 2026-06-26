@@ -231,7 +231,7 @@ class MemoryConsolidator:
                     applied.append(op)
                     logger.info("Memory created: %s (%s)", name, memory_type)
                 elif action == "update":
-                    if self._store.get(name) is None:
+                    if await self._store.get(name) is None:
                         logger.warning(
                             "Memory update requested for '%s' but it doesn't exist, creating new", name
                         )
