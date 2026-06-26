@@ -196,7 +196,7 @@ class PlanAndExecuteAgent(BaseAgent):
                             error="Tool execution was dropped",
                         ))
                 for tc, result in zip(response.tool_calls, results):
-                    state.steps.append(AgentStep(action=tc, observation=result))
+                    state.steps.append(AgentStep(thought=response.content, action=tc, observation=result))
                 self._add_tool_results_to_messages(state.messages, results)
 
                 # Track consecutive failures to prevent infinite retry loops
