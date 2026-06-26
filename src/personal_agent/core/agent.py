@@ -262,7 +262,12 @@ class BaseAgent(ABC):
     ) -> None:
         """Append tool results as tool messages."""
         for result in results:
-            content = str(result.output) if not result.error else f"Error: {result.error}"
+            if result.error:
+                content = f"Error: {result.error}"
+            elif result.output is None:
+                content = "(empty)"
+            else:
+                content = str(result.output)
             messages.append(
                 Message(
                     role=Role.TOOL,
