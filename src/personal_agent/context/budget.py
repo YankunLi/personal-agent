@@ -112,7 +112,6 @@ class ContextBudgetManager:
     def assemble(
         self,
         messages: list[Message],
-        memory_index: str = "",
         loaded_memories: list[dict[str, str]] | None = None,
     ) -> list[Message]:
         """Assemble messages with attention-routed formatting.
@@ -121,40 +120,24 @@ class ContextBudgetManager:
         memory sections with explicit markers, ensures critical info
         is at context edges.
 
+        Note: MEMORY.md index is injected by BaseAgent._init_state(), not here.
+
         Args:
             messages: The prepared message list (system prompt + conversation).
-            memory_index: MEMORY.md index text.
             loaded_memories: List of loaded memory {name, content} dicts.
 
         Returns:
             Message list with budget applied and sections formatted.
         """
         if not self._allocations:
-            self.allocate(memory_index=memory_index, loaded_memories=loaded_memories)
+            self.allocate(loaded_memories=loaded_memories)
 
         # Work on a copy to avoid mutating the caller's messages
         messages = list(messages)
 
         conv_budget = self._allocations.get("conversation", 4000)
 
-        # 1. Inject memory index into system prompt (first message)
-        if memory_index and messages and messages[0].role == Role.SYSTEM:
-            memory_section = (
-                f"\n\n{SECTION_MEMORY_OPEN}\n"
-                f"{memory_index}"
-                f"{SECTION_MEMORY_CLOSE}\n"
-            )
-            # Truncate memory section to fit budget
-            if estimate_tokens(memory_section) > self._allocations.get("memory_index", 1000):
-                lines = memory_index.strip().split("\n")
-                truncated = "\n".join(lines[:30])  # Keep first 30 lines
-                memory_section = (
-                    f"\n\n{SECTION_MEMORY_OPEN}\n"
-                    f"{truncated}\n"
-                    f"... ({len(lines) - 30} more entries)\n"
-                    f"{SECTION_MEMORY_CLOSE}\n"
-                )
-            messages[0].content += memory_section
+        # 1. Memory index is injected by BaseAgent._init_state() — skip here to avoid duplication
 
         # 2. Inject loaded memories (on-demand, as system messages)
         if loaded_memories:
