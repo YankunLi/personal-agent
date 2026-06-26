@@ -116,7 +116,7 @@ def create_self_upgrade_tool(
 
         if memory_type in ("agent_knowledge", "both"):
             if _agent_knowledge:
-                added = _agent_knowledge.append_learnings([
+                added = await _agent_knowledge.append_learnings([
                     {"section": knowledge_section, "text": instruction}
                 ])
                 if added:

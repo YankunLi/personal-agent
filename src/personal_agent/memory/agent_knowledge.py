@@ -14,6 +14,7 @@ Layered design:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 from datetime import UTC, datetime
@@ -50,6 +51,7 @@ class AgentKnowledge:
                  project_dir: str | Path | None = None):
         self._global_path = Path(global_path).expanduser()
         self._project_dir = Path(project_dir) if project_dir else None
+        self._lock = asyncio.Lock()
 
     @property
     def project_path(self) -> Path | None:
@@ -84,22 +86,23 @@ class AgentKnowledge:
 
         return "\n\n".join(parts)
 
-    def update(self, section: str, content: str) -> None:
+    async def update(self, section: str, content: str) -> None:
         """Update a section in the global AGENT.md.
 
         If the section exists, replaces its content. Otherwise, appends a new section.
         """
         self._ensure_file()
-        text = self._global_path.read_text()
-        sections = self._parse_sections(text)
+        async with self._lock:
+            text = await asyncio.to_thread(self._global_path.read_text)
+            sections = self._parse_sections(text)
 
-        # Split content into lines for consistent storage
-        sections[section] = [line.strip() for line in content.strip().split("\n") if line.strip()]
+            # Split content into lines for consistent storage
+            sections[section] = [line.strip() for line in content.strip().split("\n") if line.strip()]
 
-        new_text = self._build_file(sections)
-        self._write_file(self._global_path, new_text)
+            new_text = self._build_file(sections)
+            self._write_file(self._global_path, new_text)
 
-    def append_learnings(self, learnings: list[dict]) -> int:
+    async def append_learnings(self, learnings: list[dict]) -> int:
         """Append learnings from consolidation to the global AGENT.md.
 
         Each learning is a dict with:
@@ -114,45 +117,46 @@ class AgentKnowledge:
             return 0
 
         self._ensure_file()
-        text = self._global_path.read_text()
+        async with self._lock:
+            text = await asyncio.to_thread(self._global_path.read_text)
 
-        # Parse existing sections
-        existing = self._parse_sections(text)
-        added = 0
+            # Parse existing sections
+            existing = self._parse_sections(text)
+            added = 0
 
-        for learning in learnings:
-            section = learning.get("section", "Rules")
-            new_text = learning.get("text", "").strip()
-            if not new_text:
-                continue
+            for learning in learnings:
+                section = learning.get("section", "Rules")
+                new_text = learning.get("text", "").strip()
+                if not new_text:
+                    continue
 
-            if section not in existing:
-                existing[section] = []
+                if section not in existing:
+                    existing[section] = []
 
-            # Deduplicate — check both with and without bullet prefix
-            new_stripped = new_text
-            if new_stripped.startswith("- "):
-                new_stripped = new_stripped[2:]
-            if any(
-                new_stripped == e.strip() or new_stripped == e.strip().lstrip("- ")
-                for e in existing[section]
-            ):
-                continue
+                # Deduplicate — check both with and without bullet prefix
+                new_stripped = new_text
+                if new_stripped.startswith("- "):
+                    new_stripped = new_stripped[2:]
+                if any(
+                    new_stripped == e.strip() or new_stripped == e.strip().lstrip("- ")
+                    for e in existing[section]
+                ):
+                    continue
 
-            # Ensure bullet format
-            if not new_text.startswith("- "):
-                new_text = f"- {new_text}"
+                # Ensure bullet format
+                if not new_text.startswith("- "):
+                    new_text = f"- {new_text}"
 
-            existing[section].append(new_text)
-            added += 1
+                existing[section].append(new_text)
+                added += 1
 
-        if added == 0:
-            return 0
+            if added == 0:
+                return 0
 
-        # Rebuild the file
-        new_text = self._build_file(existing)
-        self._write_file(self._global_path, new_text)
-        return added
+            # Rebuild the file
+            new_text = self._build_file(existing)
+            self._write_file(self._global_path, new_text)
+            return added
 
     # ── Internal helpers ────────────────────────────────────────────────────
 

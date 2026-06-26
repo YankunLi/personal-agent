@@ -126,7 +126,7 @@ class MemoryConsolidator:
             # Apply agent learnings to AGENT.md
             if learnings and agent_knowledge:
                 try:
-                    added = agent_knowledge.append_learnings(learnings)
+                    added = await agent_knowledge.append_learnings(learnings)
                     if added:
                         logger.info("Agent knowledge: %d new learnings added", added)
                 except Exception as e:
