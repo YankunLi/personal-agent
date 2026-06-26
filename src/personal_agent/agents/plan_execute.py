@@ -115,8 +115,6 @@ class PlanAndExecuteAgent(BaseAgent):
                         "max replans reached" if replan_count >= 3 else "last step failed",
                     )
             i += 1
-            # Prune step execution messages to prevent context growth
-            del state.messages[base_msg_count:]
 
         if total_steps >= self.max_steps:
             logger.warning("Plan execution reached max_steps limit (%d)", self.max_steps)
