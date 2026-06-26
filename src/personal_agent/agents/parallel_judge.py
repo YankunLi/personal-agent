@@ -168,6 +168,9 @@ class ParallelJudgeAgent(BaseAgent):
                 temperature=self._judge_temperature,
                 max_tokens=8192,
             )
+            if response.usage:
+                for key, val in response.usage.items():
+                    self._total_usage[key] = self._total_usage.get(key, 0) + val
             return response.content
         finally:
             if hasattr(judge_provider, "close"):
