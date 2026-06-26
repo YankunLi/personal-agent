@@ -137,12 +137,18 @@ class ReActAgent(BaseAgent):
                 logger.info("ReAct complete after %d steps", step_count)
 
         if step_count >= self.max_steps and not state.done:
-            # Find the last assistant message (not a tool result)
+            # Find the last assistant message without tool calls (a final answer),
+            # falling back to the last assistant message with content.
             last_answer = "No output produced."
             for msg in reversed(state.messages):
-                if msg.role == Role.ASSISTANT and msg.content:
+                if msg.role == Role.ASSISTANT and msg.content and not msg.tool_calls:
                     last_answer = msg.content
                     break
+            if last_answer == "No output produced.":
+                for msg in reversed(state.messages):
+                    if msg.role == Role.ASSISTANT and msg.content:
+                        last_answer = msg.content
+                        break
             state.final_answer = (
                 "I was unable to complete the task within the maximum number of steps. "
                 "Here is what I have so far:\n\n" + last_answer
