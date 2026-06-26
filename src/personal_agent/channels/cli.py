@@ -467,7 +467,11 @@ class CLIChannel(Channel):
                 print(f"{C_RED}Usage: /session create <name>{C_RESET}")
         elif sub == "switch":
             if sub_arg:
-                asyncio.create_task(self._session_switch(sub_arg))
+                t = asyncio.create_task(self._session_switch(sub_arg))
+                t.add_done_callback(
+                    lambda t: logger.error("Session switch failed: %s", t.exception())
+                    if t.exception() else None
+                )
             else:
                 print(f"{C_RED}Usage: /session switch <name>{C_RESET}")
         elif sub == "delete":
