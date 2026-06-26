@@ -29,7 +29,8 @@ class SlidingWindowStrategy(ContextStrategy):
         system_msgs = [m for m in messages if m.role.value == "system"]
         non_system = [m for m in messages if m.role.value != "system"]
 
-        kept = non_system[-(self.max_messages - len(system_msgs)):]
+        effective_max = max(0, self.max_messages - len(system_msgs))
+        kept = non_system[-effective_max:] if effective_max > 0 else []
         return system_msgs + kept
 
 
