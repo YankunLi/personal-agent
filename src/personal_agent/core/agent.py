@@ -135,6 +135,7 @@ class BaseAgent(ABC):
         accumulated_content = ""
         accumulated_tool_calls: list[ToolCall] = []
         call_usage: dict[str, int] = {}
+        last_finish_reason = "stop"
 
         try:
             async for chunk in self.provider.chat_stream(
@@ -153,6 +154,9 @@ class BaseAgent(ABC):
                             await self._fire("on_tool_call_stream", tc.name, tc.arguments)
                         accumulated_tool_calls.append(tc)
 
+                if chunk.finish_reason != "stop":
+                    last_finish_reason = chunk.finish_reason
+
                 if chunk.usage:
                     for key, val in chunk.usage.items():
                         call_usage[key] = call_usage.get(key, 0) + val
@@ -166,7 +170,7 @@ class BaseAgent(ABC):
         return ChatResponse(
             content=accumulated_content,
             tool_calls=accumulated_tool_calls if accumulated_tool_calls else None,
-            finish_reason="tool_calls" if accumulated_tool_calls else "stop",
+            finish_reason="tool_calls" if accumulated_tool_calls else last_finish_reason,
             usage=call_usage,
         )
 
