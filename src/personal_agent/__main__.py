@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import argparse
+import asyncio
 import json
 import logging
-import os
-import sys
-import time
 from pathlib import Path
-from typing import Any
 
-from personal_agent.config import Settings, _find_config_file, load_config
+from personal_agent.config import _find_config_file, load_config
 from personal_agent.factory import create_agent
 from personal_agent.selector import classify, explain
 
@@ -33,7 +29,7 @@ C_WHITE = "\033[37m"
 
 async def run_agent(task: str, config_path: str | None = None, workdir: Path | None = None) -> None:
     """Run a one-shot agent task, optionally with project session context."""
-    from personal_agent.project import find_project_root, load_project, PA_FILE
+    from personal_agent.project import PA_FILE, find_project_root, load_project
     from personal_agent.session import SessionManager
 
     settings = load_config(config_path)
@@ -153,6 +149,9 @@ def main():
     parser.add_argument("--serve", action="store_true", help="Start WebSocket server for web UI access (use with -i)")
     parser.add_argument("--ws-host", default="localhost", help="WebSocket server host (default: localhost)")
     parser.add_argument("--ws-port", type=int, default=8765, help="WebSocket server port (default: 8765)")
+    parser.add_argument("--feishu", action="store_true", help="Start Feishu bot webhook server (use with -i)")
+    parser.add_argument("--feishu-port", type=int, default=8080, help="Feishu webhook port (default: 8080)")
+    parser.add_argument("--feishu-path", default="/feishu/webhook", help="Feishu webhook path (default: /feishu/webhook)")
 
     args = parser.parse_args()
 
@@ -178,6 +177,7 @@ def main():
         asyncio.run(interactive_loop(
             args.config, overrides, workdir,
             serve=args.serve, ws_host=args.ws_host, ws_port=args.ws_port,
+            feishu=args.feishu, feishu_port=args.feishu_port, feishu_path=args.feishu_path,
         ))
     elif args.task:
         asyncio.run(run_agent(args.task, args.config, workdir))
@@ -200,7 +200,7 @@ def _build_overrides(args) -> dict:
 
 def _cmd_init(args, workdir: Path) -> None:
     """Handle the `pa init` command."""
-    from personal_agent.project import init_project, PA_FILE
+    from personal_agent.project import PA_FILE, init_project
     from personal_agent.session import SessionManager
 
     # Check if already initialized
@@ -243,7 +243,6 @@ def _cmd_init(args, workdir: Path) -> None:
 
 def _detect_project_info(workdir: Path) -> dict[str, str]:
     """Auto-detect project name and description from common project files."""
-    import json
     import configparser
 
     # Try pyproject.toml
@@ -321,14 +320,18 @@ async def interactive_loop(
     serve: bool = False,
     ws_host: str = "localhost",
     ws_port: int = 8765,
+    feishu: bool = False,
+    feishu_port: int = 8080,
+    feishu_path: str = "/feishu/webhook",
 ) -> None:
     """Run an interactive agent session using the AgentServer + CLIChannel architecture.
 
     When serve=True, also starts a WebSocketChannel for browser-based UI access.
+    When feishu=True, also starts a FeishuChannel for Feishu bot integration.
     """
-    from personal_agent.project import find_project_root, load_project, PA_FILE
-    from personal_agent.server import AgentServer
     from personal_agent.channels.cli import CLIChannel
+    from personal_agent.project import PA_FILE, find_project_root, load_project
+    from personal_agent.server import AgentServer
 
     settings = load_config(config_path)
     loaded_path = config_path or _find_config_file()
@@ -371,6 +374,18 @@ async def interactive_loop(
         # Show web UI path
         web_ui_path = Path(__file__).resolve().parent / "web" / "index.html"
         print(f"  {C_GREEN}Web UI{C_RESET} available: open {C_BOLD}{web_ui_path}{C_RESET} in your browser")
+        print()
+
+    # Add Feishu channel if --feishu is set
+    if feishu:
+        from personal_agent.channels.feishu import FeishuChannel
+        fs = FeishuChannel(
+            settings=settings,
+            router=server.router,
+            webhook_port=feishu_port,
+            webhook_path=feishu_path,
+        )
+        server.add_channel(fs)
         print()
 
     try:

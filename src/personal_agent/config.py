@@ -8,7 +8,6 @@ from typing import Literal
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 # ── Providers ──────────────────────────────────────────────────────────────────
 
 class ProviderCredentials(BaseModel):
@@ -216,6 +215,23 @@ class ParallelJudgeConfig(BaseModel):
     judge_temperature: float = 0.3
 
 
+# ── IM Channel Configs ────────────────────────────────────────────────────────
+
+class FeishuConfig(BaseModel):
+    """Feishu (Lark) bot configuration.
+
+    Create a bot app at https://open.feishu.cn/app to get these credentials.
+    """
+
+    enabled: bool = False
+    app_id: str = ""
+    app_secret: str = ""
+    verification_token: str = ""
+    webhook_port: int = 8080
+    webhook_path: str = "/feishu/webhook"
+    encrypt_key: str = ""  # Optional, for message encryption
+
+
 # ── Root Settings ──────────────────────────────────────────────────────────────
 
 class Settings(BaseSettings):
@@ -257,6 +273,7 @@ class Settings(BaseSettings):
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
     debate: DebateConfig = Field(default_factory=DebateConfig)
     parallel_judge: ParallelJudgeConfig = Field(default_factory=ParallelJudgeConfig)
+    feishu: FeishuConfig = Field(default_factory=FeishuConfig)
 
     def get_provider_credentials(self) -> ProviderCredentials:
         """Get credentials for the currently selected provider."""
