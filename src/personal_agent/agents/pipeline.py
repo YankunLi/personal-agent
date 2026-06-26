@@ -6,10 +6,11 @@ import logging
 import time
 from typing import Any
 
-from personal_agent.config import PipelineStageConfig
+from personal_agent.config import PipelineStageConfig, SubAgentConfig
 from personal_agent.core.agent import BaseAgent
 from personal_agent.factory import create_sub_agent
-from personal_agent.types import AgentResult, AgentState, AgentStep, Role
+from personal_agent.providers.registry import ProviderCredentials
+from personal_agent.types import AgentResult, AgentStep
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +28,13 @@ class PipelineAgent(BaseAgent):
     The final stage's answer is the pipeline's output.
     """
 
-    def __init__(self, stages: list[PipelineStageConfig] | None = None, **kwargs):
+    def __init__(self, stages: list[PipelineStageConfig] | None = None, providers: dict[str, ProviderCredentials] | None = None, **kwargs):
         super().__init__(
             system_prompt=kwargs.pop("system_prompt", "") or DEFAULT_PIPELINE_SYSTEM_PROMPT,
             **kwargs,
         )
         self._stage_configs = stages or []
+        self._providers = providers or {}
 
     async def run(self, task: str, **kwargs: Any) -> AgentResult:
         start_time = time.time()
@@ -61,7 +63,19 @@ class PipelineAgent(BaseAgent):
                 stage_task = task
 
             # Create and run the stage agent
-            stage_agent = await create_sub_agent(stage_cfg)
+            # Convert PipelineStageConfig to SubAgentConfig for create_sub_agent
+            sub_cfg = SubAgentConfig(
+                pattern=stage_cfg.pattern,
+                provider=stage_cfg.provider,
+                model=stage_cfg.model,
+                temperature=stage_cfg.temperature,
+                max_tokens=stage_cfg.max_tokens,
+                max_steps=stage_cfg.max_steps,
+                system_prompt=stage_cfg.system_prompt,
+                tools=stage_cfg.tools,
+                description=stage_cfg.name,
+            )
+            stage_agent = await create_sub_agent(sub_cfg, providers=self._providers)
             stage_result = await stage_agent.run(stage_task)
             current_input = stage_result.answer
 

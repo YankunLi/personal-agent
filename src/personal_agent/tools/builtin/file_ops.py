@@ -77,11 +77,11 @@ def create_file_ops_tools(workspace_dir: str | None = None) -> list[Tool]:
 
     async def _read_file(path: str) -> str:
         p = _resolve_path(path, workspace_dir)
+        _validate_within_workspace(p, workspace_dir)
         if not p.exists():
             return f"Error: File not found: {path}"
         if p.is_dir():
             return f"Error: Path is a directory: {path}"
-        _validate_within_workspace(p, workspace_dir)
 
         try:
             content = p.read_text(encoding="utf-8")
@@ -106,11 +106,11 @@ def create_file_ops_tools(workspace_dir: str | None = None) -> list[Tool]:
 
     async def _list_dir(path: str) -> str:
         p = _resolve_path(path, workspace_dir)
+        _validate_within_workspace(p, workspace_dir)
         if not p.exists():
             return f"Error: Directory not found: {path}"
         if not p.is_dir():
             return f"Error: Not a directory: {path}"
-        _validate_within_workspace(p, workspace_dir)
 
         items = []
         for entry in sorted(p.iterdir()):

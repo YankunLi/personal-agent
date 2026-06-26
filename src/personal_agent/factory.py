@@ -60,8 +60,8 @@ async def create_sub_agent(
 
     # Create workspace directory
     ws = workspace_dir or "./workspace"
-    if workspace_dir:
-        Path(workspace_dir).expanduser().mkdir(parents=True, exist_ok=True)
+    if ws:
+        Path(ws).expanduser().mkdir(parents=True, exist_ok=True)
 
     # Get credentials for this sub-agent's provider
     creds = providers.get(sub_cfg.provider, ProviderCredentials())
@@ -226,6 +226,13 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
     # Create budget manager
     budget_manager = ContextBudgetManager(
         context_window=settings.budget.context_window,
+        budget_pcts={
+            "system_prompt": settings.budget.system_prompt_pct,
+            "loaded_memories": settings.budget.loaded_memories_pct,
+            "conversation": settings.budget.conversation_pct,
+            "tool_definitions": settings.budget.tool_definitions_pct,
+            "response_reserve": settings.budget.response_reserve_pct,
+        },
     )
 
     # Create consolidation provider (cheap model for background memory extraction)
@@ -357,6 +364,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
 
         agent = PipelineAgent(
             stages=settings.pipeline.stages,
+            providers=settings.providers,
             **agent_kwargs,
         )
     elif pattern == "debate":

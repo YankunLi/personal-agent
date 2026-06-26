@@ -43,6 +43,7 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
     """Create a code_exec tool with the given timeout."""
 
     async def _execute(language: str, code: str) -> str:
+        stdout, stderr, code_ = "", "", -1
         if language == "python":
             with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
                 f.write(code)

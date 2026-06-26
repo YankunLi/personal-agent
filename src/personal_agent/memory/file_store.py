@@ -9,6 +9,7 @@ Follows Claude Code's memory design:
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -270,7 +271,10 @@ class FileMemoryStore:
         if not entries:
             lines.append("No memories stored yet.")
         lines.append("")
-        self.index_path.write_text("\n".join(lines))
+        content = "\n".join(lines)
+        tmp_path = self.index_path.with_suffix(self.index_path.suffix + ".tmp")
+        tmp_path.write_text(content)
+        os.replace(tmp_path, self.index_path)
 
     def _update_index_entry_locked(self, name: str, filename: str, description: str) -> None:
         """Add or update an entry in MEMORY.md. Caller must hold lock."""

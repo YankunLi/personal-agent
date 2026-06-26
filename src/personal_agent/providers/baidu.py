@@ -85,7 +85,7 @@ class BaiduProvider(Provider):
             data = response.json()
 
             if "error" in data:
-                raise raise_provider_error(
+                raise_provider_error(
                     Exception(f"Baidu auth failed: {data.get('error_description', data.get('error'))}")
                 )
 

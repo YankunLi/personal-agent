@@ -177,7 +177,7 @@ class BaseAgent(ABC):
         """Append assistant response (with optional tool calls) to messages."""
         msg = Message(
             role=Role.ASSISTANT,
-            content=response.content,
+            content=response.content or "",
             tool_calls=response.tool_calls if response.tool_calls else None,
         )
         messages.append(msg)
@@ -209,12 +209,14 @@ class BaseAgent(ABC):
                     last_msg = conversation[-1] if conversation else None
                     if not last_msg or last_msg.role != Role.ASSISTANT or last_msg.content != answer[:2000]:
                         conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
-                task = asyncio.create_task(
+                # Prune completed tasks before adding new ones
+                self._consolidation_tasks = [t for t in self._consolidation_tasks if not t.done()]
+                cons_task = asyncio.create_task(
                     self._run_consolidation(
                         consolidator, conversation, existing, self.agent_knowledge
                     )
                 )
-                self._consolidation_tasks.append(task)
+                self._consolidation_tasks.append(cons_task)
             except Exception as e:
                 logger.warning("Memory consolidation failed: %s", e)
 

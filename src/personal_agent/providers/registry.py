@@ -72,10 +72,10 @@ def create_provider(
     """
     # Merge credentials if provided
     if credentials:
-        api_key = api_key or credentials.api_key
-        base_url = base_url or credentials.api_base
-        timeout = credentials.timeout if credentials.timeout != 120.0 else timeout
-        max_retries = credentials.max_retries if credentials.max_retries != 3 else max_retries
+        api_key = credentials.api_key or api_key
+        base_url = credentials.api_base or base_url
+        timeout = credentials.timeout
+        max_retries = credentials.max_retries
 
     if provider_name not in PROVIDER_REGISTRY:
         raise ConfigError(

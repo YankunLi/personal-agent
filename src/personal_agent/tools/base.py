@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from typing import Any, Callable
 
@@ -53,7 +54,7 @@ class FunctionTool(Tool):
 
     async def execute(self, **kwargs: Any) -> Any:
         result = self._fn(**kwargs)
-        if hasattr(result, "__await__"):
+        if asyncio.iscoroutine(result):
             result = await result
         return result
 

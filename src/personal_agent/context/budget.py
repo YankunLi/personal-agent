@@ -56,14 +56,15 @@ class ContextBudgetManager:
         prepared_messages = budget.assemble(messages)
     """
 
-    def __init__(self, context_window: int = 128000):
+    def __init__(self, context_window: int = 128000, budget_pcts: dict[str, float] | None = None):
         self._context_window = context_window
         self._allocations: dict[str, int] = {}
+        self._budget_pcts = budget_pcts or DEFAULT_BUDGET
 
     @property
     def available_budget(self) -> int:
         """Total tokens available for context (excluding response reserve)."""
-        reserve = int(self._context_window * DEFAULT_BUDGET["response_reserve"])
+        reserve = int(self._context_window * self._budget_pcts["response_reserve"])
         return self._context_window - reserve
 
     def allocate(
@@ -80,10 +81,10 @@ class ContextBudgetManager:
         budget = self.available_budget
 
         # Fixed allocations
-        system_budget = int(budget * DEFAULT_BUDGET["system_prompt"])
-        memory_budget = int(budget * DEFAULT_BUDGET["loaded_memories"])
-        tool_budget = int(budget * DEFAULT_BUDGET["tool_definitions"])
-        conversation_budget = int(budget * DEFAULT_BUDGET["conversation"])
+        system_budget = int(budget * self._budget_pcts["system_prompt"])
+        memory_budget = int(budget * self._budget_pcts["loaded_memories"])
+        tool_budget = int(budget * self._budget_pcts["tool_definitions"])
+        conversation_budget = int(budget * self._budget_pcts["conversation"])
 
         # Adjust: if system prompt + index is small, give extra to conversation
         system_used = estimate_tokens(system_prompt) + estimate_tokens(memory_index)
@@ -105,6 +106,10 @@ class ContextBudgetManager:
         }
 
         return self._allocations
+
+    def get_allocation(self, key: str, default: int = 0) -> int:
+        """Get the token allocation for a section."""
+        return self._allocations.get(key, default)
 
     def assemble(
         self,
@@ -152,6 +157,8 @@ class ContextBudgetManager:
 
         # 2. Inject loaded memories (on-demand, as system messages)
         if loaded_memories:
+            mem_budget = self._allocations.get("loaded_memories", 2000)
+            per_mem_budget = max(mem_budget // max(len(loaded_memories), 1), 200)
             for mem in loaded_memories:
                 mem_text = (
                     f"{SECTION_MEMORY_OPEN}\n"
@@ -159,10 +166,8 @@ class ContextBudgetManager:
                     f"{mem.get('content', '')}"
                     f"\n{SECTION_MEMORY_CLOSE}"
                 )
-                if estimate_tokens(mem_text) < self._allocations.get("loaded_memories", 2000) // max(len(loaded_memories), 1):
-                    # Insert after system prompt
-                    from personal_agent.types import Message as M, Role as R
-                    messages.insert(1, M(role=R.SYSTEM, content=mem_text))
+                if estimate_tokens(mem_text) <= per_mem_budget:
+                    messages.insert(1, Message(role=Role.SYSTEM, content=mem_text))
 
         # 3. Wrap the last user message (task) with attention markers
         if messages:

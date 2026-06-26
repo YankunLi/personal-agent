@@ -124,7 +124,7 @@ class BudgetStrategy(ContextStrategy):
 
         self._budget.allocate(system_prompt=system_prompt)
 
-        conv_budget = self._budget._allocations.get("conversation", 4000)
+        conv_budget = self._budget.get_allocation("conversation", 4000)
         conv_tokens = estimate_message_tokens(messages)
 
         if conv_tokens <= conv_budget:
