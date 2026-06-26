@@ -153,9 +153,10 @@ class PlanAndExecuteAgent(BaseAgent):
                 return plan_data["plan"]
             if isinstance(plan_data, list):
                 return plan_data
-        except (json.JSONDecodeError, KeyError, IndexError):
-            pass
+        except (json.JSONDecodeError, KeyError, IndexError) as e:
+            logger.warning("Failed to parse plan JSON: %s. Response: %s", e, response.content[:200])
 
+        logger.warning("Could not extract plan from LLM response, using fallback single-step plan")
         return [
             {"step": 1, "description": "Complete the task directly", "depends_on": []}
         ]
@@ -242,9 +243,10 @@ class PlanAndExecuteAgent(BaseAgent):
                 return new_plan["plan"]
             if isinstance(new_plan, list):
                 return new_plan
-        except (json.JSONDecodeError, KeyError, IndexError):
-            pass
+        except (json.JSONDecodeError, KeyError, IndexError) as e:
+            logger.warning("Failed to parse replan JSON: %s. Response: %s", e, response.content[:200])
 
+        logger.warning("Could not extract replan from LLM response, keeping original plan")
         return plan
 
     async def _synthesize(

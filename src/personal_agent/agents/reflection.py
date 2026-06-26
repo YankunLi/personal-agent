@@ -178,7 +178,8 @@ class ReflectionAgent(BaseAgent):
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0]
             return json.loads(content)
-        except (json.JSONDecodeError, KeyError, IndexError):
+        except (json.JSONDecodeError, KeyError, IndexError) as e:
+            logger.warning("Failed to parse critique JSON: %s. Response: %s", e, result.content[:200])
             return {
                 "scores": {"accuracy": 7, "completeness": 7, "clarity": 7, "logic": 7},
                 "overall": 7.0,
