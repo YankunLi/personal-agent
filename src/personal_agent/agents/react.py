@@ -85,6 +85,12 @@ class ReActAgent(BaseAgent):
                 # Execute tools
                 results = await self._execute_tool_calls(response.tool_calls)
 
+                if len(results) != len(response.tool_calls):
+                    logger.warning(
+                        "Tool executor returned %d results for %d tool calls, truncating",
+                        len(results), len(response.tool_calls),
+                    )
+
                 for tc, result in zip(response.tool_calls, results):
                     state.steps.append(
                         AgentStep(thought=response.content, action=tc, observation=result)
