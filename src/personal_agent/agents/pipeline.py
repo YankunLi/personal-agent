@@ -104,7 +104,10 @@ class PipelineAgent(BaseAgent):
                 ))
                 # Keep current_input unchanged for the next stage
             finally:
-                await stage_agent.close()
+                try:
+                    await stage_agent.close()
+                except Exception as close_err:
+                    logger.warning("Error closing pipeline stage %d '%s': %s", i + 1, stage_cfg.name, close_err)
 
         state.done = True
         state.final_answer = current_input

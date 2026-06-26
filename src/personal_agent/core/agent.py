@@ -77,6 +77,8 @@ class BaseAgent(ABC):
         self._consolidation_max_messages = consolidation_max_messages
         self._closed = False
         self._streaming_enabled = False
+        self._cached_system_prompt: str | None = None
+        self._cached_self_instruction: str | None = None
 
     async def _fire(self, event: str, *args: Any) -> None:
         """Fire a callback event if it's set."""
@@ -206,7 +208,14 @@ class BaseAgent(ABC):
         return results
 
     async def _build_system_prompt(self) -> str:
-        """Build the full system prompt from base prompt + skills + agent knowledge."""
+        """Build the full system prompt from base prompt + skills + agent knowledge.
+
+        Results are cached until self_instruction changes in working memory.
+        """
+        self_instruction = self.working.get("self_instruction")
+        if self._cached_system_prompt is not None and self_instruction == self._cached_self_instruction:
+            return self._cached_system_prompt
+
         parts = [self._base_system_prompt] if self._base_system_prompt else []
 
         # Load agent self-knowledge (AGENT.md) — always after base prompt
@@ -224,11 +233,12 @@ class BaseAgent(ABC):
             if skill_prompt:
                 parts.append(skill_prompt)
 
-        self_instruction = self.working.get("self_instruction")
         if self_instruction:
             parts.append(f"\n[Self-Instruction]\n{self_instruction}")
 
-        return "\n\n".join(parts)
+        self._cached_system_prompt = "\n\n".join(parts)
+        self._cached_self_instruction = self_instruction
+        return self._cached_system_prompt
 
     async def _rebuild_system_message(self, state: AgentState) -> None:
         """Rebuild system prompt to pick up self_instruction changes made during execution."""
