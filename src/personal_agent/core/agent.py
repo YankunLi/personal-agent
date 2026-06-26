@@ -87,6 +87,17 @@ class BaseAgent(ABC):
 
     async def _call_llm(self, state: AgentState) -> ChatResponse:
         """Prepare context and call the LLM provider."""
+        # Rebuild system prompt to pick up any self_instruction changes
+        # made during execution via the update_instruction tool.
+        if state.messages and state.messages[0].role == Role.SYSTEM:
+            current_prompt = self._build_system_prompt()
+            old_content = state.messages[0].content or ""
+            # Preserve the memory index appended by _init_state
+            mem_marker = "══════════ MEMORY INDEX ══════════"
+            if mem_marker in old_content:
+                current_prompt += "\n\n" + mem_marker + old_content.split(mem_marker, 1)[1]
+            state.messages[0].content = current_prompt
+
         messages = state.messages
         if self.context_manager:
             messages = await self.context_manager.prepare(messages)
