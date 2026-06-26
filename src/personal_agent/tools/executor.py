@@ -98,41 +98,45 @@ class ToolExecutor:
     async def execute_all(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
         """Execute multiple tool calls.
 
-        Runs in parallel by default. If any tool is marked as mutating
-        (e.g. write_file), runs sequentially to avoid race conditions
-        where a read and write to the same resource execute in an
-        undefined order.
+        Runs non-mutating tools in parallel, then mutating tools sequentially
+        to avoid race conditions on shared resources.
         """
         if not tool_calls:
             return []
 
-        has_mutating = any(
-            self._registry.get(tc.name).spec.mutating
-            for tc in tool_calls
-            if tc.name in self._registry
-        )
-
-        if has_mutating:
-            results = []
-            for tc in tool_calls:
-                results.append(await self.execute(tc))
-            return results
-
-        results = await asyncio.gather(
-            *[self.execute(tc) for tc in tool_calls],
-            return_exceptions=True,
-        )
-
-        handled: list[ToolResult] = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                handled.append(
-                    ToolResult(
-                        call_id=tool_calls[i].id,
-                        name=tool_calls[i].name,
-                        error=str(result),
-                    )
-                )
+        # Separate mutating and non-mutating calls
+        mutating: list[ToolCall] = []
+        non_mutating: list[ToolCall] = []
+        for tc in tool_calls:
+            if tc.name in self._registry and self._registry.get(tc.name).spec.mutating:
+                mutating.append(tc)
             else:
-                handled.append(result)
-        return handled
+                non_mutating.append(tc)
+
+        results: list[ToolResult] = []
+
+        # Run non-mutating tools in parallel
+        if non_mutating:
+            parallel_results = await asyncio.gather(
+                *[self.execute(tc) for tc in non_mutating],
+                return_exceptions=True,
+            )
+            for i, result in enumerate(parallel_results):
+                if isinstance(result, Exception):
+                    results.append(
+                        ToolResult(
+                            call_id=non_mutating[i].id,
+                            name=non_mutating[i].name,
+                            error=str(result),
+                        )
+                    )
+                else:
+                    results.append(result)
+
+        # Run mutating tools sequentially
+        for tc in mutating:
+            results.append(await self.execute(tc))
+
+        # Preserve original order
+        id_to_result = {r.call_id: r for r in results}
+        return [id_to_result[tc.id] for tc in tool_calls]
