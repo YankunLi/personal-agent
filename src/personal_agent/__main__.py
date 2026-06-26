@@ -103,20 +103,23 @@ async def run_agent(task: str, config_path: str | None = None, workdir: Path | N
         on_answer=display.on_answer,
     )
 
-    result = await agent.run(task)
+    try:
+        result = await agent.run(task)
 
-    # Save session
-    if current:
-        current.short_term = agent.short_term
-        current.working = agent.working
-        session_mgr.save_current()
+        # Save session
+        if current:
+            current.short_term = agent.short_term
+            current.working = agent.working
+            session_mgr.save_current()
 
-    print(f"{C_DIM}{'─' * 60}{C_RESET}")
-    print(f"{C_DIM}Completed in {result.elapsed_ms:.0f}ms, {len(result.steps)} steps{C_RESET}")
-    if result.token_usage:
-        usage = result.token_usage
-        print(f"{C_DIM}Tokens: {usage.get('total_tokens', usage.get('input_tokens', 0) + usage.get('output_tokens', 0))}{C_RESET}")
-    print()
+        print(f"{C_DIM}{'─' * 60}{C_RESET}")
+        print(f"{C_DIM}Completed in {result.elapsed_ms:.0f}ms, {len(result.steps)} steps{C_RESET}")
+        if result.token_usage:
+            usage = result.token_usage
+            print(f"{C_DIM}Tokens: {usage.get('total_tokens', usage.get('input_tokens', 0) + usage.get('output_tokens', 0))}{C_RESET}")
+        print()
+    except KeyboardInterrupt:
+        print(f"\n{C_YELLOW}Interrupted{C_RESET}")
     print(result.answer)
 
 
@@ -454,6 +457,9 @@ async def _process_task(agent, task: str, session_tasks: list[dict], settings: S
 
     try:
         result = await agent.run(task)
+    except KeyboardInterrupt:
+        print(f"\n{C_YELLOW}Interrupted{C_RESET}")
+        return
     except Exception as e:
         print(f"{C_RED}Error: {e}{C_RESET}")
         return
