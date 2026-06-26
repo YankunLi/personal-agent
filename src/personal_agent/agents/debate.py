@@ -101,7 +101,7 @@ class DebateAgent(BaseAgent):
 
         try:
             # Create role sub-agents (once, reused across rounds)
-            extra_tools = self.tools.list_tools()
+            extra_tools = self.tools.list_mcp_tools()
             for role in self._roles:
                 sub_cfg = SubAgentConfig(
                     pattern="react",
@@ -200,7 +200,7 @@ class DebateAgent(BaseAgent):
         )
         judge_agent = await create_sub_agent(
             judge_cfg, providers=self._providers,
-            extra_tools=self.tools.list_tools(),
+            extra_tools=self.tools.list_mcp_tools(),
         )
         try:
             result = await judge_agent.run(judge_task)

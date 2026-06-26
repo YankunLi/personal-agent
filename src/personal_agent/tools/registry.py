@@ -57,6 +57,11 @@ class ToolRegistry:
         """Return all registered tool instances."""
         return list(self._tools.values())
 
+    def list_mcp_tools(self) -> list[Tool]:
+        """Return only MCP tool instances (safe to share with sub-agents)."""
+        from personal_agent.tools.mcp.wrapper import MCPToolWrapper
+        return [t for t in self._tools.values() if isinstance(t, MCPToolWrapper)]
+
     def remove(self, name: str) -> None:
         """Remove a tool from the registry."""
         self._tools.pop(name, None)

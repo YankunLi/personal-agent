@@ -130,7 +130,7 @@ class ParallelJudgeAgent(BaseAgent):
         )
         agent = await create_sub_agent(
             sub_cfg, self._providers,
-            extra_tools=self.tools.list_tools(),
+            extra_tools=self.tools.list_mcp_tools(),
         )
         try:
             result = await agent.run(task)

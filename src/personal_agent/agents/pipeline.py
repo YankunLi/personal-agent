@@ -89,7 +89,7 @@ class PipelineAgent(BaseAgent):
             )
             stage_agent = await create_sub_agent(
                 sub_cfg, providers=self._providers,
-                extra_tools=self.tools.list_tools(),
+                extra_tools=self.tools.list_mcp_tools(),
             )
             try:
                 stage_result = await stage_agent.run(stage_task)
