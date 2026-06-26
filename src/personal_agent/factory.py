@@ -9,6 +9,7 @@ from personal_agent.config import Settings, SubAgentConfig, load_config
 from personal_agent.context.budget import ContextBudgetManager
 from personal_agent.context.manager import ContextManager
 from personal_agent.core.agent import BaseAgent
+from personal_agent.memory.agent_knowledge import AgentKnowledge
 from personal_agent.memory.file_store import FileMemoryStore
 from personal_agent.memory.short_term import ShortTermMemory
 from personal_agent.memory.working import WorkingMemory
@@ -190,6 +191,15 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
     # File-based memory store (Claude Code style)
     memory_store = FileMemoryStore(storage_dir=memory_cfg.memory_dir)
 
+    # Agent self-knowledge (AGENT.md) — global + project-level
+    agent_knowledge = None
+    if agent_cfg.self_knowledge_enabled:
+        project_dir = workspace_dir if workspace_dir else None
+        agent_knowledge = AgentKnowledge(
+            global_path=agent_cfg.self_knowledge_path,
+            project_dir=project_dir,
+        )
+
     # Create budget manager
     budget_manager = ContextBudgetManager(
         context_window=settings.budget.context_window,
@@ -243,6 +253,19 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
         fn=read_memory,
     ))
 
+    # Register self-upgrade tool (agent can modify its own memory during execution)
+    from personal_agent.memory.long_term import LongTermMemory
+    from personal_agent.tools.builtin.self_upgrade import create_self_upgrade_tool
+
+    long_term = LongTermMemory(memory_store)
+
+    update_tool = create_self_upgrade_tool(
+        working_memory=working,
+        long_term_memory=long_term,
+        agent_knowledge=agent_knowledge,
+    )
+    tool_registry.register(update_tool)
+
     # Register sub-agents as tools (AgentTool)
     from personal_agent.tools.agent_tool import AgentTool
     for name, sub_cfg in settings.sub_agents.items():
@@ -285,7 +308,9 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
         "short_term_memory": short_term,
         "working_memory": working,
         "memory_store": memory_store,
+        "long_term_memory": long_term,
         "consolidation_provider": consolidation_provider,
+        "agent_knowledge": agent_knowledge,
         "budget_manager": budget_manager,
         "context_manager": context_manager,
         "skill_manager": skill_manager,

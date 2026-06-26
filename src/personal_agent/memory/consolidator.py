@@ -23,13 +23,23 @@ For each piece of information you extract, decide:
 - **UPDATE**: Update an existing memory (refine or correct prior knowledge)
 - **IGNORE**: Transient conversation that doesn't need to be remembered
 
-Output a JSON array of memory operations. Each operation should have:
+Output a JSON object with two fields:
 {
-  "action": "new" | "update" | "ignore",
-  "name": "Short descriptive title (3-6 words)",
-  "type": "user" | "feedback" | "project" | "reference",
-  "description": "One-line summary for the index (max 150 chars)",
-  "content": "Detailed memory content (2-5 sentences, markdown)"
+  "memories": [
+    {
+      "action": "new" | "update" | "ignore",
+      "name": "Short descriptive title (3-6 words)",
+      "type": "user" | "feedback" | "project" | "reference",
+      "description": "One-line summary for the index (max 150 chars)",
+      "content": "Detailed memory content (2-5 sentences, markdown)"
+    }
+  ],
+  "agent_learnings": [
+    {
+      "section": "Style" | "Capabilities" | "Rules" | "Project Insights",
+      "text": "One concrete learning the agent should remember (bullet-point style)"
+    }
+  ]
 }
 
 Memory type guide:
@@ -38,10 +48,16 @@ Memory type guide:
 - **project**: Project-specific context — decisions, deadlines, who is doing what, why
 - **reference**: Pointers to external systems — where bugs are tracked, which Slack channel, etc.
 
+Agent learnings guide:
+- **Style**: Communication style preferences that emerged (language, verbosity, format)
+- **Capabilities**: What the agent proved good/bad at, new skills demonstrated
+- **Rules**: Concrete rules discovered through trial and error ("always do X", "never do Y")
+- **Project Insights**: Project-specific knowledge useful for future tasks
+
 Only extract information that will be USEFUL in future conversations. Don't save transient
 task details, one-off questions, or things that are obvious from the codebase.
 
-IMPORTANT: If the conversation doesn't contain any new lasting information, return an empty array []."""
+IMPORTANT: If the conversation doesn't contain any new lasting information, return empty arrays."""
 
 CONSOLIDATION_USER_PROMPT = """Analyze this conversation and extract key information to remember:
 
@@ -50,7 +66,7 @@ CONSOLIDATION_USER_PROMPT = """Analyze this conversation and extract key informa
 Existing memories (for reference, to avoid duplicates):
 {existing_memories}
 
-Output a JSON array of memory operations (new/update/ignore):"""
+Output a JSON object with 'memories' and 'agent_learnings' arrays:"""
 
 
 class MemoryConsolidator:
@@ -74,12 +90,14 @@ class MemoryConsolidator:
         self,
         messages: list[Message],
         existing_memories: list[dict[str, str]] | None = None,
+        agent_knowledge: Any = None,
     ) -> list[dict[str, Any]]:
         """Analyze conversation and save extracted memories.
 
         Args:
             messages: Conversation messages to analyze.
             existing_memories: List of existing memory entries (to avoid duplicates).
+            agent_knowledge: Optional AgentKnowledge instance for agent learnings.
 
         Returns:
             List of memory operations that were applied.
@@ -92,10 +110,26 @@ class MemoryConsolidator:
             return []
 
         try:
-            operations = await self._extract(messages, existing_memories)
+            result = await self._extract(messages, existing_memories)
+            if not result:
+                return []
+
+            operations = result.get("memories", [])
+            learnings = result.get("agent_learnings", [])
+
             applied = await self._apply(operations)
             if applied:
                 await self._store.build_index()
+
+            # Apply agent learnings to AGENT.md
+            if learnings and agent_knowledge:
+                try:
+                    added = agent_knowledge.append_learnings(learnings)
+                    if added:
+                        logger.info("Agent knowledge: %d new learnings added", added)
+                except Exception as e:
+                    logger.warning("Failed to append agent learnings: %s", e)
+
             return applied
         except Exception as e:
             logger.warning("Consolidation failed: %s", e)
@@ -105,8 +139,11 @@ class MemoryConsolidator:
         self,
         messages: list[Message],
         existing_memories: list[dict[str, str]] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Call the LLM to extract memory operations from conversation."""
+    ) -> dict[str, list[dict[str, Any]]] | None:
+        """Call the LLM to extract memory operations and agent learnings.
+
+        Returns a dict with 'memories' and 'agent_learnings' keys, or None on failure.
+        """
         import json
 
         # Format conversation
@@ -141,23 +178,31 @@ class MemoryConsolidator:
         content = response.content.strip()
 
         # Parse JSON — try direct parse first, then extract from code blocks
+        parsed = None
         try:
-            operations = json.loads(content)
-            if not isinstance(operations, list):
-                return []
-            return operations
+            parsed = json.loads(content)
         except json.JSONDecodeError:
             import re as _re
-            match = _re.search(r"```(?:json)?\s*(\[.*?\])\s*```", content, _re.DOTALL)
+            match = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, _re.DOTALL)
             if match:
                 try:
-                    operations = json.loads(match.group(1))
-                    if isinstance(operations, list):
-                        return operations
+                    parsed = json.loads(match.group(1))
                 except json.JSONDecodeError:
                     pass
+
+        if not parsed:
             logger.warning("Failed to parse consolidation response: %s", content[:200])
-            return []
+            return None
+
+        # Handle both old (array) and new (object) formats
+        if isinstance(parsed, list):
+            return {"memories": parsed, "agent_learnings": []}
+        if isinstance(parsed, dict):
+            return {
+                "memories": parsed.get("memories", []),
+                "agent_learnings": parsed.get("agent_learnings", []),
+            }
+        return None
 
     async def _apply(self, operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Apply memory operations to the store."""
@@ -185,6 +230,10 @@ class MemoryConsolidator:
                     applied.append(op)
                     logger.info("Memory created: %s (%s)", name, memory_type)
                 elif action == "update":
+                    if self._store.get(name) is None:
+                        logger.warning(
+                            "Memory update requested for '%s' but it doesn't exist, creating new", name
+                        )
                     await self._store.add(name, content, memory_type, description)
                     applied.append(op)
                     logger.info("Memory updated: %s (%s)", name, memory_type)

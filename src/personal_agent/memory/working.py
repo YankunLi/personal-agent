@@ -36,3 +36,6 @@ class WorkingMemory:
 
     def __len__(self) -> int:
         return len(self._data)
+
+    def __bool__(self) -> bool:
+        return True  # Always truthy — empty working memory is still valid

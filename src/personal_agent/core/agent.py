@@ -20,7 +20,6 @@ from personal_agent.types import (
     AgentCallbacks,
     AgentResult,
     AgentState,
-    AgentStep,
     Message,
     Role,
     ToolCall,
@@ -41,7 +40,9 @@ class BaseAgent(ABC):
         short_term_memory: ShortTermMemory | None = None,
         working_memory: WorkingMemory | None = None,
         memory_store: FileMemoryStore | None = None,
+        long_term_memory: Any = None,
         consolidation_provider: Any = None,
+        agent_knowledge: Any = None,
         budget_manager: Any = None,
         context_manager: ContextManager | None = None,
         skill_manager: SkillManager | None = None,
@@ -57,7 +58,9 @@ class BaseAgent(ABC):
         self.short_term = short_term_memory or ShortTermMemory()
         self.working = working_memory or WorkingMemory()
         self.memory_store = memory_store
+        self.long_term = long_term_memory
         self.consolidation_provider = consolidation_provider
+        self.agent_knowledge = agent_knowledge
         self.budget_manager = budget_manager
         self.context_manager = context_manager
         self.skill_manager = skill_manager
@@ -104,8 +107,18 @@ class BaseAgent(ABC):
         return await self.tool_executor.execute_all(tool_calls)
 
     def _build_system_prompt(self) -> str:
-        """Build the full system prompt from base prompt + skills."""
+        """Build the full system prompt from base prompt + skills + agent knowledge."""
         parts = [self._base_system_prompt] if self._base_system_prompt else []
+
+        # Load agent self-knowledge (AGENT.md) — always after base prompt
+        if self.agent_knowledge:
+            knowledge_text = self.agent_knowledge.load()
+            if knowledge_text:
+                parts.append(
+                    "══════════ AGENT SELF-KNOWLEDGE ══════════\n"
+                    f"{knowledge_text}\n"
+                    "══════════════════════════════════════════════"
+                )
 
         if self.skill_manager:
             skill_prompt = self.skill_manager.build_prompt()
@@ -188,12 +201,17 @@ class BaseAgent(ABC):
                     provider=self.consolidation_provider,
                 )
                 existing = self.memory_store.list_all()
-                # Use the full conversation from state.messages plus the final answer
                 conversation = list(state.messages)
+                # Only append the final answer if it's not already the last message
+                # (e.g., max_steps exceeded produces a synthetic answer not in the conversation)
                 if answer and answer != "No answer produced.":
-                    conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
+                    last_msg = conversation[-1] if conversation else None
+                    if not last_msg or last_msg.role != Role.ASSISTANT or last_msg.content != answer[:2000]:
+                        conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
                 asyncio.create_task(
-                    self._run_consolidation(consolidator, conversation, existing)
+                    self._run_consolidation(
+                        consolidator, conversation, existing, self.agent_knowledge
+                    )
                 )
             except Exception as e:
                 logger.warning("Memory consolidation failed: %s", e)
@@ -206,11 +224,12 @@ class BaseAgent(ABC):
         )
 
     async def _run_consolidation(
-        self, consolidator: Any, messages: list[Message], existing: list[dict[str, str]]
+        self, consolidator: Any, messages: list[Message], existing: list[dict[str, str]],
+        agent_knowledge: Any = None,
     ) -> None:
         """Run memory consolidation in the background (fire-and-forget)."""
         try:
-            await consolidator.consolidate(messages, existing)
+            await consolidator.consolidate(messages, existing, agent_knowledge=agent_knowledge)
         except Exception as e:
             logger.warning("Background memory consolidation failed: %s", e)
 
@@ -237,7 +256,7 @@ class BaseAgent(ABC):
             except Exception as e:
                 logger.warning("Error closing provider: %s", e)
 
-    async def __aenter__(self) -> "BaseAgent":
+    async def __aenter__(self) -> BaseAgent:
         return self
 
     async def __aexit__(self, *args: Any) -> None:

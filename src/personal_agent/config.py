@@ -35,6 +35,8 @@ class AgentConfig(BaseModel):
     workspace: str = "./workspace"
     system_prompt: str = ""
     skills: list[str] = Field(default_factory=list)
+    self_knowledge_path: str = "~/.personal-agent/agent/AGENT.md"
+    self_knowledge_enabled: bool = True
 
 
 # ── Sub-Agent ──────────────────────────────────────────────────────────────────

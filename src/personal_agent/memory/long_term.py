@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from personal_agent.memory.base import keyword_search
@@ -21,7 +22,7 @@ class LongTermMemory:
     async def remember(self, content: str, metadata: dict[str, Any] | None = None) -> str:
         """Store a memory. Returns the entry name."""
         metadata = metadata or {}
-        name = metadata.get("name", f"memory_{hash(content) % 100000}")
+        name = metadata.get("name", f"memory_{hashlib.md5(content.encode()).hexdigest()[:8]}")
         memory_type = metadata.get("type", "user")
         description = metadata.get("description", name)
         await self._store.add(name, content, memory_type=memory_type, description=description)

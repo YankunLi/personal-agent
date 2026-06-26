@@ -253,8 +253,9 @@ class FileMemoryStore:
         stale = [e for e in entries if not (self._dir / e["filename"]).exists()]
 
         if stale:
-            for entry in stale:
-                self._remove_index_entry(entry["name"])
+            stale_names = {e["name"] for e in stale}
+            remaining = [e for e in entries if e["name"] not in stale_names]
+            self._write_index_locked(remaining)
             self._invalidate_cache()
 
         return len(stale)
@@ -290,26 +291,6 @@ class FileMemoryStore:
 
     def _remove_index_entry_locked(self, name: str) -> None:
         """Remove an entry from MEMORY.md. Caller must hold lock."""
-        entries = [e for e in self._load_index() if e["name"] != name]
-        self._write_index_locked(entries)
-
-    # Backwards-compatible sync wrappers for code that hasn't migrated yet
-    def _update_index_entry(self, name: str, filename: str, description: str) -> None:
-        """Sync wrapper for backwards compatibility."""
-        entries = self._load_index()
-        found = False
-        for entry in entries:
-            if entry["name"] == name or entry["filename"] == filename:
-                entry["filename"] = filename
-                entry["description"] = description
-                found = True
-                break
-        if not found:
-            entries.append({"name": name, "filename": filename, "description": description})
-        self._write_index_locked(entries)
-
-    def _remove_index_entry(self, name: str) -> None:
-        """Sync wrapper for backwards compatibility."""
         entries = [e for e in self._load_index() if e["name"] != name]
         self._write_index_locked(entries)
 
