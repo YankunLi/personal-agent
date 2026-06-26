@@ -150,6 +150,9 @@ def main():
     parser.add_argument("--api-key", help="API key")
     parser.add_argument("--list-providers", action="store_true", help="List available providers and exit")
     parser.add_argument("--interactive", "-i", action="store_true", help="Run in interactive mode")
+    parser.add_argument("--serve", action="store_true", help="Start WebSocket server for web UI access (use with -i)")
+    parser.add_argument("--ws-host", default="localhost", help="WebSocket server host (default: localhost)")
+    parser.add_argument("--ws-port", type=int, default=8765, help="WebSocket server port (default: 8765)")
 
     args = parser.parse_args()
 
@@ -172,7 +175,10 @@ def main():
     overrides = _build_overrides(args)
 
     if args.interactive:
-        asyncio.run(interactive_loop(args.config, overrides, workdir))
+        asyncio.run(interactive_loop(
+            args.config, overrides, workdir,
+            serve=args.serve, ws_host=args.ws_host, ws_port=args.ws_port,
+        ))
     elif args.task:
         asyncio.run(run_agent(args.task, args.config, workdir))
     else:
@@ -308,8 +314,18 @@ def _prompt_init(workdir: Path) -> None:
     print(f"  {C_DIM}Expected config file: {pa_path}{C_RESET}")
 
 
-async def interactive_loop(config_path: str | None, overrides: dict, workdir: Path) -> None:
-    """Run an interactive agent session using the AgentServer + CLIChannel architecture."""
+async def interactive_loop(
+    config_path: str | None,
+    overrides: dict,
+    workdir: Path,
+    serve: bool = False,
+    ws_host: str = "localhost",
+    ws_port: int = 8765,
+) -> None:
+    """Run an interactive agent session using the AgentServer + CLIChannel architecture.
+
+    When serve=True, also starts a WebSocketChannel for browser-based UI access.
+    """
     from personal_agent.project import find_project_root, load_project, PA_FILE
     from personal_agent.server import AgentServer
     from personal_agent.channels.cli import CLIChannel
@@ -341,6 +357,21 @@ async def interactive_loop(config_path: str | None, overrides: dict, workdir: Pa
         config_path=str(loaded_path) if loaded_path else None,
     )
     server.add_channel(cli)
+
+    # Add WebSocket channel if --serve is set
+    if serve:
+        from personal_agent.channels.websocket import WebSocketChannel
+        ws = WebSocketChannel(
+            settings=settings,
+            router=server.router,
+            host=ws_host,
+            port=ws_port,
+        )
+        server.add_channel(ws)
+        # Show web UI path
+        web_ui_path = Path(__file__).resolve().parent / "web" / "index.html"
+        print(f"  {C_GREEN}Web UI{C_RESET} available: open {C_BOLD}{web_ui_path}{C_RESET} in your browser")
+        print()
 
     try:
         await server.start()
