@@ -173,6 +173,8 @@ class AnthropicProvider(Provider):
                 content = ""
                 tool_calls: list[dict] = []
                 current_tool: dict | None = None
+                stop_reason = "end_turn"
+                stream_usage: dict[str, int] = {}
 
                 async for event in stream:
                     if event.type == "text":
@@ -203,17 +205,32 @@ class AnthropicProvider(Provider):
                                 "arguments": args,
                             })
                             current_tool = None
+                    elif event.type == "message_delta":
+                        stop_reason = event.delta.stop_reason or stop_reason
+                        if event.usage:
+                            stream_usage = {
+                                "input_tokens": event.usage.input_tokens or 0,
+                                "output_tokens": event.usage.output_tokens or 0,
+                            }
 
-                # Yield final response with all tool calls
+                # Always yield final response with usage (content already sent as deltas)
                 if tool_calls:
                     yield ChatResponse(
-                        content=content,
+                        content="",
                         tool_calls=[
                             ToolCall(id=tc["id"], name=tc["name"], arguments=tc["arguments"])
                             for tc in tool_calls
                         ],
                         finish_reason="tool_calls",
                         model=self._model,
+                        usage=stream_usage,
+                    )
+                else:
+                    yield ChatResponse(
+                        content="",
+                        finish_reason=stop_reason,
+                        model=self._model,
+                        usage=stream_usage,
                     )
 
         except Exception as e:
