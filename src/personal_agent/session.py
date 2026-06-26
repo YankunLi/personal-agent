@@ -100,13 +100,15 @@ class SessionManager:
     @property
     def current(self) -> Session | None:
         """Get the current active session."""
-        if self._current_id:
-            return self._sessions.get(self._current_id)
-        return None
+        with self._lock:
+            if self._current_id:
+                return self._sessions.get(self._current_id)
+            return None
 
     def list_sessions(self) -> list[Session]:
         """List all loaded sessions."""
-        return sorted(self._sessions.values(), key=lambda s: s.updated_at, reverse=True)
+        with self._lock:
+            return sorted(self._sessions.values(), key=lambda s: s.updated_at, reverse=True)
 
     def create(self, name: str) -> Session:
         """Create a new session and switch to it."""
@@ -204,25 +206,27 @@ class SessionManager:
 
     def _find(self, id_or_name: str) -> Session | None:
         """Find a session by ID or name."""
-        # Try exact ID match first
-        if id_or_name in self._sessions:
-            return self._sessions[id_or_name]
-        # Try name match
-        for s in self._sessions.values():
-            if s.name == id_or_name:
-                return s
-        # Try partial ID match
-        for s in self._sessions.values():
-            if s.id.startswith(id_or_name):
-                return s
-        return None
+        with self._lock:
+            # Try exact ID match first
+            if id_or_name in self._sessions:
+                return self._sessions[id_or_name]
+            # Try name match
+            for s in self._sessions.values():
+                if s.name == id_or_name:
+                    return s
+            # Try partial ID match
+            for s in self._sessions.values():
+                if s.id.startswith(id_or_name):
+                    return s
+            return None
 
     def find_by_key(self, key: SessionKey) -> Session | None:
         """Find a session by its routing key (channel, user_id, conversation_id)."""
-        for s in self._sessions.values():
-            if s.channel == key.channel and s.user_id == key.user_id and s.conversation_id == key.conversation_id:
-                return s
-        return None
+        with self._lock:
+            for s in self._sessions.values():
+                if s.channel == key.channel and s.user_id == key.user_id and s.conversation_id == key.conversation_id:
+                    return s
+            return None
 
     def create_for_key(self, key: SessionKey) -> Session:
         """Create a new session for the given routing key and switch to it."""
