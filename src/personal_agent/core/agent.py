@@ -92,16 +92,7 @@ class BaseAgent(ABC):
 
     async def _call_llm(self, state: AgentState) -> ChatResponse:
         """Prepare context and call the LLM provider."""
-        # Rebuild system prompt to pick up any self_instruction changes
-        # made during execution via the update_instruction tool.
-        if state.messages and state.messages[0].role == Role.SYSTEM:
-            current_prompt = await self._build_system_prompt()
-            old_content = state.messages[0].content or ""
-            # Preserve the memory index appended by _init_state
-            mem_marker = "══════════ MEMORY INDEX ══════════"
-            if mem_marker in old_content:
-                current_prompt += "\n\n" + mem_marker + old_content.split(mem_marker, 1)[1]
-            state.messages[0].content = current_prompt
+        await self._rebuild_system_message(state)
 
         messages = state.messages
         if self.context_manager:
@@ -123,14 +114,7 @@ class BaseAgent(ABC):
 
     async def _call_llm_stream(self, state: AgentState) -> ChatResponse:
         """Call the LLM provider with streaming, firing text_delta and tool_call_stream callbacks."""
-        # Rebuild system prompt to pick up any self_instruction changes
-        if state.messages and state.messages[0].role == Role.SYSTEM:
-            current_prompt = await self._build_system_prompt()
-            old_content = state.messages[0].content or ""
-            mem_marker = "══════════ MEMORY INDEX ══════════"
-            if mem_marker in old_content:
-                current_prompt += "\n\n" + mem_marker + old_content.split(mem_marker, 1)[1]
-            state.messages[0].content = current_prompt
+        await self._rebuild_system_message(state)
 
         messages = state.messages
         if self.context_manager:
@@ -196,6 +180,17 @@ class BaseAgent(ABC):
             parts.append(f"\n[Self-Instruction]\n{self_instruction}")
 
         return "\n\n".join(parts)
+
+    async def _rebuild_system_message(self, state: AgentState) -> None:
+        """Rebuild system prompt to pick up self_instruction changes made during execution."""
+        if state.messages and state.messages[0].role == Role.SYSTEM:
+            current_prompt = await self._build_system_prompt()
+            old_content = state.messages[0].content or ""
+            # Preserve the memory index appended by _init_state
+            mem_marker = "══════════ MEMORY INDEX ══════════"
+            if mem_marker in old_content:
+                current_prompt += "\n\n" + mem_marker + old_content.split(mem_marker, 1)[1]
+            state.messages[0].content = current_prompt
 
     async def _init_state(self, task: str, include_history: bool = True) -> AgentState:
         """Initialize agent state with system prompt, memory index, history, and user task."""
