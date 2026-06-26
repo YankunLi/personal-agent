@@ -108,9 +108,13 @@ class ToolExecutor:
         mutating: list[ToolCall] = []
         non_mutating: list[ToolCall] = []
         for tc in tool_calls:
-            if tc.name in self._registry and self._registry.get(tc.name).spec.mutating:
-                mutating.append(tc)
-            else:
+            try:
+                tool = self._registry.get(tc.name)
+                if tool.spec.mutating:
+                    mutating.append(tc)
+                else:
+                    non_mutating.append(tc)
+            except ToolNotFoundError:
                 non_mutating.append(tc)
 
         results: list[ToolResult] = []
