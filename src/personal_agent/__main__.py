@@ -546,12 +546,22 @@ async def _handle_command(
 
     elif cmd == "/restart":
         print(f"{C_YELLOW}Restarting agent...{C_RESET}")
+
+        # Save current session state before restart
+        if session_mgr and session_mgr.current:
+            session_mgr.current.short_term = agent.short_term
+            session_mgr.current.working = agent.working
+            session_mgr.save_current()
+
         await agent.close()
         new_agent = await create_agent(settings, **overrides)
-        # NOTE: __dict__.update bypasses properties and descriptors. This works
-        # because BaseAgent uses plain attributes (no __setattr__ overrides), but
-        # would break if any attribute becomes a property in the future.
         agent.__dict__.update(new_agent.__dict__)
+
+        # Re-link session memory to the new agent
+        if session_mgr and session_mgr.current:
+            agent.short_term = session_mgr.current.short_term
+            agent.working = session_mgr.current.working
+
         print(f"{C_GREEN}✓{C_RESET} Agent restarted with current settings.")
 
     elif cmd == "/tools":
