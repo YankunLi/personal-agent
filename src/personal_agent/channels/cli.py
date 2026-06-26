@@ -261,7 +261,11 @@ class CLIChannel(Channel):
             self._multiline_buffer = []
             self._in_multiline = False
             if task.strip():
-                asyncio.create_task(self._process_task(task))
+                t = asyncio.create_task(self._process_task(task))
+                t.add_done_callback(
+                    lambda t: logger.error("Multiline task failed: %s", t.exception())
+                    if t.exception() else None
+                )
         elif line.strip() == "%%":
             self._multiline_buffer = []
             self._in_multiline = False
