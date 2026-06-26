@@ -147,6 +147,7 @@ class FeishuChannel(Channel):
         self._conn_sessions: dict[str, Any] = {}
         self._pending_tasks: set[asyncio.Task] = set()
         self._agent_lock = asyncio.Lock()
+        self._stop_event = asyncio.Event()
 
     # ── Channel interface ────────────────────────────────────────────────────
 
@@ -177,11 +178,11 @@ class FeishuChannel(Channel):
         print(f"  {_C_GREEN}Feishu{_C_RESET} webhook: {_C_BOLD}http://0.0.0.0:{self._webhook_port}{self._webhook_path}{_C_RESET}")
 
         # Keep running until stopped
-        while True:
-            await asyncio.sleep(3600)
+        await self._stop_event.wait()
 
     async def stop(self) -> None:
         """Stop the Feishu webhook server."""
+        self._stop_event.set()
         if self._runner:
             await self._runner.cleanup()
         for agent in self._conn_agents.values():
