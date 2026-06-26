@@ -56,3 +56,7 @@ class Provider(ABC):
     @property
     @abstractmethod
     def context_window(self) -> int: ...
+
+    async def close(self) -> None:
+        """Close the provider and release any resources (connections, pools, etc.)."""
+        pass
