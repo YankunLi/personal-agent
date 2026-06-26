@@ -42,16 +42,7 @@ class PipelineAgent(BaseAgent):
         state = await self._init_state(task)
 
         # Load relevant long-term memories
-        if self.long_term:
-            entries = await self.long_term.recall(task)
-            if entries:
-                memory_context = "Relevant past memories:\n" + "\n".join(
-                    f"- {e['content']}" for e in entries
-                )
-                state.messages.insert(
-                    1,
-                    self._make_message(Role.SYSTEM, memory_context),
-                )
+        await self._load_memories(state, task)
 
         if not self._stage_configs:
             return AgentResult(

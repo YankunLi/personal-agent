@@ -257,6 +257,23 @@ class BaseAgent(ABC):
         """Create a Message. Shared across all agent subclasses."""
         return Message(role=role, content=content)
 
+    async def _load_memories(self, state: AgentState, task: str) -> None:
+        """Load relevant long-term memories into the agent state.
+
+        Recalls entries from long-term memory and inserts them after the system
+        prompt so they are available as context for the current task.
+        """
+        if self.long_term:
+            entries = await self.long_term.recall(task)
+            if entries:
+                memory_context = "Relevant past memories:\n" + "\n".join(
+                    f"- {e['content']}" for e in entries
+                )
+                state.messages.insert(
+                    1,  # After system prompt
+                    self._make_message(Role.SYSTEM, memory_context),
+                )
+
     def _add_tool_results_to_messages(
         self, messages: list[Message], results: list[ToolResult]
     ) -> None:
