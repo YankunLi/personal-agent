@@ -201,7 +201,10 @@ class FeishuChannel(Channel):
         """Handle Feishu URL verification (GET request with challenge)."""
         challenge = request.query.get("challenge", "")
         token = request.query.get("token", "")
-        if self._verification_token and token != self._verification_token:
+        if not self._verification_token:
+            logger.warning("Feishu verification token not configured")
+            return web.json_response({"code": 1, "msg": "Verification token not configured"}, status=403)
+        if token != self._verification_token:
             logger.warning("Feishu verification token mismatch")
             return web.json_response({"code": 1, "msg": "Invalid token"}, status=403)
         logger.info("Feishu URL verification OK")
@@ -227,7 +230,10 @@ class FeishuChannel(Channel):
         if body.get("type") == "url_verification":
             challenge = body.get("challenge", "")
             token = body.get("token", "")
-            if self._verification_token and token != self._verification_token:
+            if not self._verification_token:
+                logger.warning("Feishu verification token not configured")
+                return web.json_response({"code": 1, "msg": "Verification token not configured"}, status=403)
+            if token != self._verification_token:
                 return web.json_response({"code": 1, "msg": "Invalid token"}, status=403)
             return web.json_response({"challenge": challenge})
 
