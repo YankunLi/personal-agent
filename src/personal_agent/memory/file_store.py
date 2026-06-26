@@ -139,7 +139,7 @@ class FileMemoryStore:
 
             await asyncio.to_thread(filepath.write_text, frontmatter + "\n\n" + content + "\n")
 
-            self._update_index_entry_locked(name, filename, description or name)
+            await self._update_index_entry_locked(name, filename, description or name)
             self._invalidate_cache()
 
         return filepath
@@ -181,7 +181,7 @@ class FileMemoryStore:
             except FileNotFoundError:
                 pass
 
-            self._remove_index_entry_locked(name)
+            await self._remove_index_entry_locked(name)
             self._invalidate_cache()
 
         return True
@@ -208,7 +208,7 @@ class FileMemoryStore:
                 except Exception:
                     continue
 
-            self._write_index_locked(entries)
+            await asyncio.to_thread(self._write_index_locked, entries)
             self._invalidate_cache()
 
         return self.index_path
@@ -262,13 +262,13 @@ class FileMemoryStore:
             return 0
 
         async with self._lock:
-            entries = self._load_index()
+            entries = await asyncio.to_thread(self._load_index)
             stale = [e for e in entries if not (self._dir / e["filename"]).exists()]
 
             if stale:
                 stale_names = {e["name"] for e in stale}
                 remaining = [e for e in entries if e["name"] not in stale_names]
-                self._write_index_locked(remaining)
+                await asyncio.to_thread(self._write_index_locked, remaining)
                 self._invalidate_cache()
 
         return len(stale)
@@ -288,9 +288,9 @@ class FileMemoryStore:
         tmp_path.write_text(content)
         os.replace(tmp_path, self.index_path)
 
-    def _update_index_entry_locked(self, name: str, filename: str, description: str) -> None:
+    async def _update_index_entry_locked(self, name: str, filename: str, description: str) -> None:
         """Add or update an entry in MEMORY.md. Caller must hold lock."""
-        entries = self._load_index()
+        entries = await asyncio.to_thread(self._load_index)
 
         found = False
         for entry in entries:
@@ -303,12 +303,12 @@ class FileMemoryStore:
         if not found:
             entries.append({"name": name, "filename": filename, "description": description})
 
-        self._write_index_locked(entries)
+        await asyncio.to_thread(self._write_index_locked, entries)
 
-    def _remove_index_entry_locked(self, name: str) -> None:
+    async def _remove_index_entry_locked(self, name: str) -> None:
         """Remove an entry from MEMORY.md. Caller must hold lock."""
-        entries = [e for e in self._load_index() if e["name"] != name]
-        self._write_index_locked(entries)
+        entries = [e for e in await asyncio.to_thread(self._load_index) if e["name"] != name]
+        await asyncio.to_thread(self._write_index_locked, entries)
 
     # ── Maintenance ──────────────────────────────────────────────────────────
 
@@ -329,5 +329,5 @@ class FileMemoryStore:
         async with self._lock:
             for f in self._dir.glob("*.md"):
                 f.unlink()
-            self._write_index_locked([])
+            await asyncio.to_thread(self._write_index_locked, [])
             self._invalidate_cache()
