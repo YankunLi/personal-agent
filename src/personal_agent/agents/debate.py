@@ -99,6 +99,7 @@ class DebateAgent(BaseAgent):
 
         all_steps: list[AgentStep] = []
         previous_responses: dict[str, str] = {}
+        judge_answer = "No debate result produced."
 
         try:
             # Create role sub-agents (once, reused across rounds)
