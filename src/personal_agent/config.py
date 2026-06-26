@@ -17,8 +17,8 @@ class ProviderCredentials(BaseModel):
     api_key: str = ""
     api_base: str | None = None
     extra_headers: dict[str, str] | None = None
-    timeout: float = 120.0
-    max_retries: int = 3
+    timeout: float | None = None
+    max_retries: int | None = None
 
 
 # ── Agent ──────────────────────────────────────────────────────────────────────
