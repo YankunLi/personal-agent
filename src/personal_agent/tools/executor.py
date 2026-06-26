@@ -122,7 +122,9 @@ class ToolExecutor:
                 return_exceptions=True,
             )
             for i, result in enumerate(parallel_results):
-                if isinstance(result, Exception):
+                if isinstance(result, ToolResult):
+                    results.append(result)
+                else:
                     results.append(
                         ToolResult(
                             call_id=non_mutating[i].id,
@@ -130,8 +132,6 @@ class ToolExecutor:
                             error=str(result),
                         )
                     )
-                else:
-                    results.append(result)
 
         # Run mutating tools sequentially
         for tc in mutating:
