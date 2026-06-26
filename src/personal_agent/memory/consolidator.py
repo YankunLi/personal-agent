@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
 
 from personal_agent.memory.file_store import MEMORY_TYPES, FileMemoryStore
@@ -189,12 +188,19 @@ class MemoryConsolidator:
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError:
-            match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
-            if match:
-                try:
-                    parsed = json.loads(match.group(1))
-                except json.JSONDecodeError:
-                    pass
+            # Try extracting from code blocks (split-based, handles nested JSON)
+            if "```" in content:
+                parts = content.split("```")
+                # The JSON should be in the second segment (after opening ```)
+                for part in parts[1::2]:  # Skip every other segment (code blocks)
+                    part = part.strip()
+                    if part.startswith("json"):
+                        part = part[4:].strip()
+                    try:
+                        parsed = json.loads(part)
+                        break
+                    except json.JSONDecodeError:
+                        continue
 
         if not parsed:
             logger.warning("Failed to parse consolidation response: %s", content[:200])
