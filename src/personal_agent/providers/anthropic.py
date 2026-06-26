@@ -212,7 +212,7 @@ class AnthropicProvider(Provider):
                             ToolCall(id=tc["id"], name=tc["name"], arguments=tc["arguments"])
                             for tc in tool_calls
                         ],
-                        finish_reason="tool_use",
+                        finish_reason="tool_calls",
                         model=self._model,
                     )
 
