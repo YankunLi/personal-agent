@@ -114,8 +114,6 @@ class BudgetStrategy(ContextStrategy):
         self._max_tokens = max_tokens
 
     async def apply(self, messages: list[Message]) -> list[Message]:
-        from personal_agent.context.budget import estimate_message_tokens
-
         # Allocate budget based on current messages
         system_prompt = ""
         for m in messages:
@@ -125,10 +123,6 @@ class BudgetStrategy(ContextStrategy):
 
         self._budget.allocate(system_prompt=system_prompt)
 
-        conv_budget = self._budget.get_allocation("conversation", 4000)
-        conv_tokens = estimate_message_tokens(messages)
-
-        if conv_tokens <= conv_budget:
-            return list(messages)
-
-        return self._budget.compress(messages, conv_budget)
+        # Use assemble() for attention-routed formatting with budget-aware
+        # section markers, instead of raw compress().
+        return self._budget.assemble(messages)
