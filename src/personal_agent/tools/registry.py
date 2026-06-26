@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
-
 from personal_agent.exceptions import ToolNotFoundError
 from personal_agent.tools.base import Tool
-from personal_agent.types import ToolResult, ToolSpec
+from personal_agent.types import ToolSpec
 
 
 class ToolRegistry:
-    """Central registry of all available tools."""
+    """Central registry of all available tools.
+
+    Responsible only for registration and lookup. Execution is handled
+    by ToolExecutor, which calls tools through their __call__ method
+    (triggering JSON Schema validation).
+    """
 
     def __init__(self):
         self._tools: dict[str, Tool] = {}
@@ -46,46 +48,6 @@ class ToolRegistry:
     def clear(self) -> None:
         """Remove all tools."""
         self._tools.clear()
-
-    async def execute(self, name: str, **kwargs: Any) -> ToolResult:
-        """Execute a tool by name and return a ToolResult."""
-        from personal_agent.exceptions import ToolExecutionError
-
-        try:
-            tool = self.get(name)
-            output = await tool.execute(**kwargs)
-            return ToolResult(call_id="", name=name, output=output)
-        except ToolNotFoundError:
-            return ToolResult(
-                call_id="", name=name, error=f"Tool '{name}' not found"
-            )
-        except Exception as e:
-            return ToolResult(
-                call_id="", name=name, output=None, error=str(e)
-            )
-
-    async def execute_many(
-        self, calls: list[tuple[str, dict[str, Any]]]
-    ) -> list[ToolResult]:
-        """Execute multiple tool calls in parallel."""
-        results = await asyncio.gather(
-            *[self.execute(name, **kwargs) for name, kwargs in calls],
-            return_exceptions=True,
-        )
-
-        handled = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                handled.append(
-                    ToolResult(
-                        call_id="",
-                        name=calls[i][0],
-                        error=str(result),
-                    )
-                )
-            else:
-                handled.append(result)
-        return handled
 
     def __len__(self) -> int:
         return len(self._tools)
