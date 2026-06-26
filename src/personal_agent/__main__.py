@@ -385,7 +385,7 @@ async def interactive_loop(config_path: str | None, overrides: dict, workdir: Pa
                 multiline_buffer = []
                 in_multiline = False
                 if task.strip():
-                    await _process_task(agent, task, session_tasks, settings)
+                    await _process_task(agent, task, session_tasks, settings, session_mgr)
                 continue
             elif line.strip() == "%%":
                 # Cancel multiline
@@ -431,14 +431,14 @@ async def interactive_loop(config_path: str | None, overrides: dict, workdir: Pa
             print(f"{C_DIM}Entering multiline mode. Type your task, then empty line to submit, '%%' to cancel.{C_RESET}")
             continue
 
-        await _process_task(agent, line.strip(), session_tasks, settings)
+        await _process_task(agent, line.strip(), session_tasks, settings, session_mgr)
 
     # Cleanup
     session_mgr.save_current()
     await agent.close()
 
 
-async def _process_task(agent, task: str, session_tasks: list[dict], settings: Settings | None = None) -> None:
+async def _process_task(agent, task: str, session_tasks: list[dict], settings: Settings | None = None, session_mgr=None) -> None:
     """Process a single task and display the result."""
     from personal_agent.display import TerminalDisplay
     from personal_agent.types import AgentCallbacks
@@ -491,6 +491,12 @@ async def _process_task(agent, task: str, session_tasks: list[dict], settings: S
         "token_usage": result.token_usage,
         "steps": len(result.steps),
     })
+
+    # Persist session state after each task
+    if session_mgr and session_mgr.current:
+        session_mgr.current.short_term = agent.short_term
+        session_mgr.current.working = agent.working
+        session_mgr.save_current()
 
 
 async def _handle_command(
