@@ -96,26 +96,26 @@ class DebateAgent(BaseAgent):
                 elapsed_ms=(time.time() - start_time) * 1000,
             )
 
-        # Create role sub-agents (once, reused across rounds)
-        extra_tools = self.tools.list_tools()
-        for role in self._roles:
-            sub_cfg = SubAgentConfig(
-                pattern="react",
-                provider=role.provider,
-                model=role.model,
-                temperature=role.temperature,
-                max_tokens=role.max_tokens,
-                system_prompt=role.system_prompt,
-                description=role.name,
-            )
-            self._role_agents[role.name] = await create_sub_agent(
-                sub_cfg, providers=self._providers, extra_tools=extra_tools,
-            )
-
         all_steps: list[AgentStep] = []
         previous_responses: dict[str, str] = {}
 
         try:
+            # Create role sub-agents (once, reused across rounds)
+            extra_tools = self.tools.list_tools()
+            for role in self._roles:
+                sub_cfg = SubAgentConfig(
+                    pattern="react",
+                    provider=role.provider,
+                    model=role.model,
+                    temperature=role.temperature,
+                    max_tokens=role.max_tokens,
+                    system_prompt=role.system_prompt,
+                    description=role.name,
+                )
+                self._role_agents[role.name] = await create_sub_agent(
+                    sub_cfg, providers=self._providers, extra_tools=extra_tools,
+                )
+
             for round_num in range(1, self._max_rounds + 1):
                 logger.info("Debate round %d/%d", round_num, self._max_rounds)
 
