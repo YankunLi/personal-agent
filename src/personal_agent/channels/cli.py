@@ -492,6 +492,9 @@ class CLIChannel(Channel):
             print(f"Available: {C_GREEN}list{C_RESET}, {C_GREEN}create{C_RESET}, {C_GREEN}switch{C_RESET}, {C_GREEN}delete{C_RESET}, {C_GREEN}rename{C_RESET}, {C_GREEN}current{C_RESET}")
 
     def _cmd_status(self) -> None:
+        if self._agent is None:
+            print(f"{C_RED}Agent not initialized yet.{C_RESET}")
+            return
         settings = self._settings
         print(f"{C_BOLD}Session status:{C_RESET}")
         print(f"  Pattern: {C_CYAN}{settings.agent.pattern}{C_RESET}")
