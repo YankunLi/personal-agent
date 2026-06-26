@@ -55,28 +55,39 @@ class ContextManager:
         max_tokens: int = 16384,
         max_messages: int = 200,
         compression_model: str = "gpt-4o-mini",
+        compression_provider=None,
         budget_manager: ContextBudgetManager | None = None,
     ) -> "ContextManager":
-        """Factory method to create a ContextManager from a strategy name."""
+        """Factory method to create a ContextManager from a strategy name.
+
+        Args:
+            strategy_name: One of sliding_window, compression, hybrid, budget.
+            provider: The main agent's LLM provider.
+            max_tokens: Maximum tokens for the context window.
+            max_messages: Maximum messages for sliding window.
+            compression_provider: Provider for compression (should use a cheap model).
+                If not provided, falls back to the main provider.
+            budget_manager: ContextBudgetManager for budget strategy.
+        """
         if strategy_name == "sliding_window":
             strategy = SlidingWindowStrategy(max_messages=max_messages)
             return cls(strategy=strategy, max_tokens=max_tokens, max_messages=max_messages)
 
         if strategy_name == "compression":
-            if provider is None:
+            if compression_provider is None and provider is None:
                 raise ValueError("Provider is required for compression strategy")
-            compressor = LLMCompressor(provider, model=compression_model)
+            compressor = LLMCompressor(compression_provider or provider)
             strategy = CompressionStrategy(compressor=compressor)
             return cls(strategy=strategy, max_tokens=max_tokens, max_messages=max_messages)
 
         if strategy_name == "hybrid":
-            if provider is None:
+            if compression_provider is None and provider is None:
                 return cls(
                     strategy=SlidingWindowStrategy(max_messages=max_messages),
                     max_tokens=max_tokens,
                     max_messages=max_messages,
                 )
-            compressor = LLMCompressor(provider, model=compression_model)
+            compressor = LLMCompressor(compression_provider or provider)
             strategy = HybridStrategy(
                 compressor=compressor,
                 max_messages=max_messages,

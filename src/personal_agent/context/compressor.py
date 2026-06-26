@@ -16,11 +16,14 @@ class ContextCompressor(ABC):
 
 
 class LLMCompressor(ContextCompressor):
-    """Uses an LLM to summarize older messages."""
+    """Uses an LLM to summarize older messages.
 
-    def __init__(self, provider, model: str = "gpt-4o-mini"):
+    The provider should be configured with a cheap model (e.g. gpt-4o-mini)
+    since compression is a frequent, low-stakes operation.
+    """
+
+    def __init__(self, provider):
         self._provider = provider
-        self._model = model
 
     async def summarize(self, messages: list[Message]) -> str:
         """Summarize messages using a lightweight LLM call."""
