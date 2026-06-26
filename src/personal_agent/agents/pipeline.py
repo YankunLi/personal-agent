@@ -104,6 +104,13 @@ class PipelineAgent(BaseAgent):
                 if stage_result.token_usage:
                     for key, val in stage_result.token_usage.items():
                         self._total_usage[key] = self._total_usage.get(key, 0) + val
+            except Exception as e:
+                logger.warning("Pipeline stage %d '%s' failed: %s", i + 1, stage_cfg.name, e)
+                all_steps.append(AgentStep(
+                    thought=f"Stage {i+1}: {stage_cfg.name or stage_cfg.pattern}",
+                    observation=f"Error: {e}",
+                ))
+                # Keep current_input unchanged for the next stage
             finally:
                 await stage_agent.close()
 
