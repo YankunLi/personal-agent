@@ -381,7 +381,7 @@ class CLIChannel(Channel):
 
         await self._agent.close()
         new_agent = await create_agent(self._settings, **self._overrides)
-        self._agent.__dict__.update(new_agent.__dict__)
+        self._agent = new_agent
 
         if session_mgr.current:
             self._agent.short_term = session_mgr.current.short_term
