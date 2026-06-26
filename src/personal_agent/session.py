@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import uuid
@@ -246,10 +247,12 @@ class SessionManager:
         return self._storage_dir / f"{session_id}.json"
 
     def _save_session(self, session: Session) -> None:
-        """Write a session to disk."""
+        """Write a session to disk atomically."""
         path = self._session_path(session.id)
-        with open(path, "w") as f:
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp_path, "w") as f:
             json.dump(session.to_dict(), f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, path)
 
     def _load_session_file(self, path: Path) -> Session:
         """Load a session from a JSON file."""
