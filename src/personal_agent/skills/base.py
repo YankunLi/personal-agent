@@ -49,13 +49,19 @@ class SkillManager:
 
     def activate(self, name: str) -> None:
         """Activate a skill and its dependencies."""
+        self._activate_recursive(name, set())
+
+    def _activate_recursive(self, name: str, seen: set[str]) -> None:
+        """Recursively activate a skill and its dependencies, with cycle detection."""
+        if name in seen:
+            return  # Already visited in this activation chain
         if name not in self._skills:
             raise SkillError(f"Skill '{name}' not registered. Available: {self.list_names()}")
 
-        # Activate dependencies first
+        seen.add(name)
         skill = self._skills[name]
         for dep in skill.dependencies:
-            self.activate(dep)
+            self._activate_recursive(dep, seen)
 
         self._active.add(name)
 
