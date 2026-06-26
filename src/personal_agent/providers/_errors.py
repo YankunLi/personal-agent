@@ -16,7 +16,7 @@ def raise_provider_error(error: Exception) -> None:
     Shared across all provider implementations to avoid code duplication.
     """
     error_str = str(error).lower()
-    if "401" in error_str or "unauthorized" in error_str or "auth" in error_str:
+    if "401" in error_str or "unauthorized" in error_str or "invalid api key" in error_str or "authentication error" in error_str:
         raise ProviderAuthError(str(error)) from error
     if "429" in error_str or "rate limit" in error_str:
         raise ProviderRateLimitError(str(error)) from error
