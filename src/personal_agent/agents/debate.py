@@ -146,6 +146,7 @@ class DebateAgent(BaseAgent):
             # Clean up role agents
             for agent in self._role_agents.values():
                 await agent.close()
+            self._role_agents.clear()
 
         state.done = True
         state.final_answer = judge_answer
