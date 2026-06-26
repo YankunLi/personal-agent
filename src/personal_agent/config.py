@@ -283,7 +283,9 @@ def _parse_config_file(path: Path) -> Settings:
     else:
         raise ValueError(f"Unsupported config format: {path.suffix}")
 
-    return Settings(**data)
+    if data is None:
+            data = {}
+        return Settings(**data)
 
 
 def _find_config_file() -> Path | None:
