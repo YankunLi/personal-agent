@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import argparse
 import json
+import logging
 import os
 import sys
 import time
@@ -14,6 +15,8 @@ from typing import Any
 from personal_agent.config import Settings, _find_config_file, load_config
 from personal_agent.factory import create_agent
 from personal_agent.selector import classify, explain
+
+logger = logging.getLogger(__name__)
 
 # ANSI color codes
 C_RESET = "\033[0m"
@@ -461,6 +464,7 @@ async def _process_task(agent, task: str, session_tasks: list[dict], settings: S
         print(f"\n{C_YELLOW}Interrupted{C_RESET}")
         return
     except Exception as e:
+        logger.exception("Task processing failed: %s", e)
         print(f"{C_RED}Error: {e}{C_RESET}")
         return
 
