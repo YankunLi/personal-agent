@@ -86,7 +86,7 @@ class FileMemoryStore:
         """Invalidate the name→path cache (call after any write)."""
         self._name_to_path = None
 
-    def _ensure_cache(self) -> dict[str, Path]:
+    async def _ensure_cache(self) -> dict[str, Path]:
         """Build or return the cached name→path mapping."""
         if self._name_to_path is not None:
             return self._name_to_path
@@ -96,7 +96,8 @@ class FileMemoryStore:
             if f.name == "MEMORY.md":
                 continue
             try:
-                meta, _ = _parse_frontmatter(f.read_text())
+                text = await asyncio.to_thread(f.read_text)
+                meta, _ = _parse_frontmatter(text)
                 name = meta.get("name", f.stem)
                 cache[name] = f
             except Exception:
@@ -133,9 +134,10 @@ class FileMemoryStore:
         async with self._lock:
             # Preserve existing body if content is empty (shouldn't happen, but safe)
             if filepath.exists() and not content:
-                _, content = _parse_frontmatter(filepath.read_text())
+                text = await asyncio.to_thread(filepath.read_text)
+                _, content = _parse_frontmatter(text)
 
-            filepath.write_text(frontmatter + "\n\n" + content + "\n")
+            await asyncio.to_thread(filepath.write_text, frontmatter + "\n\n" + content + "\n")
 
             self._update_index_entry_locked(name, filename, description or name)
             self._invalidate_cache()
@@ -144,7 +146,7 @@ class FileMemoryStore:
 
     async def get(self, name: str) -> tuple[dict[str, str], str] | None:
         """Read a memory file by name. Returns (metadata, body) or None."""
-        cache = self._ensure_cache()
+        cache = await self._ensure_cache()
         filepath = cache.get(name)
         if filepath is None or not filepath.exists():
             if filepath is not None:
@@ -152,7 +154,8 @@ class FileMemoryStore:
                 await self.repair_index()
             return None
 
-        return _parse_frontmatter(filepath.read_text())
+        text = await asyncio.to_thread(filepath.read_text)
+        return _parse_frontmatter(text)
 
     async def get_by_type(self, memory_type: str) -> list[dict[str, Any]]:
         """Get all memories of a given type."""
@@ -167,7 +170,7 @@ class FileMemoryStore:
 
     async def delete(self, name: str) -> bool:
         """Delete a memory file and remove from index."""
-        cache = self._ensure_cache()
+        cache = await self._ensure_cache()
         filepath = cache.get(name)
         if filepath is None:
             return False
@@ -197,7 +200,8 @@ class FileMemoryStore:
                 if f.name == "MEMORY.md":
                     continue
                 try:
-                    meta, _ = _parse_frontmatter(f.read_text())
+                    text = await asyncio.to_thread(f.read_text)
+                    meta, _ = _parse_frontmatter(text)
                     name = meta.get("name", f.stem)
                     desc = meta.get("description", name)
                     entries.append({"name": name, "filename": f.name, "description": desc})
