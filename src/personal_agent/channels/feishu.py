@@ -150,6 +150,7 @@ class FeishuChannel(Channel):
         self._runner: web.AppRunner | None = None
         self._conn_agents: dict[str, Any] = {}
         self._conn_sessions: dict[str, Any] = {}
+        self._pending_tasks: set[asyncio.Task] = set()
 
     # ── Channel interface ────────────────────────────────────────────────────
 
@@ -194,6 +195,11 @@ class FeishuChannel(Channel):
                 pass
         self._conn_agents.clear()
         self._conn_sessions.clear()
+        # Cancel pending message processing tasks
+        for task in list(self._pending_tasks):
+            if not task.done():
+                task.cancel()
+        self._pending_tasks.clear()
 
     # ── Webhook handlers ─────────────────────────────────────────────────────
 
@@ -223,7 +229,15 @@ class FeishuChannel(Channel):
 
         if event_type == "im.message.receive_v1":
             # Process in background, respond immediately to Feishu
-            asyncio.create_task(self._process_message(event))
+            task = asyncio.create_task(self._process_message(event))
+            task.add_done_callback(
+                lambda t: (
+                    logger.error("Feishu message processing failed: %s", t.exception())
+                    if t.exception() else None
+                )
+            )
+            task.add_done_callback(self._pending_tasks.discard)
+            self._pending_tasks.add(task)
             return web.json_response({"code": 0})
 
         # Challenge event (old format, POST with challenge)
