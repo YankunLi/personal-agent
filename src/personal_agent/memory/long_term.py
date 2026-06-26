@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from typing import Any
 
@@ -30,7 +31,7 @@ class LongTermMemory:
 
     async def recall(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
         """Search all stored memories using keyword matching."""
-        entries = self._store.list_all()
+        entries = await asyncio.to_thread(self._store.list_all)
         memory_entries = []
         for entry in entries:
             result = await self._store.get(entry["name"])
@@ -41,7 +42,7 @@ class LongTermMemory:
                         id=entry["filename"],
                         content=body,
                         metadata={**meta, "name": entry["name"], "description": entry.get("description", "")},
-                        created_at=self._store.get_mtime(entry["filename"]),
+                        created_at=await asyncio.to_thread(self._store.get_mtime, entry["filename"]),
                     )
                 )
 
@@ -54,7 +55,7 @@ class LongTermMemory:
     async def forget(self, entry_id: str) -> bool:
         """Delete a memory by filename or name."""
         # Try as filename first, then as name
-        entries = self._store.list_all()
+        entries = await asyncio.to_thread(self._store.list_all)
         name = entry_id
         for entry in entries:
             if entry["filename"] == entry_id:

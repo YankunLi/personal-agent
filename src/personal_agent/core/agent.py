@@ -217,7 +217,7 @@ class BaseAgent(ABC):
                     provider=self.consolidation_provider,
                     max_messages=self._consolidation_max_messages,
                 )
-                existing = self.memory_store.list_all()
+                existing = await asyncio.to_thread(self.memory_store.list_all)
                 conversation = list(state.messages)
                 # Only append the final answer if it's not already the last message
                 # (e.g., max_steps exceeded produces a synthetic answer not in the conversation)
