@@ -192,7 +192,8 @@ class BaseAgent(ABC):
         elapsed_ms = (time.time() - start_time) * 1000
 
         # Store only the user task and final answer in short-term memory
-        self.short_term.add(Message(role=Role.USER, content=task))
+        if task:
+            self.short_term.add(Message(role=Role.USER, content=task))
         self.short_term.add(Message(role=Role.ASSISTANT, content=answer[:1000]))
 
         # Trigger memory consolidation (fire-and-forget, don't block response)
