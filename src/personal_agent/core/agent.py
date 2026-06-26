@@ -249,7 +249,12 @@ class BaseAgent(ABC):
     ) -> None:
         """Run memory consolidation in the background (fire-and-forget)."""
         try:
-            await consolidator.consolidate(messages, existing, agent_knowledge=agent_knowledge)
+            await asyncio.wait_for(
+                consolidator.consolidate(messages, existing, agent_knowledge=agent_knowledge),
+                timeout=60.0,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Background memory consolidation timed out")
         except Exception as e:
             logger.warning("Background memory consolidation failed: %s", e)
 
