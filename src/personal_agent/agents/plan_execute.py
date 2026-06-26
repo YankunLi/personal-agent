@@ -88,6 +88,7 @@ class PlanAndExecuteAgent(BaseAgent):
 
         # Phase 2: Execute each step
         step_results = []
+        base_step_count = len(state.steps)
         i = 0
         total_steps = 0
         replan_count = 0
@@ -113,6 +114,7 @@ class PlanAndExecuteAgent(BaseAgent):
                         self.working.set("plan", plan)
                         i = 0  # Restart from beginning of new plan
                         step_results = []  # Reset results for new plan
+                        del state.steps[base_step_count:]  # Prune steps from old plan
                     continue
                 else:
                     logger.warning(
