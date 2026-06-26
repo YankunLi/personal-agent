@@ -305,6 +305,14 @@ class FileMemoryStore:
 
     # ── Maintenance ──────────────────────────────────────────────────────────
 
+    def get_mtime(self, filename: str) -> float:
+        """Return the modification time of a memory file, or 0.0 if not found."""
+        filepath = self._dir / filename
+        try:
+            return filepath.stat().st_mtime
+        except FileNotFoundError:
+            return 0.0
+
     def count(self) -> int:
         """Return the number of memory files (excluding index)."""
         return len([f for f in self._dir.glob("*.md") if f.name != "MEMORY.md"])

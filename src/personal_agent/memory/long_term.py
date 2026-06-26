@@ -41,7 +41,7 @@ class LongTermMemory:
                         id=entry["filename"],
                         content=body,
                         metadata={**meta, "name": entry["name"], "description": entry.get("description", "")},
-                        created_at=0.0,
+                        created_at=self._store.get_mtime(entry["filename"]),
                     )
                 )
 
