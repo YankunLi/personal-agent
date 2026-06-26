@@ -121,9 +121,11 @@ async def run_agent(task: str, config_path: str | None = None, workdir: Path | N
             usage = result.token_usage
             print(f"{C_DIM}Tokens: {usage.get('total_tokens', usage.get('input_tokens', 0) + usage.get('output_tokens', 0))}{C_RESET}")
         print()
+        print(result.answer)
     except KeyboardInterrupt:
         print(f"\n{C_YELLOW}Interrupted{C_RESET}")
-    print(result.answer)
+    finally:
+        await agent.close()
 
 
 def main():
