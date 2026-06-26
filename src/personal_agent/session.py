@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -20,6 +21,8 @@ class Session:
 
     Each session is tied to a specific (channel, user_id, conversation_id) triple
     for multi-channel routing. For CLI-only usage, these fields default to empty strings.
+
+    Sessions expire after ttl_seconds of inactivity. The default TTL is 1 hour (3600s).
     """
 
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
@@ -27,10 +30,21 @@ class Session:
     channel: str = ""
     user_id: str = ""
     conversation_id: str = ""
+    ttl_seconds: float = 3600.0
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     short_term: ShortTermMemory = field(default_factory=ShortTermMemory)
     working: WorkingMemory = field(default_factory=WorkingMemory)
+
+    @property
+    def expired(self) -> bool:
+        """Check if this session has expired due to inactivity."""
+        return (time.time() - self.updated_at) > self.ttl_seconds
+
+    @property
+    def idle_seconds(self) -> float:
+        """Seconds since last activity."""
+        return time.time() - self.updated_at
 
     def touch(self) -> None:
         """Update the last-modified timestamp."""
@@ -44,6 +58,7 @@ class Session:
             "channel": self.channel,
             "user_id": self.user_id,
             "conversation_id": self.conversation_id,
+            "ttl_seconds": self.ttl_seconds,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "short_term": self.short_term.to_dict(),
@@ -59,6 +74,7 @@ class Session:
             channel=data.get("channel", ""),
             user_id=data.get("user_id", ""),
             conversation_id=data.get("conversation_id", ""),
+            ttl_seconds=data.get("ttl_seconds", 3600.0),
             created_at=data.get("created_at", time.time()),
             updated_at=data.get("updated_at", time.time()),
         )
@@ -78,6 +94,7 @@ class SessionManager:
         self._storage_dir.mkdir(parents=True, exist_ok=True)
         self._sessions: dict[str, Session] = {}
         self._current_id: str | None = None
+        self._lock = threading.Lock()
 
     @property
     def current(self) -> Session | None:
@@ -92,14 +109,15 @@ class SessionManager:
 
     def create(self, name: str) -> Session:
         """Create a new session and switch to it."""
-        # Save current session first
-        if self._current_id and self._current_id in self._sessions:
-            self._save_session(self._sessions[self._current_id])
+        with self._lock:
+            # Save current session first
+            if self._current_id and self._current_id in self._sessions:
+                self._save_session(self._sessions[self._current_id])
 
-        session = Session(name=name)
-        self._sessions[session.id] = session
-        self._current_id = session.id
-        self._save_session(session)
+            session = Session(name=name)
+            self._sessions[session.id] = session
+            self._current_id = session.id
+            self._save_session(session)
         return session
 
     def switch(self, session_id_or_name: str) -> Session | None:
@@ -158,6 +176,30 @@ class SessionManager:
                 pass  # Skip corrupted files
         return self.list_sessions()
 
+    def cleanup_expired(self) -> list[str]:
+        """Remove expired sessions from memory and disk.
+
+        Returns the IDs of sessions that were cleaned up.
+        """
+        with self._lock:
+            now = time.time()
+            expired_ids = []
+            for sid, session in list(self._sessions.items()):
+                if (now - session.updated_at) > session.ttl_seconds:
+                    # Don't clean up the current active session
+                    if sid == self._current_id:
+                        continue
+                    expired_ids.append(sid)
+
+            for sid in expired_ids:
+                self._sessions.pop(sid, None)
+                # Delete from disk
+                session_file = self._storage_dir / f"{sid}.json"
+                if session_file.exists():
+                    session_file.unlink()
+
+        return expired_ids
+
     def _find(self, id_or_name: str) -> Session | None:
         """Find a session by ID or name."""
         # Try exact ID match first
@@ -182,20 +224,21 @@ class SessionManager:
 
     def create_for_key(self, key: SessionKey) -> Session:
         """Create a new session for the given routing key and switch to it."""
-        # Save current session first
-        if self._current_id and self._current_id in self._sessions:
-            self._save_session(self._sessions[self._current_id])
+        with self._lock:
+            # Save current session first
+            if self._current_id and self._current_id in self._sessions:
+                self._save_session(self._sessions[self._current_id])
 
-        name = f"{key.channel}-{key.user_id}-{key.conversation_id}"
-        session = Session(
-            name=name,
-            channel=key.channel,
-            user_id=key.user_id,
-            conversation_id=key.conversation_id,
-        )
-        self._sessions[session.id] = session
-        self._current_id = session.id
-        self._save_session(session)
+            name = f"{key.channel}-{key.user_id}-{key.conversation_id}"
+            session = Session(
+                name=name,
+                channel=key.channel,
+                user_id=key.user_id,
+                conversation_id=key.conversation_id,
+            )
+            self._sessions[session.id] = session
+            self._current_id = session.id
+            self._save_session(session)
         return session
 
     def _session_path(self, session_id: str) -> Path:

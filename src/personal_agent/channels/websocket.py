@@ -239,7 +239,9 @@ class WebSocketChannel(Channel):
 
         from personal_agent.factory import create_agent
 
-        agent = await create_agent(self._settings)
+        session = self._conn_sessions.get(conn_id)
+        user_id = session.user_id if session else f"web-conn-{conn_id}"
+        agent = await create_agent(self._settings, user_id=user_id)
         self._conn_agents[conn_id] = agent
         return agent
 

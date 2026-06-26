@@ -126,12 +126,13 @@ async def create_sub_agent(
         return ReActAgent(**agent_kwargs)
 
 
-async def create_agent(settings: Settings | None = None, task: str = "", **overrides) -> BaseAgent:
+async def create_agent(settings: Settings | None = None, task: str = "", user_id: str = "", **overrides) -> BaseAgent:
     """Create an agent from configuration.
 
     Args:
         settings: Settings object. If None, loads from env vars.
         task: Task string. Used for auto pattern selection when pattern is "auto".
+        user_id: Optional user identifier for per-user memory isolation.
         **overrides: Override config values (e.g. provider="deepseek", model="deepseek-chat").
 
     Returns:
@@ -219,7 +220,14 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
     working = WorkingMemory()
 
     # File-based memory store (Claude Code style)
-    memory_store = FileMemoryStore(storage_dir=memory_cfg.memory_dir)
+    # When user_id is provided, scope memory to that user for multi-user isolation
+    if user_id:
+        import os
+        safe_id = user_id.replace(os.sep, "_").replace("..", "_")
+        store_dir = str(Path(memory_cfg.memory_dir).expanduser() / "users" / safe_id)
+    else:
+        store_dir = memory_cfg.memory_dir
+    memory_store = FileMemoryStore(storage_dir=store_dir)
 
     # Agent self-knowledge (AGENT.md) — global + project-level
     agent_knowledge = None
