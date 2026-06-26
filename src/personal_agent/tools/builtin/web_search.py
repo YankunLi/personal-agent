@@ -50,7 +50,7 @@ def create_web_search_tool(
                     headers={"User-Agent": "personal-agent/0.1.0"},
                 )
                 response.raise_for_status()
-                return response.text[:5000]
+                return response.text[:20000]
         except httpx.HTTPStatusError as e:
             raise ToolExecutionError(f"Web search failed with HTTP {e.response.status_code}") from e
         except httpx.TimeoutException as e:

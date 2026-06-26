@@ -46,8 +46,8 @@ LIST_DIR_PARAMETERS = {
 }
 
 # Default limits
-DEFAULT_MAX_READ_BYTES = 50_000
-DEFAULT_MAX_LIST_ENTRIES = 500
+DEFAULT_MAX_READ_BYTES = 200_000
+DEFAULT_MAX_LIST_ENTRIES = 5_000
 
 
 def _resolve_path(path: str, workspace_dir: str | None = None) -> Path:

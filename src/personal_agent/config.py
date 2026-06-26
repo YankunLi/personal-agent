@@ -29,9 +29,9 @@ class AgentConfig(BaseModel):
     pattern: Literal["auto", "react", "plan_execute", "reflection", "pipeline", "debate", "parallel_judge"] = "auto"
     provider: str = "openai"  # Which provider to use (key in providers map)
     model: str = "gpt-4o"
-    max_tokens: int = 4096
+    max_tokens: int = 8192
     temperature: float = 0.7
-    max_steps: int = 50
+    max_steps: int = 100
     workspace: str = "./workspace"
     system_prompt: str = ""
     skills: list[str] = Field(default_factory=list)
@@ -46,8 +46,8 @@ class SubAgentConfig(BaseModel):
     provider: str = "openai"
     model: str = "gpt-4o"
     temperature: float = 0.7
-    max_tokens: int = 4096
-    max_steps: int = 20
+    max_tokens: int = 8192
+    max_steps: int = 50
     system_prompt: str = ""
     tools: list[str] = Field(default_factory=list)
     description: str = ""  # Description shown to parent agent as tool description
@@ -76,7 +76,7 @@ class ToolConfig(BaseModel):
 # ── Memory ─────────────────────────────────────────────────────────────────────
 
 class MemoryConfig(BaseModel):
-    short_term_max_messages: int = 100
+    short_term_max_messages: int = 200
     memory_dir: str = "~/.personal-agent/memory"
 
 
@@ -93,10 +93,10 @@ class ConsolidationConfig(BaseModel):
 
 class ContextConfig(BaseModel):
     strategy: Literal["sliding_window", "compression", "hybrid", "budget"] = "budget"
-    max_messages: int = 100
-    max_tokens: int = 8192
-    compression_threshold_tokens: int = 8192
-    compression_keep_recent: int = 10
+    max_messages: int = 200
+    max_tokens: int = 16384
+    compression_threshold_tokens: int = 16384
+    compression_keep_recent: int = 20
     compression_model: str = "gpt-4o-mini"
 
 
@@ -146,8 +146,8 @@ class PipelineStageConfig(BaseModel):
     provider: str = "openai"
     model: str = "gpt-4o"
     temperature: float = 0.7
-    max_tokens: int = 4096
-    max_steps: int = 20
+    max_tokens: int = 8192
+    max_steps: int = 50
     system_prompt: str = ""
     tools: list[str] = Field(default_factory=list)
 
@@ -163,7 +163,7 @@ class DebateRoleConfig(BaseModel):
     provider: str = "openai"
     model: str = "gpt-4o"
     temperature: float = 0.7
-    max_tokens: int = 4096
+    max_tokens: int = 8192
 
 
 class DebateConfig(BaseModel):
@@ -181,8 +181,8 @@ class ParallelAgentConfig(BaseModel):
     provider: str = "openai"
     model: str = "gpt-4o"
     temperature: float = 0.7
-    max_tokens: int = 4096
-    max_steps: int = 20
+    max_tokens: int = 8192
+    max_steps: int = 50
     system_prompt: str = ""
     tools: list[str] = Field(default_factory=list)
 

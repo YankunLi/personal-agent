@@ -189,7 +189,7 @@ class ContextBudgetManager:
         # Always keep system messages and the last 6 messages
         system_msgs = [m for m in messages if m.role == Role.SYSTEM]
         non_system = [m for m in messages if m.role != Role.SYSTEM]
-        keep_recent = min(6, len(non_system))
+        keep_recent = min(10, len(non_system))
         recent = non_system[-keep_recent:]
         older = non_system[:-keep_recent]
 

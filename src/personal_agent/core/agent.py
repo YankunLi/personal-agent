@@ -45,10 +45,10 @@ class BaseAgent(ABC):
         budget_manager: Any = None,
         context_manager: ContextManager | None = None,
         skill_manager: SkillManager | None = None,
-        max_steps: int = 50,
+        max_steps: int = 100,
         system_prompt: str = "",
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         callbacks: AgentCallbacks | None = None,
     ):
         self.provider = provider
@@ -177,7 +177,7 @@ class BaseAgent(ABC):
 
         # Store only the user task and final answer in short-term memory
         self.short_term.add(Message(role=Role.USER, content=task))
-        self.short_term.add(Message(role=Role.ASSISTANT, content=answer[:500]))
+        self.short_term.add(Message(role=Role.ASSISTANT, content=answer[:1000]))
 
         # Trigger memory consolidation (fire-and-forget, don't block response)
         if self.memory_store and self.consolidation_provider:

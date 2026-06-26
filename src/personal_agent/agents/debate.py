@@ -103,12 +103,12 @@ class DebateAgent(BaseAgent):
                     previous_responses[role.name] = result
                     all_steps.append(AgentStep(
                         thought=f"Round {round_num} - {role.name}",
-                        observation=result[:500],
+                        observation=result[:1000],
                     ))
 
         # Judge synthesizes
         judge_answer = await self._run_judge(task, previous_responses)
-        all_steps.append(AgentStep(thought="Judge synthesis", observation=judge_answer[:500]))
+        all_steps.append(AgentStep(thought="Judge synthesis", observation=judge_answer[:1000]))
 
         state.done = True
         state.final_answer = judge_answer
@@ -186,6 +186,6 @@ class DebateAgent(BaseAgent):
         response = await judge_provider.chat(
             messages,
             temperature=self._judge_temperature,
-            max_tokens=4096,
+            max_tokens=8192,
         )
         return response.content

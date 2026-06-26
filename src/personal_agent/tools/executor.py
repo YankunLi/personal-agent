@@ -21,7 +21,7 @@ class ToolExecutor:
     """
 
     # Default max characters for tool output (prevents context blowout)
-    DEFAULT_MAX_OUTPUT_CHARS = 20_000
+    DEFAULT_MAX_OUTPUT_CHARS = 100_000
 
     def __init__(
         self,

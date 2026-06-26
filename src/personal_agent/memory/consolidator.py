@@ -111,9 +111,9 @@ class MemoryConsolidator:
 
         # Format conversation
         conversation_parts = []
-        for msg in messages[-20:]:  # Last 20 messages
+        for msg in messages[-40:]:  # Last 40 messages
             role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
-            content = msg.content[:1000] if msg.content else ""
+            content = msg.content[:2000] if msg.content else ""
             if content.strip():
                 conversation_parts.append(f"[{role.upper()}]: {content}")
         conversation = "\n\n".join(conversation_parts)
@@ -137,7 +137,7 @@ class MemoryConsolidator:
             ),
         ]
 
-        response = await self._provider.chat(llm_messages, temperature=0.1, max_tokens=2048)
+        response = await self._provider.chat(llm_messages, temperature=0.1, max_tokens=4096)
         content = response.content.strip()
 
         # Parse JSON

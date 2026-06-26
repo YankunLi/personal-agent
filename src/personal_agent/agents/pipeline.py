@@ -67,7 +67,7 @@ class PipelineAgent(BaseAgent):
 
             all_steps.append(AgentStep(
                 thought=f"Stage {i+1}: {stage_cfg.name or stage_cfg.pattern}",
-                observation=stage_result.answer[:500],
+                observation=stage_result.answer[:1000],
             ))
 
             # Accumulate token usage

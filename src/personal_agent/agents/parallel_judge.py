@@ -88,14 +88,14 @@ class ParallelJudgeAgent(BaseAgent):
             else:
                 answer, usage = result
                 agent_answers[name] = answer
-                all_steps.append(AgentStep(thought=f"Agent: {name}", observation=answer[:500]))
+                all_steps.append(AgentStep(thought=f"Agent: {name}", observation=answer[:1000]))
                 if usage:
                     for key, val in usage.items():
                         self._total_usage[key] = self._total_usage.get(key, 0) + val
 
         # Judge selects/synthesizes
         judge_answer = await self._run_judge(task, agent_answers)
-        all_steps.append(AgentStep(thought="Judge evaluation", observation=judge_answer[:500]))
+        all_steps.append(AgentStep(thought="Judge evaluation", observation=judge_answer[:1000]))
 
         state.done = True
         state.final_answer = judge_answer
@@ -151,6 +151,6 @@ class ParallelJudgeAgent(BaseAgent):
         response = await judge_provider.chat(
             messages,
             temperature=self._judge_temperature,
-            max_tokens=4096,
+            max_tokens=8192,
         )
         return response.content

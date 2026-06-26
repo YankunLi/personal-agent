@@ -18,7 +18,7 @@ class ContextStrategy(ABC):
 class SlidingWindowStrategy(ContextStrategy):
     """Keep only the most recent N messages, preserving the system prompt."""
 
-    def __init__(self, max_messages: int = 50):
+    def __init__(self, max_messages: int = 100):
         self.max_messages = max_messages
 
     async def apply(self, messages: list[Message]) -> list[Message]:
@@ -39,7 +39,7 @@ class CompressionStrategy(ContextStrategy):
     def __init__(
         self,
         compressor,  # ContextCompressor
-        threshold_tokens: int = 8192,
+        threshold_tokens: int = 16384,
         keep_recent: int = 10,
     ):
         self.compressor = compressor
@@ -81,9 +81,9 @@ class HybridStrategy(ContextStrategy):
     def __init__(
         self,
         compressor,  # ContextCompressor
-        max_messages: int = 100,
-        compression_threshold: int = 8192,
-        keep_recent: int = 10,
+        max_messages: int = 200,
+        compression_threshold: int = 16384,
+        keep_recent: int = 20,
     ):
         self._sliding = SlidingWindowStrategy(max_messages=max_messages)
         self._compression = CompressionStrategy(
@@ -108,7 +108,7 @@ class BudgetStrategy(ContextStrategy):
     System messages and recent messages are always preserved.
     """
 
-    def __init__(self, budget_manager, max_tokens: int = 8192):
+    def __init__(self, budget_manager, max_tokens: int = 16384):
         self._budget = budget_manager
         self._max_tokens = max_tokens
 

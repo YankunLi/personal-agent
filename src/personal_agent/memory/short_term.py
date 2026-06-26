@@ -8,7 +8,7 @@ from personal_agent.types import Message
 class ShortTermMemory:
     """Conversation buffer that stores recent messages (FIFO)."""
 
-    def __init__(self, max_messages: int = 100):
+    def __init__(self, max_messages: int = 200):
         self._messages: list[Message] = []
         self.max_messages = max_messages
 
@@ -62,7 +62,7 @@ class ShortTermMemory:
         """Restore from a serialized dict."""
         from personal_agent.types import Role, ToolCall
 
-        mem = cls(max_messages=data.get("max_messages", 100))
+        mem = cls(max_messages=data.get("max_messages", 200))
         for m in data.get("messages", []):
             role = Role(m["role"])
             tool_calls = None

@@ -26,8 +26,8 @@ class ContextManager:
         self,
         strategy: ContextStrategy | None = None,
         compressor: ContextCompressor | None = None,
-        max_tokens: int = 8192,
-        max_messages: int = 100,
+        max_tokens: int = 16384,
+        max_messages: int = 200,
         budget_manager: ContextBudgetManager | None = None,
     ):
         if strategy:
@@ -52,8 +52,8 @@ class ContextManager:
         cls,
         strategy_name: str = "budget",
         provider=None,
-        max_tokens: int = 8192,
-        max_messages: int = 100,
+        max_tokens: int = 16384,
+        max_messages: int = 200,
         compression_model: str = "gpt-4o-mini",
         budget_manager: ContextBudgetManager | None = None,
     ) -> "ContextManager":

@@ -25,7 +25,7 @@ class LLMCompressor(ContextCompressor):
     async def summarize(self, messages: list[Message]) -> str:
         """Summarize messages using a lightweight LLM call."""
         conversation = "\n".join(
-            f"[{m.role.value}]: {m.content[:500]}" for m in messages
+            f"[{m.role.value}]: {m.content[:1000]}" for m in messages
         )
 
         prompt = (

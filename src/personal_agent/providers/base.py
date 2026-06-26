@@ -32,7 +32,7 @@ class Provider(ABC):
         tools: list[ToolSpec] | None = None,
         *,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         stop: list[str] | None = None,
     ) -> ChatResponse:
         """Send a chat completion request. Returns a single response."""
@@ -44,7 +44,7 @@ class Provider(ABC):
         tools: list[ToolSpec] | None = None,
         *,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         stop: list[str] | None = None,
     ) -> AsyncIterator[ChatResponse]:
         """Stream a chat completion. Yields partial responses."""

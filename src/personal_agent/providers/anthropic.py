@@ -95,7 +95,7 @@ class AnthropicProvider(Provider):
         tools: list[ToolSpec] | None = None,
         *,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         stop: list[str] | None = None,
     ) -> ChatResponse:
         try:
@@ -150,7 +150,7 @@ class AnthropicProvider(Provider):
         tools: list[ToolSpec] | None = None,
         *,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         stop: list[str] | None = None,
     ) -> AsyncIterator[ChatResponse]:
         try:

@@ -474,7 +474,7 @@ async def _process_task(agent, task: str, session_tasks: list[dict], settings: S
     # Record session history
     session_tasks.append({
         "task": task[:200],
-        "answer": result.answer[:500],
+        "answer": result.answer[:1000],
         "elapsed_ms": elapsed,
         "token_usage": result.token_usage,
         "steps": len(result.steps),
