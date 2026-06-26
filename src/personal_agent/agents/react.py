@@ -68,7 +68,10 @@ class ReActAgent(BaseAgent):
             await self._fire("on_step_start", step_count, self.max_steps)
 
             # 1. Call the LLM
-            response = await self._call_llm(state)
+            if self._streaming_enabled:
+                response = await self._call_llm_stream(state)
+            else:
+                response = await self._call_llm(state)
 
             # 2. Add assistant message to history
             self._add_assistant_message(state.messages, response)

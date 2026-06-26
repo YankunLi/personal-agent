@@ -283,6 +283,7 @@ class FeishuChannel(Channel):
         agent = await self._get_or_create_agent(user_id)
         agent.short_term = session.short_term
         agent.working = session.working
+        agent._streaming_enabled = True
 
         # Run agent
         try:

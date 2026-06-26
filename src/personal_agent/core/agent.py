@@ -75,6 +75,7 @@ class BaseAgent(ABC):
         self._consolidation_tasks: list[asyncio.Task] = []
         self._consolidation_max_messages = consolidation_max_messages
         self._closed = False
+        self._streaming_enabled = False
 
     async def _fire(self, event: str, *args: Any) -> None:
         """Fire a callback event if it's set."""
@@ -120,6 +121,51 @@ class BaseAgent(ABC):
 
         return response
 
+    async def _call_llm_stream(self, state: AgentState) -> ChatResponse:
+        """Call the LLM provider with streaming, firing text_delta and tool_call_stream callbacks."""
+        # Rebuild system prompt to pick up any self_instruction changes
+        if state.messages and state.messages[0].role == Role.SYSTEM:
+            current_prompt = await self._build_system_prompt()
+            old_content = state.messages[0].content or ""
+            mem_marker = "══════════ MEMORY INDEX ══════════"
+            if mem_marker in old_content:
+                current_prompt += "\n\n" + mem_marker + old_content.split(mem_marker, 1)[1]
+            state.messages[0].content = current_prompt
+
+        messages = state.messages
+        if self.context_manager:
+            messages = await self.context_manager.prepare(messages)
+
+        specs = self.tools.list_specs() if len(self.tools) > 0 else None
+
+        accumulated_content = ""
+        accumulated_tool_calls: dict[str, ToolCall] = {}  # id -> ToolCall
+
+        async for chunk in self.provider.chat_stream(
+            messages, tools=specs,
+            temperature=self._temperature,
+            max_tokens=self._max_tokens,
+        ):
+            if chunk.content:
+                accumulated_content += chunk.content
+                await self._fire("on_text_delta", chunk.content)
+
+            if chunk.tool_calls:
+                for tc in chunk.tool_calls:
+                    await self._fire("on_tool_call_stream", tc.name, tc.arguments)
+                    accumulated_tool_calls[tc.id] = tc
+
+            if chunk.usage:
+                for key, val in chunk.usage.items():
+                    self._total_usage[key] = self._total_usage.get(key, 0) + val
+
+        tool_calls = list(accumulated_tool_calls.values())
+        return ChatResponse(
+            content=accumulated_content,
+            tool_calls=tool_calls if tool_calls else None,
+            usage=dict(self._total_usage),
+        )
+
     async def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
         """Execute tool calls via the executor."""
         return await self.tool_executor.execute_all(tool_calls)
@@ -149,8 +195,8 @@ class BaseAgent(ABC):
 
         return "\n\n".join(parts)
 
-    async def _init_state(self, task: str) -> AgentState:
-        """Initialize agent state with system prompt, memory index, and user task."""
+    async def _init_state(self, task: str, include_history: bool = True) -> AgentState:
+        """Initialize agent state with system prompt, memory index, history, and user task."""
         system_prompt = await self._build_system_prompt()
 
         # Load MEMORY.md index into system prompt (Claude Code style)
@@ -167,6 +213,24 @@ class BaseAgent(ABC):
         messages = []
         if system_prompt:
             messages.append(Message(role=Role.SYSTEM, content=system_prompt))
+
+        # Inject short-term memory history between system prompt and current task
+        if include_history:
+            history = list(self.short_term)
+            if history:
+                messages.append(Message(
+                    role=Role.SYSTEM,
+                    content=(
+                        "───── PREVIOUS CONVERSATION ─────\n"
+                        "The following is the recent conversation for context."
+                    ),
+                ))
+                messages.extend(history)
+                messages.append(Message(
+                    role=Role.SYSTEM,
+                    content="───── END OF PREVIOUS CONVERSATION ─────",
+                ))
+
         messages.append(Message(role=Role.USER, content=task))
         return AgentState(messages=messages)
 

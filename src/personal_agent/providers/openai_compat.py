@@ -144,16 +144,74 @@ class OpenAICompatibleProvider(Provider):
                 kwargs["stop"] = stop
 
             stream = await self._client.chat.completions.create(**kwargs)
+
+            # Accumulate text and tool call deltas across chunks
+            accumulated_content = ""
+            tool_call_deltas: dict[int, dict] = {}  # index -> {id, name, arguments_json}
+            stream_model = ""
+
             async for chunk in stream:
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
+                if chunk.model:
+                    stream_model = chunk.model
+
                 if delta.content:
+                    accumulated_content += delta.content
                     yield ChatResponse(
                         content=delta.content,
                         finish_reason=chunk.choices[0].finish_reason or "stop",
                         model=chunk.model,
                     )
+
+                # Accumulate tool call deltas by index
+                if delta.tool_calls:
+                    for tc_delta in delta.tool_calls:
+                        idx = tc_delta.index
+                        if idx not in tool_call_deltas:
+                            tool_call_deltas[idx] = {
+                                "id": tc_delta.id or "",
+                                "name": "",
+                                "arguments_json": "",
+                            }
+                        entry = tool_call_deltas[idx]
+                        if tc_delta.id:
+                            entry["id"] = tc_delta.id
+                        if tc_delta.function:
+                            if tc_delta.function.name:
+                                entry["name"] += tc_delta.function.name
+                            if tc_delta.function.arguments:
+                                entry["arguments_json"] += tc_delta.function.arguments
+
+                # Check for usage in the final chunk
+                usage = {}
+                if chunk.usage:
+                    usage = {
+                        "prompt_tokens": chunk.usage.prompt_tokens or 0,
+                        "completion_tokens": chunk.usage.completion_tokens or 0,
+                        "total_tokens": chunk.usage.total_tokens or 0,
+                    }
+
+            # Yield final response with accumulated tool calls
+            if tool_call_deltas:
+                tool_calls = []
+                for idx in sorted(tool_call_deltas.keys()):
+                    entry = tool_call_deltas[idx]
+                    try:
+                        args = json.loads(entry["arguments_json"])
+                    except json.JSONDecodeError:
+                        args = {}
+                    tool_calls.append(
+                        ToolCall(id=entry["id"], name=entry["name"], arguments=args)
+                    )
+                yield ChatResponse(
+                    content="",
+                    tool_calls=tool_calls,
+                    finish_reason="tool_use",
+                    model=stream_model,
+                    usage=usage,
+                )
         except Exception as e:
             self._raise_provider_error(e)
 

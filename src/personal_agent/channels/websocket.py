@@ -207,7 +207,14 @@ class WebSocketChannel(Channel):
             on_answer=lambda answer: self._send(
                 websocket, {"type": "answer", "text": answer},
             ),
+            on_text_delta=lambda text: self._send(
+                websocket, {"type": "text_delta", "text": text},
+            ),
+            on_tool_call_stream=lambda name, args: self._send(
+                websocket, {"type": "tool_call_stream", "name": name, "arguments": args},
+            ),
         )
+        agent._streaming_enabled = True
 
         start = time.time()
         try:

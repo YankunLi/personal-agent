@@ -298,6 +298,77 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         fn=read_memory,
     ))
 
+    # Register write_memory tool (allows agent to create or update memory files)
+    async def write_memory(name: str, content: str, memory_type: str = "user",
+                          description: str = "") -> str:
+        """Create or update a memory file. Use this to remember important information for future sessions."""
+        valid_types = ["user", "feedback", "project", "reference"]
+        if memory_type not in valid_types:
+            return f"Invalid memory type '{memory_type}'. Must be one of: {', '.join(valid_types)}"
+        await memory_store.add(name, content, memory_type=memory_type,
+                               description=description or name)
+        return f"Memory '{name}' saved successfully (type: {memory_type})."
+
+    tool_registry.register(FunctionTool(
+        spec=ToolSpec(
+            name="write_memory",
+            description="Create or update a memory file. Use this to remember important information about the user, project, feedback, or references for future sessions.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "A short descriptive name for this memory (e.g., 'User Role', 'Testing Preference').",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The detailed content of the memory. Write 2-5 sentences of markdown.",
+                    },
+                    "memory_type": {
+                        "type": "string",
+                        "enum": ["user", "feedback", "project", "reference"],
+                        "description": "Type of memory: user (who the user is), feedback (how to work), project (project context), reference (external systems).",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "One-line summary for the memory index (optional, defaults to name).",
+                    },
+                },
+                "required": ["name", "content"],
+            },
+            mutating=True,
+        ),
+        fn=write_memory,
+    ))
+
+    # Register forget_memory tool (allows agent to delete memory files)
+    async def forget_memory(name: str) -> str:
+        """Delete a memory file by name. Use this to remove outdated or incorrect memories."""
+        deleted = await memory_store.delete(name)
+        if deleted:
+            return f"Memory '{name}' deleted successfully."
+        available = [e["name"] for e in memory_store.list_all()]
+        return f"No memory found with name '{name}'. Available memories: {available}"
+
+    tool_registry.register(FunctionTool(
+        spec=ToolSpec(
+            name="forget_memory",
+            description="Delete a memory file by name. Use this to remove outdated, incorrect, or duplicate memories.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The name of the memory to delete (e.g., 'User Role', 'Testing Feedback').",
+                    },
+                },
+                "required": ["name"],
+            },
+            mutating=True,
+        ),
+        fn=forget_memory,
+    ))
+
     # Register self-upgrade tool (agent can modify its own memory during execution)
     from personal_agent.memory.long_term import LongTermMemory
     from personal_agent.tools.builtin.self_upgrade import create_self_upgrade_tool

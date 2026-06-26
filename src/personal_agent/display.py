@@ -197,3 +197,12 @@ class TerminalDisplay:
         print()
         print(f"{C_DIM}{BOX_H * w}{C_RESET}")
         print()
+
+    async def on_text_delta(self, text: str) -> None:
+        """Stream text delta to terminal in real time."""
+        print(text, end="", flush=True)
+
+    async def on_tool_call_stream(self, name: str, arguments: dict[str, Any]) -> None:
+        """Display a tool call being streamed."""
+        args_str = _format_json(arguments)
+        print(f"\n  {C_BOLD}{C_CYAN}{name}{C_RESET}  {C_DIM}{args_str}{C_RESET}")

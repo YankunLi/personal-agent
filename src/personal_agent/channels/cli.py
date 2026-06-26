@@ -208,7 +208,10 @@ class CLIChannel(Channel):
             on_tool_call=display.on_tool_call,
             on_tool_result=display.on_tool_result,
             on_answer=display.on_answer,
+            on_text_delta=display.on_text_delta,
+            on_tool_call_stream=display.on_tool_call_stream,
         )
+        self._agent._streaming_enabled = True
 
         try:
             result = await self._agent.run(task)

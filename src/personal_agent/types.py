@@ -102,3 +102,5 @@ class AgentCallbacks:
     on_tool_call: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
     on_tool_result: Callable[[str, Any, str | None], Awaitable[None]] | None = None
     on_answer: Callable[[str], Awaitable[None]] | None = None
+    on_text_delta: Callable[[str], Awaitable[None]] | None = None
+    on_tool_call_stream: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None

@@ -1,9 +1,12 @@
-"""Tool executor with validation, timeout, retry, and parallel execution."""
+"""Tool executor with validation, timeout, retry, caching, and parallel execution."""
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
+import re
 from typing import Any
 
 from personal_agent.exceptions import ToolExecutionError, ToolNotFoundError
@@ -12,9 +15,34 @@ from personal_agent.types import ToolCall, ToolResult
 
 logger = logging.getLogger(__name__)
 
+# Patterns that indicate a transient (retryable) error
+TRANSIENT_ERROR_PATTERNS = [
+    re.compile(p, re.IGNORECASE) for p in [
+        r"timeout",
+        r"timed.?out",
+        r"connection.*(?:reset|refused|error|aborted)",
+        r"network.*(?:error|unreachable)",
+        r"rate.?limit",
+        r"too.?many.?requests",
+        r"service.?unavailable",
+        r"temporarily.?unavailable",
+        r"try.?again",
+        r"503",
+        r"502",
+        r"504",
+        r"429",
+        r"retry",
+        r"connect.*timeout",
+        r"read.*timeout",
+        r"broken.*pipe",
+        r"eof",
+        r"internal.?server.?error",
+    ]
+]
+
 
 class ToolExecutor:
-    """Executes tool calls with validation, timeout, retry, and error handling.
+    """Executes tool calls with validation, timeout, retry, caching, and error handling.
 
     Calls tools through their __call__ method, which triggers JSON Schema
     argument validation before execution.
@@ -35,6 +63,62 @@ class ToolExecutor:
         self._max_retries = max_retries
         self._max_output_chars = max_output_chars
 
+        # Per-run result cache: only non-mutating tools
+        self._cache: dict[str, ToolResult] = {}
+
+        # Per-tool retry overrides: {tool_name: max_retries}
+        self._tool_retry_overrides: dict[str, int] = {}
+
+        # Fallback registry: {tool_name: fallback_tool_name}
+        self._fallbacks: dict[str, str] = {}
+
+    # ── cache ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _make_cache_key(tool_name: str, arguments: dict[str, Any]) -> str:
+        """Produce a stable cache key from tool name and arguments."""
+        args_json = json.dumps(arguments, sort_keys=True, default=str)
+        args_hash = hashlib.sha256(args_json.encode()).hexdigest()
+        return f"{tool_name}:{args_hash}"
+
+    def _get_cached(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult | None:
+        key = self._make_cache_key(tool_name, arguments)
+        return self._cache.get(key)
+
+    def _set_cache(self, tool_name: str, arguments: dict[str, Any], result: ToolResult) -> None:
+        key = self._make_cache_key(tool_name, arguments)
+        self._cache[key] = result
+
+    def clear_cache(self) -> None:
+        """Clear the per-run result cache. Called between agent runs."""
+        self._cache.clear()
+
+    # ── retry classification ───────────────────────────────────────────
+
+    @staticmethod
+    def _is_transient_error(error: str) -> bool:
+        """Check if an error message indicates a transient (retryable) failure."""
+        for pattern in TRANSIENT_ERROR_PATTERNS:
+            if pattern.search(error):
+                return True
+        return False
+
+    def _get_retry_count(self, tool_name: str) -> int:
+        """Get the max retry count for a tool, respecting per-tool overrides."""
+        return self._tool_retry_overrides.get(tool_name, self._max_retries)
+
+    def set_tool_retry(self, tool_name: str, max_retries: int) -> None:
+        """Override the retry count for a specific tool."""
+        self._tool_retry_overrides[tool_name] = max_retries
+
+    # ── fallback ───────────────────────────────────────────────────────
+
+    def register_fallback(self, tool_name: str, fallback_name: str) -> None:
+        """Register a fallback tool to use when *tool_name* exhausts all retries."""
+        self._fallbacks[tool_name] = fallback_name
+
+    # ── execution ──────────────────────────────────────────────────────
+
     def _truncate_output(self, output: Any) -> str:
         """Truncate tool output to prevent context overflow."""
         text = str(output)
@@ -48,45 +132,96 @@ class ToolExecutor:
         )
 
     async def execute(self, tool_call: ToolCall) -> ToolResult:
-        """Execute a single tool call with validation, timeout, and retry."""
-        last_error = None
+        """Execute a single tool call with caching, validation, timeout, retry, and fallback."""
+        # Check cache for non-mutating tools
+        try:
+            tool = self._registry.get(tool_call.name)
+            if not tool.spec.mutating:
+                cached = self._get_cached(tool_call.name, tool_call.arguments)
+                if cached is not None:
+                    return cached
+        except ToolNotFoundError:
+            pass  # Will be handled in the execution attempt below
 
-        for attempt in range(self._max_retries + 1):
+        max_retries = self._get_retry_count(tool_call.name)
+        last_error: str | None = None
+        last_error_is_transient = False
+
+        for attempt in range(max_retries + 1):
             try:
                 tool = self._registry.get(tool_call.name)
-                # Use __call__ to trigger _validate_args before execution
                 output = await asyncio.wait_for(
                     tool(**tool_call.arguments),
                     timeout=self._timeout,
                 )
-                return ToolResult(
+                result = ToolResult(
                     call_id=tool_call.id,
                     name=tool_call.name,
                     output=self._truncate_output(output),
                 )
+                # Cache non-mutating results
+                if not tool.spec.mutating:
+                    self._set_cache(tool_call.name, tool_call.arguments, result)
+                return result
+
             except ToolNotFoundError:
                 return ToolResult(
                     call_id=tool_call.id,
                     name=tool_call.name,
                     error=f"Tool '{tool_call.name}' not found",
                 )
+
             except ToolExecutionError as e:
+                # ToolExecutionError is a permanent failure — don't retry
                 return ToolResult(
                     call_id=tool_call.id,
                     name=tool_call.name,
                     error=str(e),
                 )
+
             except asyncio.TimeoutError:
                 last_error = f"Tool '{tool_call.name}' timed out after {self._timeout}s"
+                last_error_is_transient = True
                 logger.warning(
                     "Tool timeout (attempt %d/%d): %s",
-                    attempt + 1, self._max_retries + 1, last_error,
+                    attempt + 1, max_retries + 1, last_error,
                 )
+
             except Exception as e:
                 last_error = str(e)
-                logger.warning(
-                    "Tool error (attempt %d/%d): %s",
-                    attempt + 1, self._max_retries + 1, last_error,
+                last_error_is_transient = self._is_transient_error(last_error)
+                if last_error_is_transient:
+                    logger.warning(
+                        "Tool transient error (attempt %d/%d): %s",
+                        attempt + 1, max_retries + 1, last_error,
+                    )
+                else:
+                    # Permanent error — don't retry
+                    logger.error("Tool permanent error: %s", last_error)
+                    break
+
+        # All retries exhausted — try fallback if available
+        if last_error_is_transient and tool_call.name in self._fallbacks:
+            fallback_name = self._fallbacks[tool_call.name]
+            logger.info(
+                "Falling back from '%s' to '%s'", tool_call.name, fallback_name
+            )
+            try:
+                fallback_tool = self._registry.get(fallback_name)
+                output = await asyncio.wait_for(
+                    fallback_tool(**tool_call.arguments),
+                    timeout=self._timeout,
+                )
+                return ToolResult(
+                    call_id=tool_call.id,
+                    name=tool_call.name,
+                    output=self._truncate_output(
+                        f"[Fallback from '{tool_call.name}' to '{fallback_name}']\n{output}"
+                    ),
+                )
+            except Exception as e:
+                last_error = (
+                    f"{last_error}; fallback '{fallback_name}' also failed: {e}"
                 )
 
         return ToolResult(

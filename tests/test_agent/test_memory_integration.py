@@ -193,6 +193,138 @@ class TestReadMemoryTool:
         assert "No memory found" in result
 
 
+class TestWriteMemoryTool:
+    @pytest.mark.asyncio
+    async def test_write_memory_creates_file(self, temp_memory_dir):
+        store = FileMemoryStore(storage_dir=temp_memory_dir)
+
+        async def write_memory(name: str, content: str, memory_type: str = "user",
+                               description: str = "") -> str:
+            await store.add(name, content, memory_type=memory_type,
+                            description=description or name)
+            return f"Memory '{name}' saved successfully."
+
+        tool = FunctionTool(
+            spec=ToolSpec(
+                name="write_memory",
+                description="Create or update a memory.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "content": {"type": "string"},
+                        "memory_type": {"type": "string", "enum": ["user", "feedback", "project", "reference"]},
+                        "description": {"type": "string"},
+                    },
+                    "required": ["name", "content"],
+                },
+                mutating=True,
+            ),
+            fn=write_memory,
+        )
+
+        result = await tool.execute(name="Test", content="Test content.", memory_type="user")
+        assert "saved successfully" in result
+
+        stored = await store.get("Test")
+        assert stored is not None
+        _, body = stored
+        assert body == "Test content."
+
+    @pytest.mark.asyncio
+    async def test_write_memory_updates_existing(self, temp_memory_dir):
+        store = FileMemoryStore(storage_dir=temp_memory_dir)
+        await store.add("Test", "Original.", memory_type="user")
+
+        async def write_memory(name: str, content: str, memory_type: str = "user",
+                               description: str = "") -> str:
+            await store.add(name, content, memory_type=memory_type,
+                            description=description or name)
+            return f"Memory '{name}' saved successfully."
+
+        tool = FunctionTool(
+            spec=ToolSpec(
+                name="write_memory",
+                description="Create or update a memory.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "content": {"type": "string"},
+                        "memory_type": {"type": "string"},
+                    },
+                    "required": ["name", "content"],
+                },
+                mutating=True,
+            ),
+            fn=write_memory,
+        )
+
+        await tool.execute(name="Test", content="Updated.", memory_type="user")
+        _, body = await store.get("Test")
+        assert body == "Updated."
+
+
+class TestForgetMemoryTool:
+    @pytest.mark.asyncio
+    async def test_forget_memory_deletes(self, temp_memory_dir):
+        store = FileMemoryStore(storage_dir=temp_memory_dir)
+        await store.add("Test", "Content.", memory_type="user")
+
+        async def forget_memory(name: str) -> str:
+            deleted = await store.delete(name)
+            if deleted:
+                return f"Memory '{name}' deleted successfully."
+            available = [e["name"] for e in store.list_all()]
+            return f"No memory found: '{name}'. Available: {available}"
+
+        tool = FunctionTool(
+            spec=ToolSpec(
+                name="forget_memory",
+                description="Delete a memory.",
+                parameters={
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+                mutating=True,
+            ),
+            fn=forget_memory,
+        )
+
+        result = await tool.execute(name="Test")
+        assert "deleted successfully" in result
+        assert await store.get("Test") is None
+
+    @pytest.mark.asyncio
+    async def test_forget_memory_not_found(self, temp_memory_dir):
+        store = FileMemoryStore(storage_dir=temp_memory_dir)
+
+        async def forget_memory(name: str) -> str:
+            deleted = await store.delete(name)
+            if deleted:
+                return f"Memory '{name}' deleted successfully."
+            available = [e["name"] for e in store.list_all()]
+            return f"No memory found: '{name}'. Available: {available}"
+
+        tool = FunctionTool(
+            spec=ToolSpec(
+                name="forget_memory",
+                description="Delete a memory.",
+                parameters={
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+                mutating=True,
+            ),
+            fn=forget_memory,
+        )
+
+        result = await tool.execute(name="Nonexistent")
+        assert "No memory found" in result
+
+
 class TestAgentFinalizeConsolidation:
     @pytest.mark.asyncio
     async def test_finalize_triggers_consolidation(self, temp_memory_dir):
