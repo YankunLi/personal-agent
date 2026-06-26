@@ -536,8 +536,9 @@ async def _handle_command(
         print(f"{C_YELLOW}Restarting agent...{C_RESET}")
         await agent.close()
         new_agent = await create_agent(settings, **overrides)
-        # Copy agent reference back (hack: use mutable container)
-        # We need to update the agent in the caller's scope
+        # NOTE: __dict__.update bypasses properties and descriptors. This works
+        # because BaseAgent uses plain attributes (no __setattr__ overrides), but
+        # would break if any attribute becomes a property in the future.
         agent.__dict__.update(new_agent.__dict__)
         print(f"{C_GREEN}✓{C_RESET} Agent restarted with current settings.")
 
