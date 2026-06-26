@@ -80,7 +80,10 @@ class BaseAgent(ABC):
         """Fire a callback event if it's set."""
         cb = getattr(self._callbacks, event, None)
         if cb is not None:
-            await cb(*args)
+            try:
+                await cb(*args)
+            except Exception as e:
+                logger.warning("Callback '%s' failed: %s", event, e)
 
     @abstractmethod
     async def run(self, task: str, **kwargs: Any) -> AgentResult:
