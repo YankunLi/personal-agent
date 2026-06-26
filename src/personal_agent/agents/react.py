@@ -78,8 +78,8 @@ class ReActAgent(BaseAgent):
 
             # 3. Check for tool calls
             if response.has_tool_calls:
-                # Fire thought before tool execution
-                if response.content:
+                # Fire thought before tool execution (skip if streaming already displayed it)
+                if response.content and not self._streaming_enabled:
                     await self._fire("on_thought", response.content)
 
                 for tc in response.tool_calls:
