@@ -293,7 +293,13 @@ def _parse_config_file(path: Path) -> Settings:
         with open(path) as f:
             data = json.load(f)
     elif path.suffix in (".yaml", ".yml"):
-        import yaml  # type: ignore
+        try:
+            import yaml  # type: ignore
+        except ImportError:
+            raise ImportError(
+                "PyYAML is required to parse YAML config files. "
+                "Install it with: pip install pyyaml"
+            )
 
         with open(path) as f:
             data = yaml.safe_load(f)
