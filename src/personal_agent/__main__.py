@@ -136,7 +136,7 @@ def main():
     parser.add_argument("task", nargs="?", help="Task for the agent to execute")
     parser.add_argument("-c", "--config", help="Path to config file (JSON or YAML)")
     parser.add_argument("-w", "--workdir", help="Working directory (defaults to current directory)")
-    parser.add_argument("-p", "--pattern", choices=["auto", "react", "plan_execute", "reflection"], help="Agent pattern (default: auto)")
+    parser.add_argument("-p", "--pattern", choices=["auto", "react", "plan_execute", "reflection", "pipeline", "debate", "parallel_judge"], help="Agent pattern (default: auto)")
     parser.add_argument("--provider", help="LLM provider (openai, deepseek, qwen, zhipu, hunyuan, anthropic, wenxin)")
     parser.add_argument("-m", "--model", help="Model name")
     parser.add_argument("--api-key", help="API key")
@@ -507,8 +507,8 @@ async def _handle_command(
     elif cmd == "/pattern":
         if not arg:
             print(f"Current pattern: {C_CYAN}{settings.agent.pattern}{C_RESET}")
-            print(f"Available: {C_GREEN}react{C_RESET}, {C_GREEN}plan_execute{C_RESET}, {C_GREEN}reflection{C_RESET}")
-        elif arg in ("react", "plan_execute", "reflection"):
+            print(f"Available: {C_GREEN}react{C_RESET}, {C_GREEN}plan_execute{C_RESET}, {C_GREEN}reflection{C_RESET}, {C_GREEN}pipeline{C_RESET}, {C_GREEN}debate{C_RESET}, {C_GREEN}parallel_judge{C_RESET}")
+        elif arg in ("react", "plan_execute", "reflection", "pipeline", "debate", "parallel_judge"):
             overrides["pattern"] = arg
             print(f"{C_GREEN}✓{C_RESET} Pattern set to {C_CYAN}{arg}{C_RESET}. Will take effect on next agent restart.")
         else:

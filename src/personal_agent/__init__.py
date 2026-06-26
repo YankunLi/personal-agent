@@ -20,7 +20,8 @@ from personal_agent.context import ContextManager
 from personal_agent.core import BaseAgent
 from personal_agent.factory import create_agent
 from personal_agent.memory import (
-    LongTermMemory,
+    FileMemoryStore,
+    MemoryConsolidator,
     ShortTermMemory,
     WorkingMemory,
 )
@@ -71,7 +72,8 @@ __all__ = [
     # Memory
     "ShortTermMemory",
     "WorkingMemory",
-    "LongTermMemory",
+    "FileMemoryStore",
+    "MemoryConsolidator",
     # Context
     "ContextManager",
     # Skills

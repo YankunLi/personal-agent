@@ -1,3 +1,4 @@
+from personal_agent.context.budget import ContextBudgetManager
 from personal_agent.context.compressor import ContextCompressor, LLMCompressor, RuleBasedCompressor
 from personal_agent.context.manager import ContextManager
 from personal_agent.context.strategies import (
@@ -8,6 +9,7 @@ from personal_agent.context.strategies import (
 )
 
 __all__ = [
+    "ContextBudgetManager",
     "ContextManager",
     "ContextStrategy",
     "ContextCompressor",

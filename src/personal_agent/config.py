@@ -26,7 +26,7 @@ class ProviderCredentials(BaseModel):
 class AgentConfig(BaseModel):
     """Core agent behavior settings."""
 
-    pattern: Literal["auto", "react", "plan_execute", "reflection"] = "auto"
+    pattern: Literal["auto", "react", "plan_execute", "reflection", "pipeline", "debate", "parallel_judge"] = "auto"
     provider: str = "openai"  # Which provider to use (key in providers map)
     model: str = "gpt-4o"
     max_tokens: int = 4096
@@ -35,6 +35,22 @@ class AgentConfig(BaseModel):
     workspace: str = "./workspace"
     system_prompt: str = ""
     skills: list[str] = Field(default_factory=list)
+
+
+# ── Sub-Agent ──────────────────────────────────────────────────────────────────
+
+class SubAgentConfig(BaseModel):
+    """Configuration for a single sub-agent (used in AgentTool delegation)."""
+
+    pattern: Literal["react", "plan_execute", "reflection"] = "react"
+    provider: str = "openai"
+    model: str = "gpt-4o"
+    temperature: float = 0.7
+    max_tokens: int = 4096
+    max_steps: int = 20
+    system_prompt: str = ""
+    tools: list[str] = Field(default_factory=list)
+    description: str = ""  # Description shown to parent agent as tool description
 
 
 # ── Tools ──────────────────────────────────────────────────────────────────────
@@ -59,28 +75,40 @@ class ToolConfig(BaseModel):
 
 # ── Memory ─────────────────────────────────────────────────────────────────────
 
-class LongTermMemoryConfig(BaseModel):
-    backend: Literal["in_memory", "file", "chroma"] = "in_memory"
-    persist_path: str | None = None
-    chroma_path: str | None = None
-    embedding_model: str = "text-embedding-3-small"
-    embedding_api_key: str = ""
-
-
 class MemoryConfig(BaseModel):
     short_term_max_messages: int = 100
-    long_term: LongTermMemoryConfig = Field(default_factory=LongTermMemoryConfig)
+    memory_dir: str = "~/.personal-agent/memory"
+
+
+# ── Consolidation ──────────────────────────────────────────────────────────────
+
+class ConsolidationConfig(BaseModel):
+    enabled: bool = True
+    provider: str = "openai"       # Cheap model provider for consolidation
+    model: str = "gpt-4o-mini"     # Cheap model
+    max_conversation_messages: int = 20  # How many recent messages to analyze
 
 
 # ── Context ────────────────────────────────────────────────────────────────────
 
 class ContextConfig(BaseModel):
-    strategy: Literal["sliding_window", "compression", "hybrid"] = "hybrid"
+    strategy: Literal["sliding_window", "compression", "hybrid", "budget"] = "budget"
     max_messages: int = 100
     max_tokens: int = 8192
     compression_threshold_tokens: int = 4096
     compression_keep_recent: int = 10
     compression_model: str = "gpt-4o-mini"
+
+
+# ── Budget ─────────────────────────────────────────────────────────────────────
+
+class BudgetConfig(BaseModel):
+    context_window: int = 128000
+    system_prompt_pct: float = 0.15
+    loaded_memories_pct: float = 0.10
+    conversation_pct: float = 0.45
+    tool_definitions_pct: float = 0.05
+    response_reserve_pct: float = 0.25
 
 
 # ── MCP ────────────────────────────────────────────────────────────────────────
@@ -107,6 +135,63 @@ class PlanConfig(BaseModel):
 class ReflectionConfig(BaseModel):
     max_iterations: int = 3
     min_score: float = 6.0
+
+
+# ── Multi-Agent Patterns ───────────────────────────────────────────────────────
+
+class PipelineStageConfig(BaseModel):
+    """A single stage in a pipeline."""
+    name: str = ""
+    pattern: Literal["react", "plan_execute", "reflection"] = "react"
+    provider: str = "openai"
+    model: str = "gpt-4o"
+    temperature: float = 0.7
+    max_tokens: int = 4096
+    max_steps: int = 20
+    system_prompt: str = ""
+    tools: list[str] = Field(default_factory=list)
+
+
+class PipelineConfig(BaseModel):
+    stages: list[PipelineStageConfig] = Field(default_factory=list)
+
+
+class DebateRoleConfig(BaseModel):
+    """A role in a multi-agent debate."""
+    name: str = ""
+    system_prompt: str = ""
+    provider: str = "openai"
+    model: str = "gpt-4o"
+    temperature: float = 0.7
+    max_tokens: int = 4096
+
+
+class DebateConfig(BaseModel):
+    roles: list[DebateRoleConfig] = Field(default_factory=list)
+    judge_provider: str = "openai"
+    judge_model: str = "gpt-4o"
+    judge_temperature: float = 0.3
+    max_rounds: int = 2
+
+
+class ParallelAgentConfig(BaseModel):
+    """A single agent in parallel execution."""
+    name: str = ""
+    pattern: Literal["react", "plan_execute", "reflection"] = "react"
+    provider: str = "openai"
+    model: str = "gpt-4o"
+    temperature: float = 0.7
+    max_tokens: int = 4096
+    max_steps: int = 20
+    system_prompt: str = ""
+    tools: list[str] = Field(default_factory=list)
+
+
+class ParallelJudgeConfig(BaseModel):
+    agents: list[ParallelAgentConfig] = Field(default_factory=list)
+    judge_provider: str = "openai"
+    judge_model: str = "gpt-4o"
+    judge_temperature: float = 0.3
 
 
 # ── Root Settings ──────────────────────────────────────────────────────────────
@@ -138,12 +223,18 @@ class Settings(BaseSettings):
 
     agent: AgentConfig = Field(default_factory=AgentConfig)
     providers: dict[str, ProviderCredentials] = Field(default_factory=dict)
+    sub_agents: dict[str, SubAgentConfig] = Field(default_factory=dict)
     tools: ToolConfig = Field(default_factory=ToolConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    consolidation: ConsolidationConfig = Field(default_factory=ConsolidationConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
+    budget: BudgetConfig = Field(default_factory=BudgetConfig)
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     plan: PlanConfig = Field(default_factory=PlanConfig)
     reflection: ReflectionConfig = Field(default_factory=ReflectionConfig)
+    pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+    debate: DebateConfig = Field(default_factory=DebateConfig)
+    parallel_judge: ParallelJudgeConfig = Field(default_factory=ParallelJudgeConfig)
 
     def get_provider_credentials(self) -> ProviderCredentials:
         """Get credentials for the currently selected provider."""

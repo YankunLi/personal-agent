@@ -4,16 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from personal_agent.config import Settings, load_config
+from personal_agent.config import Settings, SubAgentConfig, load_config
 from personal_agent.context.manager import ContextManager
+from personal_agent.context.budget import ContextBudgetManager
 from personal_agent.core.agent import BaseAgent
-from personal_agent.memory.backends.chroma import ChromaBackend
-from personal_agent.memory.backends.file import FileBackend
-from personal_agent.memory.backends.in_memory import InMemoryBackend
-from personal_agent.memory.long_term import LongTermMemory
+from personal_agent.memory.file_store import FileMemoryStore
 from personal_agent.memory.short_term import ShortTermMemory
 from personal_agent.memory.working import WorkingMemory
-from personal_agent.providers.registry import create_provider
+from personal_agent.providers.registry import create_provider, ProviderCredentials
 from personal_agent.selector import classify
 from personal_agent.skills.base import SkillManager
 from personal_agent.tools.builtin import (
@@ -21,10 +19,77 @@ from personal_agent.tools.builtin import (
     create_file_ops_tools,
     create_web_search_tool,
 )
-from personal_agent.tools.builtin.self_upgrade import create_self_upgrade_tool
 from personal_agent.tools.executor import ToolExecutor
 from personal_agent.tools.mcp import MCPToolSource
 from personal_agent.tools.registry import ToolRegistry
+
+
+async def create_sub_agent(
+    sub_cfg: SubAgentConfig,
+    providers: dict[str, ProviderCredentials] | None = None,
+    workspace_dir: str | None = None,
+) -> BaseAgent:
+    """Create a single sub-agent from SubAgentConfig.
+
+    Args:
+        sub_cfg: Sub-agent configuration.
+        providers: Provider credentials map (keyed by provider name).
+        workspace_dir: Optional workspace directory for file_ops tools.
+
+    Returns:
+        A configured BaseAgent instance (ReActAgent, PlanAndExecuteAgent, or ReflectionAgent).
+    """
+    providers = providers or {}
+
+    # Get credentials for this sub-agent's provider
+    creds = providers.get(sub_cfg.provider, ProviderCredentials())
+
+    # Create provider
+    provider = create_provider(
+        provider_name=sub_cfg.provider,
+        model=sub_cfg.model,
+        credentials=creds,
+    )
+
+    # Create tool registry with configured tools
+    tool_registry = ToolRegistry()
+    ws = workspace_dir or "./workspace"
+    file_ops_tools = create_file_ops_tools(workspace_dir=ws)
+    file_ops_map = {t.spec.name: t for t in file_ops_tools}
+
+    for tool_name in sub_cfg.tools:
+        if tool_name == "web_search":
+            tool_registry.register(create_web_search_tool())
+        elif tool_name == "code_exec":
+            tool_registry.register(create_code_exec_tool())
+        elif tool_name in file_ops_map:
+            tool_registry.register(file_ops_map[tool_name])
+
+    tool_executor = ToolExecutor(registry=tool_registry)
+
+    # Create agent kwargs
+    agent_kwargs = {
+        "provider": provider,
+        "tools": tool_registry,
+        "tool_executor": tool_executor,
+        "short_term_memory": ShortTermMemory(),
+        "working_memory": WorkingMemory(),
+        "max_steps": sub_cfg.max_steps,
+        "system_prompt": sub_cfg.system_prompt,
+        "temperature": sub_cfg.temperature,
+        "max_tokens": sub_cfg.max_tokens,
+    }
+
+    # Create the appropriate agent
+    if sub_cfg.pattern == "plan_execute":
+        from personal_agent.agents.plan_execute import PlanAndExecuteAgent
+        return PlanAndExecuteAgent(**agent_kwargs)
+    elif sub_cfg.pattern == "reflection":
+        from personal_agent.agents.reflection import ReflectionAgent
+        return ReflectionAgent(**agent_kwargs)
+    else:
+        from personal_agent.agents.react import ReActAgent
+        return ReActAgent(**agent_kwargs)
 
 
 async def create_agent(settings: Settings | None = None, task: str = "", **overrides) -> BaseAgent:
@@ -119,26 +184,63 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
     short_term = ShortTermMemory(max_messages=memory_cfg.short_term_max_messages)
     working = WorkingMemory()
 
-    long_term = None
-    lt = memory_cfg.long_term
-    backend_name = lt.backend
-    if backend_name == "chroma":
-        backend = ChromaBackend(
-            persist_path=lt.chroma_path,
-            embedding_model=lt.embedding_model,
-            embedding_api_key=lt.embedding_api_key,
-        )
-        long_term = LongTermMemory(backend=backend)
-    elif backend_name == "file":
-        path = lt.persist_path or "memory.json"
-        backend = FileBackend(path=path)
-        long_term = LongTermMemory(backend=backend)
-    else:
-        long_term = LongTermMemory(backend=InMemoryBackend())
+    # File-based memory store (Claude Code style)
+    memory_store = FileMemoryStore(storage_dir=memory_cfg.memory_dir)
 
-    # Register self-upgrade tool
-    self_upgrade = create_self_upgrade_tool(working, long_term)
-    tool_registry.register(self_upgrade)
+    # Create budget manager
+    budget_manager = ContextBudgetManager(
+        context_window=settings.budget.context_window,
+    )
+
+    # Create consolidation provider (cheap model for background memory extraction)
+    consolidation_provider = None
+    if settings.consolidation.enabled:
+        cons_cfg = settings.consolidation
+        cons_creds = settings.providers.get(cons_cfg.provider, ProviderCredentials())
+        if cons_creds.api_key:
+            consolidation_provider = create_provider(
+                provider_name=cons_cfg.provider,
+                model=cons_cfg.model,
+                credentials=cons_creds,
+            )
+
+    # Register read_memory tool (allows agent to load memory files on demand)
+    from personal_agent.tools.base import FunctionTool
+    from personal_agent.types import ToolSpec
+
+    async def read_memory(name: str) -> str:
+        """Read a specific memory file by name. Use this to recall details about the user, project, or past feedback."""
+        result = memory_store.get(name)
+        if result is None:
+            return f"No memory found with name '{name}'. Available memories: {[e['name'] for e in memory_store.list_all()]}"
+        meta, body = result
+        return f"## {meta.get('name', name)}\n*Type: {meta.get('type', 'unknown')}*\n\n{body}"
+
+    tool_registry.register(FunctionTool(
+        spec=ToolSpec(
+            name="read_memory",
+            description="Read a specific memory file by name. Use this to recall stored information about the user, project preferences, or past feedback. Call this when you need to remember context from previous sessions.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The name of the memory to read (e.g., 'User Role', 'Testing Feedback').",
+                    },
+                },
+                "required": ["name"],
+            },
+        ),
+        fn=read_memory,
+    ))
+
+    # Register sub-agents as tools (AgentTool)
+    from personal_agent.tools.agent_tool import AgentTool
+    for name, sub_cfg in settings.sub_agents.items():
+        sub_agent = await create_sub_agent(sub_cfg, settings.providers, workspace_dir)
+        description = sub_cfg.description or f"Delegate a task to the '{name}' specialist agent."
+        agent_tool = AgentTool(agent=sub_agent, name=name, description=description)
+        tool_registry.register(agent_tool)
 
     # Create skill manager and register skill tools
     skill_manager = SkillManager()
@@ -172,7 +274,9 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
         "tool_executor": tool_executor,
         "short_term_memory": short_term,
         "working_memory": working,
-        "long_term_memory": long_term,
+        "memory_store": memory_store,
+        "consolidation_provider": consolidation_provider,
+        "budget_manager": budget_manager,
         "context_manager": context_manager,
         "skill_manager": skill_manager,
         "max_steps": agent_cfg.max_steps,
@@ -182,7 +286,37 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
     }
 
     # Create the appropriate agent
-    if pattern == "plan_execute":
+    if pattern == "pipeline":
+        from personal_agent.agents.pipeline import PipelineAgent
+
+        agent = PipelineAgent(
+            stages=settings.pipeline.stages,
+            **agent_kwargs,
+        )
+    elif pattern == "debate":
+        from personal_agent.agents.debate import DebateAgent
+
+        agent = DebateAgent(
+            roles=settings.debate.roles,
+            judge_provider_name=settings.debate.judge_provider,
+            judge_model=settings.debate.judge_model,
+            judge_temperature=settings.debate.judge_temperature,
+            max_rounds=settings.debate.max_rounds,
+            providers=settings.providers,
+            **agent_kwargs,
+        )
+    elif pattern == "parallel_judge":
+        from personal_agent.agents.parallel_judge import ParallelJudgeAgent
+
+        agent = ParallelJudgeAgent(
+            agents=settings.parallel_judge.agents,
+            judge_provider_name=settings.parallel_judge.judge_provider,
+            judge_model=settings.parallel_judge.judge_model,
+            judge_temperature=settings.parallel_judge.judge_temperature,
+            providers=settings.providers,
+            **agent_kwargs,
+        )
+    elif pattern == "plan_execute":
         from personal_agent.agents.plan_execute import PlanAndExecuteAgent
 
         agent = PlanAndExecuteAgent(

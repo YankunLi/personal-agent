@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from personal_agent.context.manager import ContextManager
-from personal_agent.memory.long_term import LongTermMemory
+from personal_agent.memory.file_store import FileMemoryStore
 from personal_agent.memory.short_term import ShortTermMemory
 from personal_agent.memory.working import WorkingMemory
 from personal_agent.providers.base import ChatResponse, Provider
@@ -40,7 +40,9 @@ class BaseAgent(ABC):
         tool_executor: ToolExecutor | None = None,
         short_term_memory: ShortTermMemory | None = None,
         working_memory: WorkingMemory | None = None,
-        long_term_memory: LongTermMemory | None = None,
+        memory_store: FileMemoryStore | None = None,
+        consolidation_provider: Any = None,
+        budget_manager: Any = None,
         context_manager: ContextManager | None = None,
         skill_manager: SkillManager | None = None,
         max_steps: int = 50,
@@ -54,7 +56,9 @@ class BaseAgent(ABC):
         self.tool_executor = tool_executor or ToolExecutor(self.tools)
         self.short_term = short_term_memory or ShortTermMemory()
         self.working = working_memory or WorkingMemory()
-        self.long_term = long_term_memory
+        self.memory_store = memory_store
+        self.consolidation_provider = consolidation_provider
+        self.budget_manager = budget_manager
         self.context_manager = context_manager
         self.skill_manager = skill_manager
         self.max_steps = max_steps
@@ -115,8 +119,20 @@ class BaseAgent(ABC):
         return "\n\n".join(parts)
 
     def _init_state(self, task: str) -> AgentState:
-        """Initialize agent state with system prompt and user task."""
+        """Initialize agent state with system prompt, memory index, and user task."""
         system_prompt = self._build_system_prompt()
+
+        # Load MEMORY.md index into system prompt (Claude Code style)
+        if self.memory_store:
+            memory_index = self.memory_store.load_index_text()
+            if memory_index and "No memories stored yet" not in memory_index:
+                system_prompt += (
+                    "\n\n"
+                    "══════════ MEMORY INDEX ══════════\n"
+                    f"{memory_index}"
+                    "══════════════════════════════════\n"
+                )
+
         messages = []
         if system_prompt:
             messages.append(Message(role=Role.SYSTEM, content=system_prompt))
@@ -163,12 +179,20 @@ class BaseAgent(ABC):
         self.short_term.add(Message(role=Role.USER, content=task))
         self.short_term.add(Message(role=Role.ASSISTANT, content=answer[:500]))
 
-        # Store the result in long-term memory if available
-        if self.long_term:
-            await self.long_term.remember(
-                content=f"Q: {task[:200]}\nA: {answer[:200]}",
-                metadata={"type": "task_result", "elapsed_ms": elapsed_ms},
-            )
+        # Trigger memory consolidation (async, don't block)
+        if self.memory_store and self.consolidation_provider:
+            try:
+                from personal_agent.memory.consolidator import MemoryConsolidator
+                consolidator = MemoryConsolidator(
+                    store=self.memory_store,
+                    provider=self.consolidation_provider,
+                )
+                # Run consolidation with the full conversation
+                existing = self.memory_store.list_all()
+                all_messages = list(self.short_term)
+                await consolidator.consolidate(all_messages, existing)
+            except Exception as e:
+                logger.warning("Memory consolidation failed: %s", e)
 
         return AgentResult(
             answer=answer,
