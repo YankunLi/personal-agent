@@ -67,6 +67,7 @@ class WebSocketChannel(Channel):
         self._conn_agents: dict[int, Any] = {}
         self._conn_sessions: dict[int, Any] = {}
         self._conn_counter = 0
+        self._agent_lock = asyncio.Lock()
 
     # ── Channel interface ────────────────────────────────────────────────────
 
@@ -245,13 +246,18 @@ class WebSocketChannel(Channel):
         if conn_id in self._conn_agents:
             return self._conn_agents[conn_id]
 
-        from personal_agent.factory import create_agent
+        async with self._agent_lock:
+            # Double-check: another task may have created the agent while we waited
+            if conn_id in self._conn_agents:
+                return self._conn_agents[conn_id]
 
-        session = self._conn_sessions.get(conn_id)
-        user_id = session.user_id if session else "web-user"
-        agent = await create_agent(self._settings, user_id=user_id)
-        self._conn_agents[conn_id] = agent
-        return agent
+            from personal_agent.factory import create_agent
+
+            session = self._conn_sessions.get(conn_id)
+            user_id = session.user_id if session else "web-user"
+            agent = await create_agent(self._settings, user_id=user_id)
+            self._conn_agents[conn_id] = agent
+            return agent
 
     # ── Session management ──────────────────────────────────────────────────
 
