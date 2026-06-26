@@ -91,20 +91,21 @@ class PipelineAgent(BaseAgent):
                 sub_cfg, providers=self._providers,
                 extra_tools=self.tools.list_tools(),
             )
-            stage_result = await stage_agent.run(stage_task)
-            current_input = stage_result.answer
+            try:
+                stage_result = await stage_agent.run(stage_task)
+                current_input = stage_result.answer
 
-            all_steps.append(AgentStep(
-                thought=f"Stage {i+1}: {stage_cfg.name or stage_cfg.pattern}",
-                observation=stage_result.answer[:1000],
-            ))
+                all_steps.append(AgentStep(
+                    thought=f"Stage {i+1}: {stage_cfg.name or stage_cfg.pattern}",
+                    observation=stage_result.answer[:1000],
+                ))
 
-            # Accumulate token usage
-            if stage_result.token_usage:
-                for key, val in stage_result.token_usage.items():
-                    self._total_usage[key] = self._total_usage.get(key, 0) + val
-
-            await stage_agent.close()
+                # Accumulate token usage
+                if stage_result.token_usage:
+                    for key, val in stage_result.token_usage.items():
+                        self._total_usage[key] = self._total_usage.get(key, 0) + val
+            finally:
+                await stage_agent.close()
 
         state.done = True
         state.final_answer = current_input
