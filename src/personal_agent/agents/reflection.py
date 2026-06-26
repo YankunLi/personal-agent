@@ -209,6 +209,8 @@ class ReflectionAgent(BaseAgent):
             return False
 
         scores = critique.get("scores", {})
+        if not isinstance(scores, dict):
+            return overall >= self._critique_threshold
         for criterion, score in scores.items():
             try:
                 if float(score) < self._min_score:
