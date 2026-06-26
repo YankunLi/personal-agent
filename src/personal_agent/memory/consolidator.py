@@ -70,6 +70,11 @@ Existing memories (for reference, to avoid duplicates):
 
 Output a JSON object with 'memories' and 'agent_learnings' arrays:"""
 
+# Maximum length for memory content (prevents unbounded LLM-generated text)
+MAX_MEMORY_CONTENT_LENGTH = 2000
+# Maximum length for memory description in the index
+MAX_MEMORY_DESCRIPTION_LENGTH = 150
+
 
 class MemoryConsolidator:
     """Extracts durable memories from conversations using an LLM.
@@ -220,6 +225,12 @@ class MemoryConsolidator:
 
             if not name or not content:
                 continue
+
+            # Truncate overly long content from LLM
+            if len(content) > MAX_MEMORY_CONTENT_LENGTH:
+                content = content[:MAX_MEMORY_CONTENT_LENGTH] + "\n\n[Content truncated]"
+            if len(description) > MAX_MEMORY_DESCRIPTION_LENGTH:
+                description = description[:MAX_MEMORY_DESCRIPTION_LENGTH - 3] + "..."
 
             if memory_type not in MEMORY_TYPES:
                 logger.warning("Invalid memory type '%s' for '%s', defaulting to 'user'", memory_type, name)
