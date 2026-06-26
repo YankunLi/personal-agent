@@ -9,7 +9,6 @@ Addresses transformer attention weaknesses by:
 from __future__ import annotations
 
 import logging
-from dataclasses import replace
 
 from personal_agent.types import Message, Role
 
@@ -140,7 +139,6 @@ class ContextBudgetManager:
 
         # 1. Inject memory index into system prompt (first message)
         if memory_index and messages and messages[0].role == Role.SYSTEM:
-            messages[0] = replace(messages[0], content=messages[0].content or "")
             memory_section = (
                 f"\n\n{SECTION_MEMORY_OPEN}\n"
                 f"{memory_index}"
