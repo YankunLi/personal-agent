@@ -33,6 +33,9 @@ Guidelines:
 class ReActAgent(BaseAgent):
     """Agent that uses the ReAct (Reasoning + Acting) pattern."""
 
+    # Max consecutive failures of the same tool before forcing a stop
+    MAX_CONSECUTIVE_TOOL_FAILURES = 3
+
     def __init__(self, system_prompt: str = "", **kwargs):
         super().__init__(
             system_prompt=system_prompt or DEFAULT_REACT_SYSTEM_PROMPT,
@@ -56,6 +59,8 @@ class ReActAgent(BaseAgent):
                 )
 
         step_count = 0
+        consecutive_failures: dict[str, int] = {}  # Track per-tool consecutive failures
+
         while not state.done and step_count < self.max_steps:
             step_count += 1
             logger.info("ReAct step %d/%d", step_count, self.max_steps)
@@ -93,6 +98,28 @@ class ReActAgent(BaseAgent):
 
                 # Add tool results to messages
                 self._add_tool_results_to_messages(state.messages, results)
+
+                # Track consecutive failures to prevent infinite retry loops
+                for tc, result in zip(response.tool_calls, results):
+                    if result.is_error:
+                        consecutive_failures[tc.name] = consecutive_failures.get(tc.name, 0) + 1
+                    else:
+                        consecutive_failures.pop(tc.name, None)
+
+                # If the same tool failed too many times, inject a hint to break the loop
+                for tool_name, fail_count in list(consecutive_failures.items()):
+                    if fail_count >= self.MAX_CONSECUTIVE_TOOL_FAILURES:
+                        hint = (
+                            f"[System note: The tool '{tool_name}' has failed {fail_count} times "
+                            f"in a row. Do NOT call it again. Use a different tool, work around "
+                            f"the problem, or provide a partial answer explaining what went wrong.]"
+                        )
+                        state.messages.append(self._make_message(Role.SYSTEM, hint))
+                        consecutive_failures.pop(tool_name)
+                        logger.warning(
+                            "Tool '%s' failed %d times consecutively — injecting stop hint",
+                            tool_name, fail_count,
+                        )
             else:
                 # No tool calls = final answer
                 state.done = True

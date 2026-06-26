@@ -141,6 +141,8 @@ class PlanAndExecuteAgent(BaseAgent):
         )
         state.messages.append(self._make_message(Role.USER, step_prompt))
 
+        consecutive_failures: dict[str, int] = {}
+
         for _ in range(self._max_substeps):
             response = await self._call_llm(state)
             self._add_assistant_message(state.messages, response)
@@ -150,6 +152,23 @@ class PlanAndExecuteAgent(BaseAgent):
                 for tc, result in zip(response.tool_calls, results):
                     state.steps.append(AgentStep(action=tc, observation=result))
                 self._add_tool_results_to_messages(state.messages, results)
+
+                # Track consecutive failures to prevent infinite retry loops
+                for tc, result in zip(response.tool_calls, results):
+                    if result.is_error:
+                        consecutive_failures[tc.name] = consecutive_failures.get(tc.name, 0) + 1
+                    else:
+                        consecutive_failures.pop(tc.name, None)
+
+                for tool_name, fail_count in list(consecutive_failures.items()):
+                    if fail_count >= 3:
+                        hint = (
+                            f"[System note: The tool '{tool_name}' has failed {fail_count} times "
+                            f"in a row. Do NOT call it again. Use a different tool or describe "
+                            f"what went wrong and move on.]"
+                        )
+                        state.messages.append(self._make_message(Role.SYSTEM, hint))
+                        consecutive_failures.pop(tool_name)
             else:
                 return {
                     "step": step["step"],
