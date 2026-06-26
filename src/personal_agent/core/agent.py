@@ -152,7 +152,7 @@ class BaseAgent(ABC):
 
         # Load MEMORY.md index into system prompt (Claude Code style)
         if self.memory_store:
-            memory_index = self.memory_store.load_index_text()
+            memory_index = await asyncio.to_thread(self.memory_store.load_index_text)
             if memory_index and "No memories stored yet" not in memory_index:
                 system_prompt += (
                     "\n\n"
