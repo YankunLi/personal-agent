@@ -225,11 +225,19 @@ class BaseAgent(ABC):
         """Rebuild system prompt to pick up self_instruction changes made during execution."""
         if state.messages and state.messages[0].role == Role.SYSTEM:
             current_prompt = await self._build_system_prompt()
-            old_content = state.messages[0].content or ""
-            # Preserve the memory index appended by _init_state
-            mem_marker = "══════════ MEMORY INDEX ══════════"
-            if mem_marker in old_content:
-                current_prompt += "\n\n" + mem_marker + old_content.split(mem_marker, 1)[1]
+
+            # Re-read memory index to reflect any changes made during execution
+            # (e.g., via write_memory/forget_memory tools)
+            if self.memory_store:
+                memory_index = await asyncio.to_thread(self.memory_store.load_index_text)
+                if memory_index and "No memories stored yet" not in memory_index:
+                    current_prompt += (
+                        "\n\n"
+                        "══════════ MEMORY INDEX ══════════\n"
+                        f"{memory_index}"
+                        "══════════════════════════════════\n"
+                    )
+
             state.messages[0].content = current_prompt
 
     async def _init_state(self, task: str, include_history: bool = True) -> AgentState:
