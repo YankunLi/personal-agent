@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from typing import Any
 
 from personal_agent.types import Message, Role
 
@@ -73,7 +72,6 @@ class ContextBudgetManager:
         system_prompt: str = "",
         memory_index: str = "",
         loaded_memories: list[dict[str, str]] | None = None,
-        tool_specs: list[Any] | None = None,
     ) -> dict[str, int]:
         """Calculate token allocations for each section.
 
