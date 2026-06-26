@@ -74,6 +74,7 @@ class BaseAgent(ABC):
         self._total_usage: dict[str, int] = {}
         self._consolidation_tasks: list[asyncio.Task] = []
         self._consolidation_max_messages = consolidation_max_messages
+        self._closed = False
 
     async def _fire(self, event: str, *args: Any) -> None:
         """Fire a callback event if it's set."""
@@ -254,6 +255,10 @@ class BaseAgent(ABC):
 
     async def close(self) -> None:
         """Clean up resources: MCP connections, provider clients, sub-agents."""
+        if self._closed:
+            return
+        self._closed = True
+
         # Cancel pending consolidation tasks
         for task in self._consolidation_tasks:
             if not task.done():
