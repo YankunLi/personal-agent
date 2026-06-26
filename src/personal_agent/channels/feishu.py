@@ -151,6 +151,7 @@ class FeishuChannel(Channel):
         self._conn_agents: dict[str, Any] = {}
         self._conn_sessions: dict[str, Any] = {}
         self._pending_tasks: set[asyncio.Task] = set()
+        self._agent_lock = asyncio.Lock()
 
     # ── Channel interface ────────────────────────────────────────────────────
 
@@ -337,11 +338,16 @@ class FeishuChannel(Channel):
         if user_id in self._conn_agents:
             return self._conn_agents[user_id]
 
-        from personal_agent.factory import create_agent
+        async with self._agent_lock:
+            # Double-check: another task may have created the agent while we waited
+            if user_id in self._conn_agents:
+                return self._conn_agents[user_id]
 
-        agent = await create_agent(self._settings, user_id=user_id)
-        self._conn_agents[user_id] = agent
-        return agent
+            from personal_agent.factory import create_agent
+
+            agent = await create_agent(self._settings, user_id=user_id)
+            self._conn_agents[user_id] = agent
+            return agent
 
 
 # ANSI color for startup message
