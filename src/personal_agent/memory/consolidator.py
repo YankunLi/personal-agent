@@ -6,11 +6,13 @@ and context from the conversation and saves them as structured memory files.
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from typing import Any
 
 from personal_agent.memory.file_store import MEMORY_TYPES, FileMemoryStore
-from personal_agent.types import Message
+from personal_agent.types import Message, Role
 
 logger = logging.getLogger(__name__)
 
@@ -118,8 +120,6 @@ class MemoryConsolidator:
             learnings = result.get("agent_learnings", [])
 
             applied = await self._apply(operations)
-            if applied:
-                await self._store.build_index()
 
             # Apply agent learnings to AGENT.md
             if learnings and agent_knowledge:
@@ -144,8 +144,6 @@ class MemoryConsolidator:
 
         Returns a dict with 'memories' and 'agent_learnings' keys, or None on failure.
         """
-        import json
-
         # Format conversation
         conversation_parts = []
         for msg in messages[-40:]:  # Last 40 messages
@@ -162,11 +160,10 @@ class MemoryConsolidator:
             existing_text = "\n".join(lines)
 
         # Call LLM
-        from personal_agent.types import Role as MsgRole
         llm_messages = [
-            Message(role=MsgRole.SYSTEM, content=CONSOLIDATION_SYSTEM_PROMPT),
+            Message(role=Role.SYSTEM, content=CONSOLIDATION_SYSTEM_PROMPT),
             Message(
-                role=MsgRole.USER,
+                role=Role.USER,
                 content=CONSOLIDATION_USER_PROMPT.format(
                     conversation=conversation,
                     existing_memories=existing_text,
@@ -175,6 +172,9 @@ class MemoryConsolidator:
         ]
 
         response = await self._provider.chat(llm_messages, temperature=0.1, max_tokens=4096)
+        if not response.content:
+            logger.warning("Consolidation provider returned empty content")
+            return None
         content = response.content.strip()
 
         # Parse JSON — try direct parse first, then extract from code blocks
@@ -182,8 +182,7 @@ class MemoryConsolidator:
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError:
-            import re as _re
-            match = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, _re.DOTALL)
+            match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
             if match:
                 try:
                     parsed = json.loads(match.group(1))
@@ -237,6 +236,8 @@ class MemoryConsolidator:
                     await self._store.add(name, content, memory_type, description)
                     applied.append(op)
                     logger.info("Memory updated: %s (%s)", name, memory_type)
+                else:
+                    logger.warning("Unknown memory action '%s' for '%s', skipping", action, name)
             except Exception as e:
                 logger.warning("Failed to apply memory operation '%s': %s", name, e)
 

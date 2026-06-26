@@ -14,6 +14,7 @@ Layered design:
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -66,13 +67,14 @@ class AgentKnowledge:
         """Load self-knowledge, merging global + project AGENT.md.
 
         Returns formatted text ready for injection into the system prompt.
-        If neither file exists, returns a minimal starter template.
+        If neither file exists, creates and persists a starter template.
         """
         global_text = self._read_file(self._global_path)
         project_text = self._read_file(self.project_path) if self.project_path else ""
 
         if not global_text and not project_text:
-            return self._generate_starter()
+            self._ensure_file()
+            global_text = self._read_file(self._global_path)
 
         parts = []
         if global_text:
@@ -89,17 +91,12 @@ class AgentKnowledge:
         """
         self._ensure_file()
         text = self._global_path.read_text()
+        sections = self._parse_sections(text)
 
-        # Find the section and replace its content
-        pattern = re.compile(rf"(^## {re.escape(section)}\s*\n)(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
-        replacement = rf"\1{content.strip()}\n\n"
+        # Split content into lines for consistent storage
+        sections[section] = [line.strip() for line in content.strip().split("\n") if line.strip()]
 
-        if pattern.search(text):
-            new_text = pattern.sub(replacement, text)
-        else:
-            # Append new section at end
-            new_text = text.rstrip() + f"\n\n## {section}\n{content.strip()}\n"
-
+        new_text = self._build_file(sections)
         self._write_file(self._global_path, new_text)
 
     def append_learnings(self, learnings: list[dict]) -> int:
@@ -199,7 +196,7 @@ class AgentKnowledge:
         # Write known sections in order first
         for name, desc in DEFAULT_SECTIONS.items():
             parts.append(f"\n## {name}")
-            lines = sections.pop(name, [])
+            lines = sections.get(name, [])
             if lines:
                 parts.extend(lines)
             else:
@@ -207,8 +204,9 @@ class AgentKnowledge:
 
         # Preserve any custom sections that aren't in DEFAULT_SECTIONS
         for name, lines in sections.items():
-            parts.append(f"\n## {name}")
-            parts.extend(lines)
+            if name not in DEFAULT_SECTIONS:
+                parts.append(f"\n## {name}")
+                parts.extend(lines)
 
         return "\n".join(parts) + "\n"
 
@@ -221,4 +219,6 @@ class AgentKnowledge:
     @staticmethod
     def _write_file(path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        tmp_path.write_text(content)
+        os.replace(tmp_path, path)

@@ -71,6 +71,7 @@ class BaseAgent(ABC):
         self._callbacks = callbacks or AgentCallbacks()
         self._mcp_source = None  # Set by factory if MCP is enabled
         self._total_usage: dict[str, int] = {}
+        self._consolidation_tasks: list[asyncio.Task] = []
 
     async def _fire(self, event: str, *args: Any) -> None:
         """Fire a callback event if it's set."""
@@ -208,11 +209,12 @@ class BaseAgent(ABC):
                     last_msg = conversation[-1] if conversation else None
                     if not last_msg or last_msg.role != Role.ASSISTANT or last_msg.content != answer[:2000]:
                         conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
-                asyncio.create_task(
+                task = asyncio.create_task(
                     self._run_consolidation(
                         consolidator, conversation, existing, self.agent_knowledge
                     )
                 )
+                self._consolidation_tasks.append(task)
             except Exception as e:
                 logger.warning("Memory consolidation failed: %s", e)
 
@@ -235,6 +237,16 @@ class BaseAgent(ABC):
 
     async def close(self) -> None:
         """Clean up resources: MCP connections, provider clients, sub-agents."""
+        # Cancel pending consolidation tasks
+        for task in self._consolidation_tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+        self._consolidation_tasks.clear()
+
         # Close sub-agent tools first (they hold their own MCP/provider resources)
         for tool_name in self.tools.list_names():
             try:

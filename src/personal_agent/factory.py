@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 from personal_agent.config import Settings, SubAgentConfig, load_config
 from personal_agent.context.budget import ContextBudgetManager
@@ -32,6 +33,12 @@ async def create_sub_agent(
     sub_cfg: SubAgentConfig,
     providers: dict[str, ProviderCredentials] | None = None,
     workspace_dir: str | None = None,
+    memory_store: Any = None,
+    long_term_memory: Any = None,
+    agent_knowledge: Any = None,
+    context_manager: Any = None,
+    skill_manager: Any = None,
+    budget_manager: Any = None,
 ) -> BaseAgent:
     """Create a single sub-agent from SubAgentConfig.
 
@@ -39,11 +46,22 @@ async def create_sub_agent(
         sub_cfg: Sub-agent configuration.
         providers: Provider credentials map (keyed by provider name).
         workspace_dir: Optional workspace directory for file_ops tools.
+        memory_store: Optional FileMemoryStore for persistent memory.
+        long_term_memory: Optional LongTermMemory for recall.
+        agent_knowledge: Optional AgentKnowledge for self-knowledge.
+        context_manager: Optional ContextManager for context management.
+        skill_manager: Optional SkillManager for skills.
+        budget_manager: Optional ContextBudgetManager for budget management.
 
     Returns:
         A configured BaseAgent instance (ReActAgent, PlanAndExecuteAgent, or ReflectionAgent).
     """
     providers = providers or {}
+
+    # Create workspace directory
+    ws = workspace_dir or "./workspace"
+    if workspace_dir:
+        Path(workspace_dir).expanduser().mkdir(parents=True, exist_ok=True)
 
     # Get credentials for this sub-agent's provider
     creds = providers.get(sub_cfg.provider, ProviderCredentials())
@@ -57,7 +75,6 @@ async def create_sub_agent(
 
     # Create tool registry with configured tools
     tool_registry = ToolRegistry()
-    ws = workspace_dir or "./workspace"
     file_ops_tools = create_file_ops_tools(workspace_dir=ws)
     file_ops_map = {t.spec.name: t for t in file_ops_tools}
 
@@ -78,6 +95,12 @@ async def create_sub_agent(
         "tool_executor": tool_executor,
         "short_term_memory": ShortTermMemory(),
         "working_memory": WorkingMemory(),
+        "memory_store": memory_store,
+        "long_term_memory": long_term_memory,
+        "agent_knowledge": agent_knowledge,
+        "context_manager": context_manager,
+        "skill_manager": skill_manager,
+        "budget_manager": budget_manager,
         "max_steps": sub_cfg.max_steps,
         "system_prompt": sub_cfg.system_prompt,
         "temperature": sub_cfg.temperature,
@@ -266,14 +289,6 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
     )
     tool_registry.register(update_tool)
 
-    # Register sub-agents as tools (AgentTool)
-    from personal_agent.tools.agent_tool import AgentTool
-    for name, sub_cfg in settings.sub_agents.items():
-        sub_agent = await create_sub_agent(sub_cfg, settings.providers, workspace_dir)
-        description = sub_cfg.description or f"Delegate a task to the '{name}' specialist agent."
-        agent_tool = AgentTool(agent=sub_agent, name=name, description=description)
-        tool_registry.register(agent_tool)
-
     # Create skill manager and register skill tools
     skill_manager = SkillManager()
     enabled_skills = overrides.get("skills", agent_cfg.skills)
@@ -299,6 +314,22 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
         compression_model=context_cfg.compression_model,
         budget_manager=budget_manager,
     )
+
+    # Register sub-agents as tools (AgentTool)
+    from personal_agent.tools.agent_tool import AgentTool
+    for name, sub_cfg in settings.sub_agents.items():
+        sub_agent = await create_sub_agent(
+            sub_cfg, settings.providers, workspace_dir,
+            memory_store=memory_store,
+            long_term_memory=long_term,
+            agent_knowledge=agent_knowledge,
+            context_manager=context_manager,
+            skill_manager=skill_manager,
+            budget_manager=budget_manager,
+        )
+        description = sub_cfg.description or f"Delegate a task to the '{name}' specialist agent."
+        agent_tool = AgentTool(agent=sub_agent, name=name, description=description)
+        tool_registry.register(agent_tool)
 
     # Common agent kwargs
     agent_kwargs = {
