@@ -33,7 +33,7 @@ class LongTermMemory:
         entries = self._store.list_all()
         memory_entries = []
         for entry in entries:
-            result = self._store.get(entry["name"])
+            result = await self._store.get(entry["name"])
             if result:
                 meta, body = result
                 memory_entries.append(
