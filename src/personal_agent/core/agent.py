@@ -92,7 +92,10 @@ class BaseAgent(ABC):
         """Execute the agent on the given task."""
 
     async def _call_llm(self, state: AgentState) -> ChatResponse:
-        """Prepare context and call the LLM provider."""
+        """Prepare context and call the LLM provider. Delegates to streaming when enabled."""
+        if self._streaming_enabled:
+            return await self._call_llm_stream(state)
+
         await self._rebuild_system_message(state)
 
         messages = state.messages
