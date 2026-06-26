@@ -184,18 +184,6 @@ class PlanAndExecuteAgent(BaseAgent):
 
                 for tc, result in zip(response.tool_calls, results):
                     await self._fire("on_tool_result", tc.name, result.output, result.error)
-                if len(results) != len(response.tool_calls):
-                    logger.warning(
-                        "Tool executor returned %d results for %d tool calls",
-                        len(results), len(response.tool_calls),
-                    )
-                    from personal_agent.types import ToolResult as TR
-                    for tc in response.tool_calls[len(results):]:
-                        results.append(TR(
-                            call_id=tc.id,
-                            name=tc.name,
-                            error="Tool execution was dropped",
-                        ))
                 for tc, result in zip(response.tool_calls, results):
                     state.steps.append(AgentStep(thought=response.content, action=tc, observation=result))
                 self._add_tool_results_to_messages(state.messages, results)

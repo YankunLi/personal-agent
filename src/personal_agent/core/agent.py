@@ -175,8 +175,26 @@ class BaseAgent(ABC):
         )
 
     async def _execute_tool_calls(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
-        """Execute tool calls via the executor."""
-        return await self.tool_executor.execute_all(tool_calls)
+        """Execute tool calls via the executor.
+
+        Pads results with error entries if the executor returns fewer results
+        than expected, preventing silent data loss and broken conversation state.
+        """
+        results = await self.tool_executor.execute_all(tool_calls)
+        if len(results) != len(tool_calls):
+            logger.warning(
+                "Tool executor returned %d results for %d tool calls",
+                len(results), len(tool_calls),
+            )
+            from personal_agent.types import ToolResult as TR
+
+            for tc in tool_calls[len(results):]:
+                results.append(TR(
+                    call_id=tc.id,
+                    name=tc.name,
+                    error="Tool execution was dropped",
+                ))
+        return results
 
     async def _build_system_prompt(self) -> str:
         """Build the full system prompt from base prompt + skills + agent knowledge."""

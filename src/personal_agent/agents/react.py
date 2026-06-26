@@ -78,21 +78,6 @@ class ReActAgent(BaseAgent):
                 # Execute tools
                 results = await self._execute_tool_calls(response.tool_calls)
 
-                if len(results) != len(response.tool_calls):
-                    logger.warning(
-                        "Tool executor returned %d results for %d tool calls",
-                        len(results), len(response.tool_calls),
-                    )
-                    # Pad with error results for missing tool calls to avoid
-                    # silent data loss and broken conversation state.
-                    from personal_agent.types import ToolResult as TR
-                    for tc in response.tool_calls[len(results):]:
-                        results.append(TR(
-                            call_id=tc.id,
-                            name=tc.name,
-                            error="Tool execution was dropped (executor returned fewer results than expected)",
-                        ))
-
                 for tc, result in zip(response.tool_calls, results):
                     state.steps.append(
                         AgentStep(thought=response.content, action=tc, observation=result)
