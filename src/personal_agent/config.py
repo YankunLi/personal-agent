@@ -95,7 +95,7 @@ class ContextConfig(BaseModel):
     strategy: Literal["sliding_window", "compression", "hybrid", "budget"] = "budget"
     max_messages: int = 100
     max_tokens: int = 8192
-    compression_threshold_tokens: int = 4096
+    compression_threshold_tokens: int = 8192
     compression_keep_recent: int = 10
     compression_model: str = "gpt-4o-mini"
 

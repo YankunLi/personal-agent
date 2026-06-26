@@ -39,7 +39,7 @@ class CompressionStrategy(ContextStrategy):
     def __init__(
         self,
         compressor,  # ContextCompressor
-        threshold_tokens: int = 4096,
+        threshold_tokens: int = 8192,
         keep_recent: int = 10,
     ):
         self.compressor = compressor
@@ -82,7 +82,7 @@ class HybridStrategy(ContextStrategy):
         self,
         compressor,  # ContextCompressor
         max_messages: int = 100,
-        compression_threshold: int = 4096,
+        compression_threshold: int = 8192,
         keep_recent: int = 10,
     ):
         self._sliding = SlidingWindowStrategy(max_messages=max_messages)
