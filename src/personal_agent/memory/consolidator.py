@@ -79,14 +79,16 @@ class MemoryConsolidator:
         await consolidator.consolidate(messages, existing_memories=store.list_all())
     """
 
-    def __init__(self, store: FileMemoryStore, provider: Any = None):
+    def __init__(self, store: FileMemoryStore, provider: Any = None, max_messages: int = 40):
         """
         Args:
             store: FileMemoryStore for reading/writing memory files.
             provider: LLM provider for consolidation (use a cheap model).
+            max_messages: Max recent messages to analyze during consolidation.
         """
         self._store = store
         self._provider = provider
+        self._max_messages = max_messages
 
     async def consolidate(
         self,
@@ -146,7 +148,7 @@ class MemoryConsolidator:
         """
         # Format conversation
         conversation_parts = []
-        for msg in messages[-40:]:  # Last 40 messages
+        for msg in messages[-self._max_messages:]:  # Last N messages
             role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
             content = msg.content[:2000] if msg.content else ""
             if content.strip():

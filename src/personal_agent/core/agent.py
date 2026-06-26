@@ -50,6 +50,7 @@ class BaseAgent(ABC):
         system_prompt: str = "",
         temperature: float = 0.7,
         max_tokens: int = 8192,
+        consolidation_max_messages: int = 40,
         callbacks: AgentCallbacks | None = None,
     ):
         self.provider = provider
@@ -72,6 +73,7 @@ class BaseAgent(ABC):
         self._mcp_source = None  # Set by factory if MCP is enabled
         self._total_usage: dict[str, int] = {}
         self._consolidation_tasks: list[asyncio.Task] = []
+        self._consolidation_max_messages = consolidation_max_messages
 
     async def _fire(self, event: str, *args: Any) -> None:
         """Fire a callback event if it's set."""
@@ -200,6 +202,7 @@ class BaseAgent(ABC):
                 consolidator = MemoryConsolidator(
                     store=self.memory_store,
                     provider=self.consolidation_provider,
+                    max_messages=self._consolidation_max_messages,
                 )
                 existing = self.memory_store.list_all()
                 conversation = list(state.messages)

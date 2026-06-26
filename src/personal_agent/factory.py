@@ -364,6 +364,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
         "system_prompt": agent_cfg.system_prompt,
         "temperature": agent_cfg.temperature,
         "max_tokens": agent_cfg.max_tokens,
+        "consolidation_max_messages": settings.consolidation.max_conversation_messages,
     }
 
     # Create the appropriate agent
