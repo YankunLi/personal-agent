@@ -142,7 +142,7 @@ class AnthropicProvider(Provider):
                 model=response.model,
             )
         except Exception as e:
-            self._raise_provider_error(e)
+            raise_provider_error(e)
 
     async def chat_stream(
         self,
@@ -234,7 +234,4 @@ class AnthropicProvider(Provider):
                     )
 
         except Exception as e:
-            self._raise_provider_error(e)
-
-    def _raise_provider_error(self, error: Exception) -> None:
-        raise_provider_error(error)
+            raise_provider_error(e)
