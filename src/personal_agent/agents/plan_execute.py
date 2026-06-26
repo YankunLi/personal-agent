@@ -47,6 +47,11 @@ After all steps are complete, synthesize the results into a comprehensive answer
 class PlanAndExecuteAgent(BaseAgent):
     """Agent that uses the Plan-and-Execute pattern."""
 
+    # Max consecutive failures of the same tool before forcing a stop
+    MAX_CONSECUTIVE_TOOL_FAILURES = 3
+    # Max replan attempts before giving up
+    MAX_REPLAN_ATTEMPTS = 3
+
     def __init__(self, system_prompt: str = "", max_substeps: int = 5, **kwargs):
         super().__init__(
             system_prompt=system_prompt or DEFAULT_PLAN_EXECUTE_SYSTEM_PROMPT,
@@ -94,7 +99,7 @@ class PlanAndExecuteAgent(BaseAgent):
 
             if step_result.get("error"):
                 logger.warning("Step %d failed: %s", i + 1, step_result["error"])
-                if i < len(plan) - 1 and replan_count < 3:
+                if i < len(plan) - 1 and replan_count < self.MAX_REPLAN_ATTEMPTS:
                     new_plan = await self._replan(state, plan, step_results, step)
                     replan_count += 1
                     del state.messages[base_msg_count:]  # Prune replan messages
@@ -111,7 +116,7 @@ class PlanAndExecuteAgent(BaseAgent):
                 else:
                     logger.warning(
                         "Cannot replan: %s. Proceeding with remaining steps.",
-                        "max replans reached" if replan_count >= 3 else "last step failed",
+                        "max replans reached" if replan_count >= self.MAX_REPLAN_ATTEMPTS else "last step failed",
                     )
             i += 1
 
@@ -196,7 +201,7 @@ class PlanAndExecuteAgent(BaseAgent):
                         consecutive_failures.pop(tc.name, None)
 
                 for tool_name, fail_count in list(consecutive_failures.items()):
-                    if fail_count >= 3:
+                    if fail_count >= self.MAX_CONSECUTIVE_TOOL_FAILURES:
                         hint = (
                             f"[System note: The tool '{tool_name}' has failed {fail_count} times "
                             f"in a row. Do NOT call it again. Use a different tool or describe "
