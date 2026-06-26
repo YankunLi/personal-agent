@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from personal_agent.config import Settings, SubAgentConfig, load_config
-from personal_agent.context.manager import ContextManager
 from personal_agent.context.budget import ContextBudgetManager
+from personal_agent.context.manager import ContextManager
 from personal_agent.core.agent import BaseAgent
 from personal_agent.memory.file_store import FileMemoryStore
 from personal_agent.memory.short_term import ShortTermMemory
 from personal_agent.memory.working import WorkingMemory
-from personal_agent.providers.registry import create_provider, ProviderCredentials
+from personal_agent.providers.registry import ProviderCredentials, create_provider
 from personal_agent.selector import classify
 from personal_agent.skills.base import SkillManager
 from personal_agent.tools.builtin import (
@@ -22,6 +23,8 @@ from personal_agent.tools.builtin import (
 from personal_agent.tools.executor import ToolExecutor
 from personal_agent.tools.mcp import MCPToolSource
 from personal_agent.tools.registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 async def create_sub_agent(
@@ -202,6 +205,12 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
                 provider_name=cons_cfg.provider,
                 model=cons_cfg.model,
                 credentials=cons_creds,
+            )
+        else:
+            logger.warning(
+                "Consolidation is enabled but no API key found for provider '%s'. "
+                "Memory consolidation will be skipped. Set PA_PROVIDERS__%s__API_KEY to enable it.",
+                cons_cfg.provider, cons_cfg.provider.upper(),
             )
 
     # Register read_memory tool (allows agent to load memory files on demand)

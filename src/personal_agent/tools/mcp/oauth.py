@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import urllib.parse
 from collections.abc import Awaitable, Callable
 from http import HTTPStatus
@@ -66,7 +67,11 @@ class FileTokenStorage:
     async def _write(self, data: dict[str, Any]) -> None:
         async with self._lock:
             self._filepath.parent.mkdir(parents=True, exist_ok=True)
+            # Ensure directory has restrictive permissions (owner only)
+            os.chmod(self._filepath.parent, 0o700)
             self._filepath.write_text(json.dumps(data, indent=2))
+            # Ensure token file is readable only by the owner
+            os.chmod(self._filepath, 0o600)
 
 
 def _default_token_cache_path(server_name: str) -> str:
@@ -139,8 +144,8 @@ def _create_callback_handler(redirect_uri: str, timeout: float = 300.0) -> Calla
 
         try:
             # Poll for the result
-            deadline = asyncio.get_event_loop().time() + timeout
-            while asyncio.get_event_loop().time() < deadline:
+            deadline = asyncio.get_running_loop().time() + timeout
+            while asyncio.get_running_loop().time() < deadline:
                 if server._result is not None:
                     status, value = server._result
                     if status == "error":

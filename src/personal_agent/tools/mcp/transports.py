@@ -9,7 +9,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-import httpx
 from mcp.shared._httpx_utils import create_mcp_http_client
 
 from personal_agent.config import MCPServerConfig

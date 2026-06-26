@@ -188,8 +188,10 @@ class BaseAgent(ABC):
                     provider=self.consolidation_provider,
                 )
                 existing = self.memory_store.list_all()
-                # Use the full conversation from state.messages (not short_term)
+                # Use the full conversation from state.messages plus the final answer
                 conversation = list(state.messages)
+                if answer and answer != "No answer produced.":
+                    conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
                 asyncio.create_task(
                     self._run_consolidation(consolidator, conversation, existing)
                 )

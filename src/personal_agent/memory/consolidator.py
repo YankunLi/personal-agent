@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from personal_agent.memory.file_store import FileMemoryStore, MEMORY_TYPES
+from personal_agent.memory.file_store import MEMORY_TYPES, FileMemoryStore
 from personal_agent.types import Message
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class MemoryConsolidator:
             operations = await self._extract(messages, existing_memories)
             applied = await self._apply(operations)
             if applied:
-                self._store.build_index()
+                await self._store.build_index()
             return applied
         except Exception as e:
             logger.warning("Consolidation failed: %s", e)
@@ -140,18 +140,22 @@ class MemoryConsolidator:
         response = await self._provider.chat(llm_messages, temperature=0.1, max_tokens=4096)
         content = response.content.strip()
 
-        # Parse JSON
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1]
-            if content.endswith("```"):
-                content = content[:-3]
-
+        # Parse JSON — try direct parse first, then extract from code blocks
         try:
             operations = json.loads(content)
             if not isinstance(operations, list):
                 return []
             return operations
         except json.JSONDecodeError:
+            import re as _re
+            match = _re.search(r"```(?:json)?\s*(\[.*?\])\s*```", content, _re.DOTALL)
+            if match:
+                try:
+                    operations = json.loads(match.group(1))
+                    if isinstance(operations, list):
+                        return operations
+                except json.JSONDecodeError:
+                    pass
             logger.warning("Failed to parse consolidation response: %s", content[:200])
             return []
 
@@ -172,15 +176,16 @@ class MemoryConsolidator:
                 continue
 
             if memory_type not in MEMORY_TYPES:
+                logger.warning("Invalid memory type '%s' for '%s', defaulting to 'user'", memory_type, name)
                 memory_type = "user"
 
             try:
                 if action == "new":
-                    self._store.add(name, content, memory_type, description)
+                    await self._store.add(name, content, memory_type, description)
                     applied.append(op)
                     logger.info("Memory created: %s (%s)", name, memory_type)
                 elif action == "update":
-                    self._store.add(name, content, memory_type, description)
+                    await self._store.add(name, content, memory_type, description)
                     applied.append(op)
                     logger.info("Memory updated: %s (%s)", name, memory_type)
             except Exception as e:

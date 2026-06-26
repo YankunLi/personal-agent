@@ -58,7 +58,7 @@ class ShortTermMemory:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "ShortTermMemory":
+    def from_dict(cls, data: dict) -> ShortTermMemory:
         """Restore from a serialized dict."""
         from personal_agent.types import Role, ToolCall
 

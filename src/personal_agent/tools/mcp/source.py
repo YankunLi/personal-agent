@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from personal_agent.config import MCPServerConfig
-from personal_agent.exceptions import MCPConnectionError, MCPError
+from personal_agent.exceptions import MCPConnectionError
 from personal_agent.tools.mcp.transports import get_transport
 from personal_agent.tools.mcp.wrapper import MCPToolWrapper
 from personal_agent.tools.registry import ToolRegistry

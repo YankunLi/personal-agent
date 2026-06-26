@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import re
-import time
 from pathlib import Path
 from typing import Any
 
@@ -96,8 +95,7 @@ class FileMemoryStore:
             if f.name == "MEMORY.md":
                 continue
             try:
-                with open(f) as fh:
-                    meta, _ = _parse_frontmatter(fh.read())
+                meta, _ = _parse_frontmatter(f.read_text())
                 name = meta.get("name", f.stem)
                 cache[name] = f
             except Exception:
@@ -108,8 +106,8 @@ class FileMemoryStore:
 
     # ── CRUD operations ──────────────────────────────────────────────────────
 
-    def add(self, name: str, content: str, memory_type: str = "user",
-            description: str = "") -> Path:
+    async def add(self, name: str, content: str, memory_type: str = "user",
+                  description: str = "") -> Path:
         """Create or update a memory file.
 
         Args:
@@ -131,17 +129,15 @@ class FileMemoryStore:
             "type": memory_type,
         })
 
-        existing_body = ""
-        if filepath.exists():
-            _, existing_body = _parse_frontmatter(filepath.read_text())
+        async with self._lock:
+            # Preserve existing body if content is empty (shouldn't happen, but safe)
+            if filepath.exists() and not content:
+                _, content = _parse_frontmatter(filepath.read_text())
 
-        body = content if content else existing_body
+            filepath.write_text(frontmatter + "\n\n" + content + "\n")
 
-        with open(filepath, "w") as f:
-            f.write(frontmatter + "\n\n" + body + "\n")
-
-        self._update_index_entry(name, filename, description or name)
-        self._invalidate_cache()
+            self._update_index_entry_locked(name, filename, description or name)
+            self._invalidate_cache()
 
         return filepath
 
@@ -150,16 +146,12 @@ class FileMemoryStore:
         cache = self._ensure_cache()
         filepath = cache.get(name)
         if filepath is None or not filepath.exists():
-            # File may have been deleted manually — repair index
             if filepath is not None:
                 self._invalidate_cache()
                 self.repair_index()
             return None
 
-        with open(filepath) as f:
-            text = f.read()
-
-        return _parse_frontmatter(text)
+        return _parse_frontmatter(filepath.read_text())
 
     def get_by_type(self, memory_type: str) -> list[dict[str, Any]]:
         """Get all memories of a given type."""
@@ -172,56 +164,51 @@ class FileMemoryStore:
                     results.append({**entry, "body": body, "metadata": meta})
         return results
 
-    def delete(self, name: str) -> bool:
+    async def delete(self, name: str) -> bool:
         """Delete a memory file and remove from index."""
         cache = self._ensure_cache()
         filepath = cache.get(name)
         if filepath is None:
             return False
 
-        try:
-            filepath.unlink()
-        except FileNotFoundError:
-            pass
+        async with self._lock:
+            try:
+                filepath.unlink()
+            except FileNotFoundError:
+                pass
 
-        self._remove_index_entry(name)
-        self._invalidate_cache()
+            self._remove_index_entry_locked(name)
+            self._invalidate_cache()
+
         return True
 
     def list_all(self) -> list[dict[str, str]]:
         """List all memory entries from the index."""
-        return self.load_index()
+        return self._load_index()
 
     # ── Index management ─────────────────────────────────────────────────────
 
-    def build_index(self) -> Path:
+    async def build_index(self) -> Path:
         """Regenerate MEMORY.md from all memory files in the directory."""
-        entries = []
-        for f in sorted(self._dir.glob("*.md")):
-            if f.name == "MEMORY.md":
-                continue
-            try:
-                with open(f) as fh:
-                    meta, _ = _parse_frontmatter(fh.read())
-                name = meta.get("name", f.stem)
-                desc = meta.get("description", name)
-                entries.append(f"- [{name}]({f.name}) — {desc}")
-            except Exception:
-                continue
+        async with self._lock:
+            entries = []
+            for f in sorted(self._dir.glob("*.md")):
+                if f.name == "MEMORY.md":
+                    continue
+                try:
+                    meta, _ = _parse_frontmatter(f.read_text())
+                    name = meta.get("name", f.stem)
+                    desc = meta.get("description", name)
+                    entries.append({"name": name, "filename": f.name, "description": desc})
+                except Exception:
+                    continue
 
-        index_content = "# Memory Index\n\n"
-        if entries:
-            index_content += "\n".join(entries) + "\n"
-        else:
-            index_content += "No memories stored yet.\n"
+            self._write_index_locked(entries)
+            self._invalidate_cache()
 
-        with open(self.index_path, "w") as f:
-            f.write(index_content)
-
-        self._invalidate_cache()
         return self.index_path
 
-    def load_index(self) -> list[dict[str, str]]:
+    def _load_index(self) -> list[dict[str, str]]:
         """Parse MEMORY.md and return a list of memory entries.
 
         Each entry: {name, filename, description, type}
@@ -251,9 +238,8 @@ class FileMemoryStore:
     def load_index_text(self) -> str:
         """Read MEMORY.md as plain text for injection into system prompt."""
         if not self.index_path.exists():
-            self.build_index()
-        with open(self.index_path) as f:
-            return f.read()
+            self.index_path.write_text("# Memory Index\n\nNo memories stored yet.\n")
+        return self.index_path.read_text()
 
     def repair_index(self) -> int:
         """Remove stale index entries that point to non-existent files.
@@ -263,12 +249,8 @@ class FileMemoryStore:
         if not self.index_path.exists():
             return 0
 
-        entries = self.load_index()
-        stale = []
-        for entry in entries:
-            filepath = self._dir / entry["filename"]
-            if not filepath.exists():
-                stale.append(entry)
+        entries = self._load_index()
+        stale = [e for e in entries if not (self._dir / e["filename"]).exists()]
 
         if stale:
             for entry in stale:
@@ -277,9 +259,21 @@ class FileMemoryStore:
 
         return len(stale)
 
-    def _update_index_entry(self, name: str, filename: str, description: str) -> None:
-        """Add or update an entry in MEMORY.md."""
-        entries = self.load_index()
+    # ── Internal index helpers (must be called under lock for writes) ────────
+
+    def _write_index_locked(self, entries: list[dict[str, str]]) -> None:
+        """Write the index file from a list of entries. Caller must hold lock."""
+        lines = ["# Memory Index\n"]
+        for e in entries:
+            lines.append(f"- [{e['name']}]({e['filename']}) — {e['description']}")
+        if not entries:
+            lines.append("No memories stored yet.")
+        lines.append("")
+        self.index_path.write_text("\n".join(lines))
+
+    def _update_index_entry_locked(self, name: str, filename: str, description: str) -> None:
+        """Add or update an entry in MEMORY.md. Caller must hold lock."""
+        entries = self._load_index()
 
         found = False
         for entry in entries:
@@ -292,35 +286,43 @@ class FileMemoryStore:
         if not found:
             entries.append({"name": name, "filename": filename, "description": description})
 
-        index_lines = ["# Memory Index\n"]
-        for e in entries:
-            index_lines.append(f"- [{e['name']}]({e['filename']}) — {e['description']}")
-        index_lines.append("")
+        self._write_index_locked(entries)
 
-        with open(self.index_path, "w") as f:
-            f.write("\n".join(index_lines))
+    def _remove_index_entry_locked(self, name: str) -> None:
+        """Remove an entry from MEMORY.md. Caller must hold lock."""
+        entries = [e for e in self._load_index() if e["name"] != name]
+        self._write_index_locked(entries)
+
+    # Backwards-compatible sync wrappers for code that hasn't migrated yet
+    def _update_index_entry(self, name: str, filename: str, description: str) -> None:
+        """Sync wrapper for backwards compatibility."""
+        entries = self._load_index()
+        found = False
+        for entry in entries:
+            if entry["name"] == name or entry["filename"] == filename:
+                entry["filename"] = filename
+                entry["description"] = description
+                found = True
+                break
+        if not found:
+            entries.append({"name": name, "filename": filename, "description": description})
+        self._write_index_locked(entries)
 
     def _remove_index_entry(self, name: str) -> None:
-        """Remove an entry from MEMORY.md."""
-        entries = self.load_index()
-        entries = [e for e in entries if e["name"] != name]
+        """Sync wrapper for backwards compatibility."""
+        entries = [e for e in self._load_index() if e["name"] != name]
+        self._write_index_locked(entries)
 
-        index_lines = ["# Memory Index\n"]
-        for e in entries:
-            index_lines.append(f"- [{e['name']}]({e['filename']}) — {e['description']}")
-        if not entries:
-            index_lines.append("No memories stored yet.")
-        index_lines.append("")
-
-        with open(self.index_path, "w") as f:
-            f.write("\n".join(index_lines))
+    # ── Maintenance ──────────────────────────────────────────────────────────
 
     def count(self) -> int:
         """Return the number of memory files (excluding index)."""
         return len([f for f in self._dir.glob("*.md") if f.name != "MEMORY.md"])
 
-    def clear(self) -> None:
-        """Delete all memory files and index."""
-        for f in self._dir.glob("*.md"):
-            f.unlink()
-        self._invalidate_cache()
+    async def clear(self) -> None:
+        """Delete all memory files and regenerate empty index."""
+        async with self._lock:
+            for f in self._dir.glob("*.md"):
+                f.unlink()
+            self._write_index_locked([])
+            self._invalidate_cache()
