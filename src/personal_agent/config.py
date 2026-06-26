@@ -120,6 +120,9 @@ class MCPServerConfig(BaseModel):
     args: list[str] = Field(default_factory=list)
     url: str | None = None
     env: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
+    auth_token: str | None = None
+    timeout: float = 30.0
 
 
 class MCPConfig(BaseModel):
