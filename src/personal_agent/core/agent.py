@@ -16,6 +16,7 @@ from personal_agent.providers.base import ChatResponse, Provider
 from personal_agent.skills.manager import SkillManager
 from personal_agent.tools.executor import ToolExecutor
 from personal_agent.tools.registry import ToolRegistry
+from personal_agent.exceptions import AgentError, PersonalAgentError
 from personal_agent.types import (
     AgentCallbacks,
     AgentResult,
@@ -99,11 +100,17 @@ class BaseAgent(ABC):
             messages = await self.context_manager.prepare(messages)
 
         specs = self.tools.list_specs() if len(self.tools) > 0 else None
-        response = await self.provider.chat(
-            messages, tools=specs,
-            temperature=self._temperature,
-            max_tokens=self._max_tokens,
-        )
+        try:
+            response = await self.provider.chat(
+                messages, tools=specs,
+                temperature=self._temperature,
+                max_tokens=self._max_tokens,
+            )
+        except PersonalAgentError:
+            raise
+        except Exception as e:
+            logger.exception("LLM call failed: %s", e)
+            raise AgentError(f"LLM call failed: {e}") from e
 
         # Accumulate token usage
         if response.usage:
@@ -126,26 +133,32 @@ class BaseAgent(ABC):
         accumulated_tool_calls: list[ToolCall] = []
         call_usage: dict[str, int] = {}
 
-        async for chunk in self.provider.chat_stream(
-            messages, tools=specs,
-            temperature=self._temperature,
-            max_tokens=self._max_tokens,
-        ):
-            if chunk.content:
-                accumulated_content += chunk.content
-                await self._fire("on_text_delta", chunk.content)
+        try:
+            async for chunk in self.provider.chat_stream(
+                messages, tools=specs,
+                temperature=self._temperature,
+                max_tokens=self._max_tokens,
+            ):
+                if chunk.content:
+                    accumulated_content += chunk.content
+                    await self._fire("on_text_delta", chunk.content)
 
-            if chunk.tool_calls:
-                for tc in chunk.tool_calls:
-                    # Only fire for complete tool calls (name + arguments present)
-                    if tc.name:
-                        await self._fire("on_tool_call_stream", tc.name, tc.arguments)
-                    accumulated_tool_calls.append(tc)
+                if chunk.tool_calls:
+                    for tc in chunk.tool_calls:
+                        # Only fire for complete tool calls (name + arguments present)
+                        if tc.name:
+                            await self._fire("on_tool_call_stream", tc.name, tc.arguments)
+                        accumulated_tool_calls.append(tc)
 
-            if chunk.usage:
-                for key, val in chunk.usage.items():
-                    call_usage[key] = call_usage.get(key, 0) + val
-                    self._total_usage[key] = self._total_usage.get(key, 0) + val
+                if chunk.usage:
+                    for key, val in chunk.usage.items():
+                        call_usage[key] = call_usage.get(key, 0) + val
+                        self._total_usage[key] = self._total_usage.get(key, 0) + val
+        except PersonalAgentError:
+            raise
+        except Exception as e:
+            logger.exception("LLM streaming call failed: %s", e)
+            raise AgentError(f"LLM streaming call failed: {e}") from e
 
         return ChatResponse(
             content=accumulated_content,
