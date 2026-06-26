@@ -232,6 +232,7 @@ class FeishuChannel(Channel):
         if event_type == "im.message.receive_v1":
             # Process in background, respond immediately to Feishu
             task = asyncio.create_task(self._process_message(event))
+            self._pending_tasks.add(task)
             task.add_done_callback(
                 lambda t: (
                     logger.error("Feishu message processing failed: %s", t.exception())
@@ -239,7 +240,6 @@ class FeishuChannel(Channel):
                 )
             )
             task.add_done_callback(self._pending_tasks.discard)
-            self._pending_tasks.add(task)
             return web.json_response({"code": 0})
 
         # Challenge event (old format, POST with challenge)
