@@ -65,18 +65,18 @@ class AgentKnowledge:
             self.project_path is not None and self.project_path.exists()
         )
 
-    def load(self) -> str:
+    async def load(self) -> str:
         """Load self-knowledge, merging global + project AGENT.md.
 
         Returns formatted text ready for injection into the system prompt.
         If neither file exists, creates and persists a starter template.
         """
-        global_text = self._read_file(self._global_path)
-        project_text = self._read_file(self.project_path) if self.project_path else ""
+        global_text = await asyncio.to_thread(self._read_file, self._global_path)
+        project_text = await asyncio.to_thread(self._read_file, self.project_path) if self.project_path else ""
 
         if not global_text and not project_text:
-            self._ensure_file()
-            global_text = self._read_file(self._global_path)
+            await asyncio.to_thread(self._ensure_file)
+            global_text = await asyncio.to_thread(self._read_file, self._global_path)
 
         parts = []
         if global_text:

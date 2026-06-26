@@ -75,7 +75,7 @@ class DebateAgent(BaseAgent):
 
     async def run(self, task: str, **kwargs: Any) -> AgentResult:
         start_time = time.time()
-        state = self._init_state(task)
+        state = await self._init_state(task)
 
         # Load relevant long-term memories
         if self.long_term:

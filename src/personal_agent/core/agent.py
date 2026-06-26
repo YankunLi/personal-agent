@@ -91,7 +91,7 @@ class BaseAgent(ABC):
         # Rebuild system prompt to pick up any self_instruction changes
         # made during execution via the update_instruction tool.
         if state.messages and state.messages[0].role == Role.SYSTEM:
-            current_prompt = self._build_system_prompt()
+            current_prompt = await self._build_system_prompt()
             old_content = state.messages[0].content or ""
             # Preserve the memory index appended by _init_state
             mem_marker = "══════════ MEMORY INDEX ══════════"
@@ -121,13 +121,13 @@ class BaseAgent(ABC):
         """Execute tool calls via the executor."""
         return await self.tool_executor.execute_all(tool_calls)
 
-    def _build_system_prompt(self) -> str:
+    async def _build_system_prompt(self) -> str:
         """Build the full system prompt from base prompt + skills + agent knowledge."""
         parts = [self._base_system_prompt] if self._base_system_prompt else []
 
         # Load agent self-knowledge (AGENT.md) — always after base prompt
         if self.agent_knowledge:
-            knowledge_text = self.agent_knowledge.load()
+            knowledge_text = await self.agent_knowledge.load()
             if knowledge_text:
                 parts.append(
                     "══════════ AGENT SELF-KNOWLEDGE ══════════\n"
@@ -146,9 +146,9 @@ class BaseAgent(ABC):
 
         return "\n\n".join(parts)
 
-    def _init_state(self, task: str) -> AgentState:
+    async def _init_state(self, task: str) -> AgentState:
         """Initialize agent state with system prompt, memory index, and user task."""
-        system_prompt = self._build_system_prompt()
+        system_prompt = await self._build_system_prompt()
 
         # Load MEMORY.md index into system prompt (Claude Code style)
         if self.memory_store:
