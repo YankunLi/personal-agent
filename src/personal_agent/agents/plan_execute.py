@@ -182,7 +182,17 @@ class PlanAndExecuteAgent(BaseAgent):
             self._add_assistant_message(state.messages, response)
 
             if response.has_tool_calls:
+                if response.content and not self._streaming_enabled:
+                    await self._fire("on_thought", response.content)
+
+                for tc in response.tool_calls:
+                    if not self._streaming_enabled:
+                        await self._fire("on_tool_call", tc.name, tc.arguments)
+
                 results = await self._execute_tool_calls(response.tool_calls)
+
+                for tc, result in zip(response.tool_calls, results):
+                    await self._fire("on_tool_result", tc.name, result.output, result.error)
                 if len(results) != len(response.tool_calls):
                     logger.warning(
                         "Tool executor returned %d results for %d tool calls",
