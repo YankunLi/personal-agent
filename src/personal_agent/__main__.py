@@ -241,6 +241,19 @@ def _cmd_init(args, workdir: Path) -> None:
     print(f"  {C_DIM}Run {C_GREEN}pa -i{C_RESET}{C_DIM} to start interactive mode with this session.{C_RESET}")
 
 
+def _load_toml(path: Path) -> dict:
+    """Load a TOML file, returning a dict or empty dict on failure."""
+    try:
+        import tomllib
+    except ImportError:
+        try:
+            import tomli as tomllib  # type: ignore
+        except ImportError:
+            return {}
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
 def _detect_project_info(workdir: Path) -> dict[str, str]:
     """Auto-detect project name and description from common project files."""
     import configparser
@@ -248,12 +261,7 @@ def _detect_project_info(workdir: Path) -> dict[str, str]:
     # Try pyproject.toml
     pyproject = workdir / "pyproject.toml"
     if pyproject.exists():
-        try:
-            import tomllib
-        except ImportError:
-            import tomli as tomllib  # type: ignore
-        with open(pyproject, "rb") as f:
-            data = tomllib.load(f)
+        data = _load_toml(pyproject)
         project = data.get("project", {})
         name = project.get("name", "")
         desc = project.get("description", "")
@@ -273,12 +281,7 @@ def _detect_project_info(workdir: Path) -> dict[str, str]:
     # Try Cargo.toml
     cargo = workdir / "Cargo.toml"
     if cargo.exists():
-        try:
-            import tomllib
-        except ImportError:
-            import tomli as tomllib  # type: ignore
-        with open(cargo, "rb") as f:
-            data = tomllib.load(f)
+        data = _load_toml(cargo)
         pkg = data.get("package", {})
         name = pkg.get("name", "")
         desc = pkg.get("description", "")
