@@ -130,7 +130,12 @@ class ContextBudgetManager:
             Message list with budget applied and sections formatted.
         """
         if not self._allocations:
-            self.allocate(loaded_memories=loaded_memories)
+            system_prompt = ""
+            for m in messages:
+                if m.role == Role.SYSTEM:
+                    system_prompt = m.content or ""
+                    break
+            self.allocate(system_prompt=system_prompt, loaded_memories=loaded_memories)
 
         # Work on a copy to avoid mutating the caller's messages
         messages = list(messages)
