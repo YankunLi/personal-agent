@@ -56,9 +56,17 @@ class MCPToolSource:
 
         transport = get_transport(config.transport)
 
+        # Set up OAuth if configured
+        auth = None
+        if config.oauth:
+            from personal_agent.tools.mcp.oauth import create_oauth_provider
+
+            auth = await create_oauth_provider(config, config.oauth)
+            logger.info("MCP server '%s': OAuth enabled", config.name)
+
         try:
             read, write, ctx = await asyncio.wait_for(
-                transport.connect(config),
+                transport.connect(config, auth=auth),
                 timeout=config.timeout,
             )
         except asyncio.TimeoutError:

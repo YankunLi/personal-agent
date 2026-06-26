@@ -113,6 +113,21 @@ class BudgetConfig(BaseModel):
 
 # ── MCP ────────────────────────────────────────────────────────────────────────
 
+class MCPOAuthConfig(BaseModel):
+    """OAuth 2.1 client configuration for MCP servers.
+
+    Supports both pre-configured and dynamic (RFC 7591) client registration.
+    If client_id is set, uses the pre-configured client. Otherwise, dynamically
+    registers the client using the authorization server's registration endpoint.
+    """
+    client_id: str | None = None
+    client_secret: str | None = None
+    redirect_uri: str = "http://localhost:18080/callback"
+    scopes: list[str] = Field(default_factory=list)
+    token_cache_path: str | None = None  # Auto-generated if not set
+    timeout: float = 300.0  # OAuth flow timeout in seconds
+
+
 class MCPServerConfig(BaseModel):
     name: str
     transport: Literal["stdio", "sse", "streamable_http"] = "stdio"
@@ -123,6 +138,7 @@ class MCPServerConfig(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict)
     auth_token: str | None = None
     timeout: float = 30.0
+    oauth: MCPOAuthConfig | None = None
 
 
 class MCPConfig(BaseModel):

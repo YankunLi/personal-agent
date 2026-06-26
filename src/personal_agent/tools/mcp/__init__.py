@@ -4,6 +4,7 @@ Package structure:
 - transports.py: Transport abstraction + stdio/sse/http implementations
 - wrapper.py:    MCPToolWrapper — wraps MCP tools as Tool objects
 - source.py:     MCPToolSource — connection management + tool discovery
+- oauth.py:      OAuth 2.1 integration — FileTokenStorage + create_oauth_provider
 """
 
 from personal_agent.tools.mcp.source import MCPToolSource
@@ -17,6 +18,10 @@ from personal_agent.tools.mcp.transports import (
     register_transport,
     TRANSPORT_REGISTRY,
 )
+from personal_agent.tools.mcp.oauth import (
+    FileTokenStorage,
+    create_oauth_provider,
+)
 
 __all__ = [
     "MCPToolSource",
@@ -28,4 +33,6 @@ __all__ = [
     "get_transport",
     "register_transport",
     "TRANSPORT_REGISTRY",
+    "FileTokenStorage",
+    "create_oauth_provider",
 ]

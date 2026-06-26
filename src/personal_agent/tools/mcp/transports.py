@@ -9,6 +9,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+import httpx
+from mcp.shared._httpx_utils import create_mcp_http_client
+
 from personal_agent.config import MCPServerConfig
 
 
@@ -16,8 +19,17 @@ class MCPTransport(ABC):
     """Abstract transport for MCP server connections."""
 
     @abstractmethod
-    async def connect(self, config: MCPServerConfig) -> tuple[Any, Any, Any]:
+    async def connect(
+        self,
+        config: MCPServerConfig,
+        auth: Any = None,
+    ) -> tuple[Any, Any, Any]:
         """Connect to the MCP server.
+
+        Args:
+            config: Server configuration.
+            auth: Optional httpx.Auth instance (e.g., OAuthClientProvider) for
+                  HTTP-based transports. Ignored by stdio transport.
 
         Returns:
             (read_stream, write_stream, context_manager) tuple.
@@ -28,7 +40,11 @@ class MCPTransport(ABC):
 class StdioTransport(MCPTransport):
     """Stdio-based transport (subprocess)."""
 
-    async def connect(self, config: MCPServerConfig) -> tuple[Any, Any, Any]:
+    async def connect(
+        self,
+        config: MCPServerConfig,
+        auth: Any = None,
+    ) -> tuple[Any, Any, Any]:
         from mcp.client.stdio import stdio_client
 
         cmd = [config.command] + config.args if config.command else []
@@ -45,13 +61,17 @@ class StdioTransport(MCPTransport):
 class SSETransport(MCPTransport):
     """SSE-based transport (HTTP long-polling)."""
 
-    async def connect(self, config: MCPServerConfig) -> tuple[Any, Any, Any]:
+    async def connect(
+        self,
+        config: MCPServerConfig,
+        auth: Any = None,
+    ) -> tuple[Any, Any, Any]:
         from mcp.client.sse import sse_client
 
         if not config.url:
             raise ValueError(f"SSE transport requires 'url' for server '{config.name}'")
 
-        kwargs = {"url": config.url}
+        kwargs: dict[str, Any] = {"url": config.url}
         if config.headers:
             kwargs["headers"] = config.headers
         if config.auth_token:
@@ -59,6 +79,8 @@ class SSETransport(MCPTransport):
                 **(kwargs.get("headers", {})),
                 "Authorization": f"Bearer {config.auth_token}",
             }
+        if auth is not None:
+            kwargs["auth"] = auth
 
         ctx = sse_client(**kwargs)
         read, write = await ctx.__aenter__()
@@ -68,23 +90,31 @@ class SSETransport(MCPTransport):
 class StreamableHTTPTransport(MCPTransport):
     """Streamable HTTP transport."""
 
-    async def connect(self, config: MCPServerConfig) -> tuple[Any, Any, Any]:
-        from mcp.client.sse import sse_client
+    async def connect(
+        self,
+        config: MCPServerConfig,
+        auth: Any = None,
+    ) -> tuple[Any, Any, Any]:
+        from mcp.client.streamable_http import streamable_http_client
 
         if not config.url:
             raise ValueError(f"HTTP transport requires 'url' for server '{config.name}'")
 
-        kwargs = {"url": config.url}
-        if config.headers:
-            kwargs["headers"] = config.headers
+        headers: dict[str, str] = dict(config.headers) if config.headers else {}
         if config.auth_token:
-            kwargs["headers"] = {
-                **(kwargs.get("headers", {})),
-                "Authorization": f"Bearer {config.auth_token}",
-            }
+            headers["Authorization"] = f"Bearer {config.auth_token}"
 
-        ctx = sse_client(**kwargs)
-        read, write = await ctx.__aenter__()
+        # Build httpx client with auth and headers
+        client_kwargs: dict[str, Any] = {}
+        if headers:
+            client_kwargs["headers"] = headers
+        if auth is not None:
+            client_kwargs["auth"] = auth
+
+        http_client = create_mcp_http_client(**client_kwargs) if client_kwargs else None
+
+        ctx = streamable_http_client(url=config.url, http_client=http_client)
+        read, write, get_session_id = await ctx.__aenter__()
         return read, write, ctx
 
 
