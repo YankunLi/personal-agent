@@ -82,7 +82,9 @@ class PlanAndExecuteAgent(BaseAgent):
 
         # Phase 2: Execute each step
         step_results = []
-        for i, step in enumerate(plan):
+        i = 0
+        while i < len(plan):
+            step = plan[i]
             logger.info("Executing step %d/%d: %s", i + 1, len(plan), step["description"][:80])
 
             step_result = await self._execute_step(state, step)
@@ -93,6 +95,9 @@ class PlanAndExecuteAgent(BaseAgent):
                 if i < len(plan) - 1:
                     plan = await self._replan(state, plan, step_results, step)
                     self.working.set("plan", plan)
+                    i = 0  # Restart from beginning of new plan
+                    continue
+            i += 1
 
         # Phase 3: Synthesis
         final_answer = await self._synthesize(state, plan, step_results)
