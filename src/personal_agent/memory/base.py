@@ -1,35 +1,12 @@
-"""Memory backend abstractions and shared utilities."""
+"""Memory utilities — shared helpers for keyword search and entry creation."""
 
 from __future__ import annotations
 
 import time
 import uuid
-from abc import ABC, abstractmethod
 from typing import Any
 
 from personal_agent.types import MemoryEntry
-
-
-class MemoryBackend(ABC):
-    """Storage backend abstraction for long-term memory."""
-
-    @abstractmethod
-    async def add(self, entry: MemoryEntry) -> None: ...
-
-    @abstractmethod
-    async def get(self, key: str) -> MemoryEntry | None: ...
-
-    @abstractmethod
-    async def search(self, query: str, top_k: int = 5) -> list[MemoryEntry]: ...
-
-    @abstractmethod
-    async def delete(self, key: str) -> bool: ...
-
-    @abstractmethod
-    async def clear(self) -> None: ...
-
-    @abstractmethod
-    async def count(self) -> int: ...
 
 
 def make_entry(content: str, metadata: dict[str, Any] | None = None) -> MemoryEntry:
