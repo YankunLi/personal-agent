@@ -123,7 +123,7 @@ class BaseAgent(ABC):
         specs = self.tools.list_specs() if len(self.tools) > 0 else None
 
         accumulated_content = ""
-        accumulated_tool_calls: dict[str, ToolCall] = {}  # id -> ToolCall
+        accumulated_tool_calls: list[ToolCall] = []
         call_usage: dict[str, int] = {}
 
         async for chunk in self.provider.chat_stream(
@@ -138,18 +138,17 @@ class BaseAgent(ABC):
             if chunk.tool_calls:
                 for tc in chunk.tool_calls:
                     await self._fire("on_tool_call_stream", tc.name, tc.arguments)
-                    accumulated_tool_calls[tc.id] = tc
+                    accumulated_tool_calls.append(tc)
 
             if chunk.usage:
                 for key, val in chunk.usage.items():
                     call_usage[key] = call_usage.get(key, 0) + val
                     self._total_usage[key] = self._total_usage.get(key, 0) + val
 
-        tool_calls = list(accumulated_tool_calls.values())
         return ChatResponse(
             content=accumulated_content,
-            tool_calls=tool_calls if tool_calls else None,
-            finish_reason="tool_calls" if tool_calls else "stop",
+            tool_calls=accumulated_tool_calls if accumulated_tool_calls else None,
+            finish_reason="tool_calls" if accumulated_tool_calls else "stop",
             usage=call_usage,
         )
 
