@@ -27,11 +27,14 @@ class FeishuAPIClient:
     """
 
     def __init__(self, app_id: str, app_secret: str):
+        import httpx
+
         self._app_id = app_id
         self._app_secret = app_secret
         self._token: str | None = None
         self._token_expires_at: float = 0.0
         self._lock = asyncio.Lock()
+        self._http = httpx.AsyncClient(timeout=30.0)
 
     async def _ensure_token(self) -> str:
         """Get or refresh the tenant access token."""
@@ -39,69 +42,61 @@ class FeishuAPIClient:
             if self._token and time.time() < self._token_expires_at - TOKEN_REFRESH_MARGIN:
                 return self._token
 
-            import httpx
+            resp = await self._http.post(
+                f"{FEISHU_API_HOST}/open-apis/auth/v3/tenant_access_token/internal",
+                json={
+                    "app_id": self._app_id,
+                    "app_secret": self._app_secret,
+                },
+                headers={"Content-Type": "application/json; charset=utf-8"},
+            )
+            data = resp.json()
+            if data.get("code") != 0:
+                raise RuntimeError(f"Feishu token error: {data.get('msg', 'unknown')}")
 
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(
-                    f"{FEISHU_API_HOST}/open-apis/auth/v3/tenant_access_token/internal",
-                    json={
-                        "app_id": self._app_id,
-                        "app_secret": self._app_secret,
-                    },
-                    headers={"Content-Type": "application/json; charset=utf-8"},
-                    timeout=30.0,
-                )
-                data = resp.json()
-                if data.get("code") != 0:
-                    raise RuntimeError(f"Feishu token error: {data.get('msg', 'unknown')}")
-
-                self._token = data["tenant_access_token"]
-                self._token_expires_at = time.time() + data.get("expire", 7200)
-                logger.info("Feishu tenant access token refreshed")
-                return self._token  # type: ignore[return-value]
+            self._token = data["tenant_access_token"]
+            self._token_expires_at = time.time() + data.get("expire", 7200)
+            logger.info("Feishu tenant access token refreshed")
+            return self._token  # type: ignore[return-value]
 
     async def reply_text(self, message_id: str, content: str) -> dict:
         """Reply to a message with plain text."""
         token = await self._ensure_token()
 
-        import httpx
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{FEISHU_API_HOST}/open-apis/im/v1/messages/{message_id}/reply",
-                json={
-                    "content": json.dumps({"text": content}),
-                    "msg_type": "text",
-                },
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json; charset=utf-8",
-                },
-                timeout=30.0,
-            )
-            return resp.json()
+        resp = await self._http.post(
+            f"{FEISHU_API_HOST}/open-apis/im/v1/messages/{message_id}/reply",
+            json={
+                "content": json.dumps({"text": content}),
+                "msg_type": "text",
+            },
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+        )
+        return resp.json()
 
     async def send_text(self, chat_id: str, content: str) -> dict:
         """Send a text message to a chat."""
         token = await self._ensure_token()
 
-        import httpx
+        resp = await self._http.post(
+            f"{FEISHU_API_HOST}/open-apis/im/v1/messages",
+            json={
+                "receive_id": chat_id,
+                "content": json.dumps({"text": content}),
+                "msg_type": "text",
+            },
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+        )
+        return resp.json()
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{FEISHU_API_HOST}/open-apis/im/v1/messages",
-                json={
-                    "receive_id": chat_id,
-                    "content": json.dumps({"text": content}),
-                    "msg_type": "text",
-                },
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json; charset=utf-8",
-                },
-                timeout=30.0,
-            )
-            return resp.json()
+    async def close(self) -> None:
+        """Close the HTTP client."""
+        await self._http.aclose()
 
 
 class FeishuChannel(Channel):
@@ -201,6 +196,11 @@ class FeishuChannel(Channel):
             if not task.done():
                 task.cancel()
         self._pending_tasks.clear()
+        if self._api:
+            try:
+                await self._api.close()
+            except Exception:
+                pass
 
     # ── Webhook handlers ─────────────────────────────────────────────────────
 
