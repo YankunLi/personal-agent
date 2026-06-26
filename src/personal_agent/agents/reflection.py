@@ -175,6 +175,11 @@ class ReflectionAgent(BaseAgent):
             max_tokens=4096,
         )
 
+        # Accumulate token usage from critique calls (bypasses _call_llm)
+        if result.usage:
+            for key, val in result.usage.items():
+                self._total_usage[key] = self._total_usage.get(key, 0) + val
+
         try:
             content = result.content
             if "```json" in content:
