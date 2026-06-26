@@ -48,6 +48,7 @@ class ToolSpec:
     name: str
     description: str
     parameters: dict[str, Any]  # JSON Schema
+    mutating: bool = False  # True if the tool modifies external state (e.g. write_file)
 
     def to_openai_schema(self) -> dict[str, Any]:
         return {

@@ -202,7 +202,16 @@ class BaseAgent(ABC):
         )
 
     async def close(self) -> None:
-        """Clean up resources: MCP connections, provider clients, memory backends."""
+        """Clean up resources: MCP connections, provider clients, sub-agents."""
+        # Close sub-agent tools first (they hold their own MCP/provider resources)
+        for tool_name in self.tools.list_names():
+            try:
+                tool = self.tools.get(tool_name)
+                if hasattr(tool, "close"):
+                    await tool.close()
+            except Exception as e:
+                logger.warning("Error closing tool '%s': %s", tool_name, e)
+
         if self._mcp_source:
             try:
                 await self._mcp_source.disconnect_all()

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 from personal_agent.exceptions import ToolNotFoundError
 from personal_agent.tools.base import Tool
 from personal_agent.types import ToolSpec
+
+logger = logging.getLogger(__name__)
 
 
 class ToolRegistry:
@@ -19,8 +23,16 @@ class ToolRegistry:
         self._tools: dict[str, Tool] = {}
 
     def register(self, tool: Tool) -> None:
-        """Register a tool. Overwrites if name already exists."""
-        self._tools[tool.spec.name] = tool
+        """Register a tool. Logs a warning if overwriting an existing tool."""
+        name = tool.spec.name
+        if name in self._tools:
+            logger.warning(
+                "Tool '%s' is being overwritten. Old: %s, New: %s",
+                name,
+                type(self._tools[name]).__name__,
+                type(tool).__name__,
+            )
+        self._tools[name] = tool
 
     def register_many(self, tools: list[Tool]) -> None:
         """Register multiple tools at once."""

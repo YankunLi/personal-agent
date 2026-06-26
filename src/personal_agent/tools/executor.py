@@ -20,15 +20,32 @@ class ToolExecutor:
     argument validation before execution.
     """
 
+    # Default max characters for tool output (prevents context blowout)
+    DEFAULT_MAX_OUTPUT_CHARS = 20_000
+
     def __init__(
         self,
         registry: ToolRegistry,
         timeout: float = 60.0,
         max_retries: int = 1,
+        max_output_chars: int = DEFAULT_MAX_OUTPUT_CHARS,
     ):
         self._registry = registry
         self._timeout = timeout
         self._max_retries = max_retries
+        self._max_output_chars = max_output_chars
+
+    def _truncate_output(self, output: Any) -> str:
+        """Truncate tool output to prevent context overflow."""
+        text = str(output)
+        if len(text) <= self._max_output_chars:
+            return text
+        truncated = text[:self._max_output_chars]
+        return (
+            f"{truncated}\n\n[Output truncated: {len(text)} chars total, "
+            f"showing first {self._max_output_chars}. Use more specific "
+            f"parameters to narrow the result.]"
+        )
 
     async def execute(self, tool_call: ToolCall) -> ToolResult:
         """Execute a single tool call with validation, timeout, and retry."""
@@ -45,7 +62,7 @@ class ToolExecutor:
                 return ToolResult(
                     call_id=tool_call.id,
                     name=tool_call.name,
-                    output=output,
+                    output=self._truncate_output(output),
                 )
             except ToolNotFoundError:
                 return ToolResult(
@@ -54,7 +71,6 @@ class ToolExecutor:
                     error=f"Tool '{tool_call.name}' not found",
                 )
             except ToolExecutionError as e:
-                # Validation errors — don't retry, they won't fix themselves
                 return ToolResult(
                     call_id=tool_call.id,
                     name=tool_call.name,
@@ -80,9 +96,27 @@ class ToolExecutor:
         )
 
     async def execute_all(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
-        """Execute multiple tool calls in parallel."""
+        """Execute multiple tool calls.
+
+        Runs in parallel by default. If any tool is marked as mutating
+        (e.g. write_file), runs sequentially to avoid race conditions
+        where a read and write to the same resource execute in an
+        undefined order.
+        """
         if not tool_calls:
             return []
+
+        has_mutating = any(
+            self._registry.get(tc.name).spec.mutating
+            for tc in tool_calls
+            if tc.name in self._registry
+        )
+
+        if has_mutating:
+            results = []
+            for tc in tool_calls:
+                results.append(await self.execute(tc))
+            return results
 
         results = await asyncio.gather(
             *[self.execute(tc) for tc in tool_calls],
