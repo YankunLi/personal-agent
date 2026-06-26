@@ -363,7 +363,10 @@ class CLIChannel(Channel):
 
     def _cmd_model(self, arg: str) -> None:
         if not arg:
-            print(f"Current model: {C_CYAN}{self._agent.provider.model_name}{C_RESET}")
+            if self._agent is not None:
+                print(f"Current model: {C_CYAN}{self._agent.provider.model_name}{C_RESET}")
+            else:
+                print(f"{C_RED}Agent not initialized yet.{C_RESET}")
         else:
             self._overrides["model"] = arg
             print(f"{C_GREEN}✓{C_RESET} Model set to {C_CYAN}{arg}{C_RESET}. Will take effect on next agent restart.")
@@ -538,7 +541,8 @@ class CLIChannel(Channel):
         if session_mgr.current:
             print(f"  {C_BOLD}Session:{C_RESET}  {C_GREEN}{session_mgr.current.name}{C_RESET}  {C_DIM}({session_mgr.current.id}){C_RESET}")
         print(f"  {C_BOLD}Pattern:{C_RESET}  {C_GREEN}{settings.agent.pattern}{C_RESET}")
-        print(f"  {C_BOLD}Model:{C_RESET}    {C_GREEN}{self._agent.provider.model_name}{C_RESET}")
+        if self._agent is not None:
+            print(f"  {C_BOLD}Model:{C_RESET}    {C_GREEN}{self._agent.provider.model_name}{C_RESET}")
         print(f"  {C_BOLD}Provider:{C_RESET} {C_GREEN}{settings.agent.provider}{C_RESET}")
         print(f"  {C_BOLD}Memory:{C_RESET}   {C_GREEN}{settings.memory.long_term_backend}{C_RESET}")
         print(f"  {C_BOLD}Context:{C_RESET}  {C_GREEN}{settings.context.strategy}{C_RESET}")
