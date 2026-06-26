@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from personal_agent.context.budget import ContextBudgetManager
 from personal_agent.context.compressor import ContextCompressor, LLMCompressor
 from personal_agent.context.strategies import (
+    BudgetStrategy,
     CompressionStrategy,
     ContextStrategy,
     HybridStrategy,
@@ -24,9 +28,12 @@ class ContextManager:
         compressor: ContextCompressor | None = None,
         max_tokens: int = 8192,
         max_messages: int = 100,
+        budget_manager: ContextBudgetManager | None = None,
     ):
         if strategy:
             self._strategy = strategy
+        elif budget_manager:
+            self._strategy = BudgetStrategy(budget_manager, max_tokens=max_tokens)
         elif compressor:
             self._strategy = HybridStrategy(
                 compressor=compressor,
@@ -43,11 +50,12 @@ class ContextManager:
     @classmethod
     def create(
         cls,
-        strategy_name: str = "hybrid",
+        strategy_name: str = "budget",
         provider=None,
         max_tokens: int = 8192,
         max_messages: int = 100,
         compression_model: str = "gpt-4o-mini",
+        budget_manager: ContextBudgetManager | None = None,
     ) -> "ContextManager":
         """Factory method to create a ContextManager from a strategy name."""
         if strategy_name == "sliding_window":
@@ -63,7 +71,6 @@ class ContextManager:
 
         if strategy_name == "hybrid":
             if provider is None:
-                # Fallback to sliding window if no provider for compression
                 return cls(
                     strategy=SlidingWindowStrategy(max_messages=max_messages),
                     max_tokens=max_tokens,
@@ -76,5 +83,14 @@ class ContextManager:
                 compression_threshold=max_tokens // 2,
             )
             return cls(strategy=strategy, max_tokens=max_tokens, max_messages=max_messages)
+
+        if strategy_name == "budget":
+            if budget_manager is None:
+                budget_manager = ContextBudgetManager(context_window=max_tokens * 4)
+            return cls(
+                budget_manager=budget_manager,
+                max_tokens=max_tokens,
+                max_messages=max_messages,
+            )
 
         raise ValueError(f"Unknown strategy: {strategy_name}")

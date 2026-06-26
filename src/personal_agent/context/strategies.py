@@ -98,3 +98,36 @@ class HybridStrategy(ContextStrategy):
         # Then apply compression (soft cap)
         messages = await self._compression.apply(messages)
         return messages
+
+
+class BudgetStrategy(ContextStrategy):
+    """Preventive token budget allocation with attention routing.
+
+    Before each LLM call, estimates token usage and compresses
+    conversation history if it exceeds the allocated budget.
+    System messages and recent messages are always preserved.
+    """
+
+    def __init__(self, budget_manager, max_tokens: int = 8192):
+        self._budget = budget_manager
+        self._max_tokens = max_tokens
+
+    async def apply(self, messages: list[Message]) -> list[Message]:
+        from personal_agent.context.budget import estimate_message_tokens
+
+        # Allocate budget based on current messages
+        system_prompt = ""
+        for m in messages:
+            if m.role.value == "system":
+                system_prompt = m.content or ""
+                break
+
+        self._budget.allocate(system_prompt=system_prompt)
+
+        conv_budget = self._budget._allocations.get("conversation", 4000)
+        conv_tokens = estimate_message_tokens(messages)
+
+        if conv_tokens <= conv_budget:
+            return list(messages)
+
+        return self._budget.compress(messages, conv_budget)

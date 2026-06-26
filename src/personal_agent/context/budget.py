@@ -177,11 +177,11 @@ class ContextBudgetManager:
         # 4. Compress conversation if over budget
         conv_tokens = estimate_message_tokens(messages)
         if conv_tokens > conv_budget:
-            messages = self._compress_conversation(messages, conv_budget)
+            messages = self.compress(messages, conv_budget)
 
         return messages
 
-    def _compress_conversation(self, messages: list[Message], max_tokens: int) -> list[Message]:
+    def compress(self, messages: list[Message], max_tokens: int) -> list[Message]:
         """Compress conversation to fit within budget.
 
         Strategy: keep system messages, keep last N messages, compress middle.
