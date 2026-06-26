@@ -91,7 +91,7 @@ class AgentKnowledge:
 
         If the section exists, replaces its content. Otherwise, appends a new section.
         """
-        self._ensure_file()
+        await asyncio.to_thread(self._ensure_file)
         async with self._lock:
             text = await asyncio.to_thread(self._global_path.read_text)
             sections = self._parse_sections(text)
@@ -100,7 +100,7 @@ class AgentKnowledge:
             sections[section] = [line.strip() for line in content.strip().split("\n") if line.strip()]
 
             new_text = self._build_file(sections)
-            self._write_file(self._global_path, new_text)
+            await asyncio.to_thread(self._write_file, self._global_path, new_text)
 
     async def append_learnings(self, learnings: list[dict]) -> int:
         """Append learnings from consolidation to the global AGENT.md.
@@ -116,7 +116,7 @@ class AgentKnowledge:
         if not learnings:
             return 0
 
-        self._ensure_file()
+        await asyncio.to_thread(self._ensure_file)
         async with self._lock:
             text = await asyncio.to_thread(self._global_path.read_text)
 
@@ -155,7 +155,7 @@ class AgentKnowledge:
 
             # Rebuild the file
             new_text = self._build_file(existing)
-            self._write_file(self._global_path, new_text)
+            await asyncio.to_thread(self._write_file, self._global_path, new_text)
             return added
 
     # ── Internal helpers ────────────────────────────────────────────────────
