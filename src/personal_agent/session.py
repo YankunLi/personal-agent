@@ -161,9 +161,10 @@ class SessionManager:
 
     def save_current(self) -> None:
         """Persist the current session to disk."""
-        if self._current_id and self._current_id in self._sessions:
-            self._sessions[self._current_id].touch()
-            self._save_session(self._sessions[self._current_id])
+        with self._lock:
+            if self._current_id and self._current_id in self._sessions:
+                self._sessions[self._current_id].touch()
+                self._save_session(self._sessions[self._current_id])
 
     def load_all(self) -> list[Session]:
         """Load all sessions from disk."""
