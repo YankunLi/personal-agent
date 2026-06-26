@@ -81,7 +81,8 @@ class ReActAgent(BaseAgent):
                     await self._fire("on_thought", response.content)
 
                 for tc in response.tool_calls:
-                    await self._fire("on_tool_call", tc.name, tc.arguments)
+                    if not self._streaming_enabled:
+                        await self._fire("on_tool_call", tc.name, tc.arguments)
 
                 # Execute tools
                 results = await self._execute_tool_calls(response.tool_calls)
