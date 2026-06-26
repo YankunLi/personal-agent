@@ -179,7 +179,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
     enabled_tools = overrides.get("tools", tools_cfg.enabled)
 
     # Create file ops tools with workspace
-    ws = workspace_dir if not tools_cfg.restrict_to_workspace else workspace_dir
+    ws = workspace_dir if tools_cfg.restrict_to_workspace else None
     file_ops_tools = create_file_ops_tools(workspace_dir=ws or None)
     file_ops_map = {t.spec.name: t for t in file_ops_tools}
 
