@@ -170,14 +170,51 @@ class AnthropicProvider(Provider):
                 kwargs["stop_sequences"] = stop
 
             async with self._client.messages.stream(**kwargs) as stream:
+                content = ""
+                tool_calls: list[dict] = []
+                current_tool: dict | None = None
+
                 async for event in stream:
                     if event.type == "text":
+                        content += event.text
                         yield ChatResponse(
                             content=event.text,
                             model=self._model,
                         )
+                    elif event.type == "content_block_start":
+                        if event.content_block.type == "tool_use":
+                            current_tool = {
+                                "id": event.content_block.id,
+                                "name": event.content_block.name,
+                                "input_json": "",
+                            }
+                    elif event.type == "content_block_delta":
+                        if event.delta.type == "input_json_delta" and current_tool:
+                            current_tool["input_json"] += event.delta.partial_json
                     elif event.type == "content_block_stop":
-                        pass  # End of a content block
+                        if current_tool:
+                            try:
+                                args = json.loads(current_tool["input_json"])
+                            except json.JSONDecodeError:
+                                args = {}
+                            tool_calls.append({
+                                "id": current_tool["id"],
+                                "name": current_tool["name"],
+                                "arguments": args,
+                            })
+                            current_tool = None
+
+                # Yield final response with all tool calls
+                if tool_calls:
+                    yield ChatResponse(
+                        content=content,
+                        tool_calls=[
+                            ToolCall(id=tc["id"], name=tc["name"], arguments=tc["arguments"])
+                            for tc in tool_calls
+                        ],
+                        finish_reason="tool_use",
+                        model=self._model,
+                    )
 
         except Exception as e:
             self._raise_provider_error(e)
