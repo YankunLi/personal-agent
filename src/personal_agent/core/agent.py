@@ -188,12 +188,21 @@ class BaseAgent(ABC):
             )
             from personal_agent.types import ToolResult as TR
 
-            for tc in tool_calls[len(results):]:
-                results.append(TR(
-                    call_id=tc.id,
-                    name=tc.name,
-                    error="Tool execution was dropped",
-                ))
+            # Pad with error results for missing tool calls
+            if len(results) < len(tool_calls):
+                for tc in tool_calls[len(results):]:
+                    results.append(TR(
+                        call_id=tc.id,
+                        name=tc.name,
+                        error="Tool execution was dropped",
+                    ))
+            # Truncate extra results (should not happen, but handle gracefully)
+            elif len(results) > len(tool_calls):
+                logger.warning(
+                    "Dropping %d extra tool results",
+                    len(results) - len(tool_calls),
+                )
+                results = results[:len(tool_calls)]
         return results
 
     async def _build_system_prompt(self) -> str:
@@ -295,8 +304,10 @@ class BaseAgent(ABC):
                 memory_context = "Relevant past memories:\n" + "\n".join(
                     f"- {e['content']}" for e in entries
                 )
+                # Insert after system prompt (index 1), or at end if no messages
+                insert_at = 1 if len(state.messages) > 0 else 0
                 state.messages.insert(
-                    1,  # After system prompt
+                    insert_at,
                     self._make_message(Role.SYSTEM, memory_context),
                 )
 
