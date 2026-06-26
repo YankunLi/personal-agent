@@ -142,24 +142,24 @@ class FileMemoryStore:
 
         return filepath
 
-    def get(self, name: str) -> tuple[dict[str, str], str] | None:
+    async def get(self, name: str) -> tuple[dict[str, str], str] | None:
         """Read a memory file by name. Returns (metadata, body) or None."""
         cache = self._ensure_cache()
         filepath = cache.get(name)
         if filepath is None or not filepath.exists():
             if filepath is not None:
                 self._invalidate_cache()
-                self.repair_index()
+                await self.repair_index()
             return None
 
         return _parse_frontmatter(filepath.read_text())
 
-    def get_by_type(self, memory_type: str) -> list[dict[str, Any]]:
+    async def get_by_type(self, memory_type: str) -> list[dict[str, Any]]:
         """Get all memories of a given type."""
         results = []
         for entry in self.list_all():
             if entry.get("type") == memory_type:
-                result = self.get(entry["name"])
+                result = await self.get(entry["name"])
                 if result:
                     meta, body = result
                     results.append({**entry, "body": body, "metadata": meta})
@@ -242,7 +242,7 @@ class FileMemoryStore:
             self.index_path.write_text("# Memory Index\n\nNo memories stored yet.\n")
         return self.index_path.read_text()
 
-    def repair_index(self) -> int:
+    async def repair_index(self) -> int:
         """Remove stale index entries that point to non-existent files.
 
         Returns the number of entries removed.
@@ -250,14 +250,15 @@ class FileMemoryStore:
         if not self.index_path.exists():
             return 0
 
-        entries = self._load_index()
-        stale = [e for e in entries if not (self._dir / e["filename"]).exists()]
+        async with self._lock:
+            entries = self._load_index()
+            stale = [e for e in entries if not (self._dir / e["filename"]).exists()]
 
-        if stale:
-            stale_names = {e["name"] for e in stale}
-            remaining = [e for e in entries if e["name"] not in stale_names]
-            self._write_index_locked(remaining)
-            self._invalidate_cache()
+            if stale:
+                stale_names = {e["name"] for e in stale}
+                remaining = [e for e in entries if e["name"] not in stale_names]
+                self._write_index_locked(remaining)
+                self._invalidate_cache()
 
         return len(stale)
 

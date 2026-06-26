@@ -266,7 +266,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", **overr
 
     async def read_memory(name: str) -> str:
         """Read a specific memory file by name. Use this to recall details about the user, project, or past feedback."""
-        result = memory_store.get(name)
+        result = await memory_store.get(name)
         if result is None:
             return f"No memory found with name '{name}'. Available memories: {[e['name'] for e in memory_store.list_all()]}"
         meta, body = result
