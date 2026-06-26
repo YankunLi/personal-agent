@@ -137,7 +137,9 @@ class BaseAgent(ABC):
 
             if chunk.tool_calls:
                 for tc in chunk.tool_calls:
-                    await self._fire("on_tool_call_stream", tc.name, tc.arguments)
+                    # Only fire for complete tool calls (name + arguments present)
+                    if tc.name:
+                        await self._fire("on_tool_call_stream", tc.name, tc.arguments)
                     accumulated_tool_calls.append(tc)
 
             if chunk.usage:
