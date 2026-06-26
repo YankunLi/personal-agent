@@ -179,7 +179,7 @@ class BaseAgent(ABC):
         self.short_term.add(Message(role=Role.USER, content=task))
         self.short_term.add(Message(role=Role.ASSISTANT, content=answer[:500]))
 
-        # Trigger memory consolidation (async, don't block)
+        # Trigger memory consolidation (fire-and-forget, don't block response)
         if self.memory_store and self.consolidation_provider:
             try:
                 from personal_agent.memory.consolidator import MemoryConsolidator
@@ -187,10 +187,12 @@ class BaseAgent(ABC):
                     store=self.memory_store,
                     provider=self.consolidation_provider,
                 )
-                # Run consolidation with the full conversation
                 existing = self.memory_store.list_all()
-                all_messages = list(self.short_term)
-                await consolidator.consolidate(all_messages, existing)
+                # Use the full conversation from state.messages (not short_term)
+                conversation = list(state.messages)
+                asyncio.create_task(
+                    self._run_consolidation(consolidator, conversation, existing)
+                )
             except Exception as e:
                 logger.warning("Memory consolidation failed: %s", e)
 
@@ -200,6 +202,15 @@ class BaseAgent(ABC):
             token_usage=dict(self._total_usage),
             elapsed_ms=elapsed_ms,
         )
+
+    async def _run_consolidation(
+        self, consolidator: Any, messages: list[Message], existing: list[dict[str, str]]
+    ) -> None:
+        """Run memory consolidation in the background (fire-and-forget)."""
+        try:
+            await consolidator.consolidate(messages, existing)
+        except Exception as e:
+            logger.warning("Background memory consolidation failed: %s", e)
 
     async def close(self) -> None:
         """Clean up resources: MCP connections, provider clients, sub-agents."""

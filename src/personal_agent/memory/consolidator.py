@@ -113,7 +113,7 @@ class MemoryConsolidator:
         conversation_parts = []
         for msg in messages[-20:]:  # Last 20 messages
             role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
-            content = msg.content[:500] if msg.content else ""
+            content = msg.content[:1000] if msg.content else ""
             if content.strip():
                 conversation_parts.append(f"[{role.upper()}]: {content}")
         conversation = "\n\n".join(conversation_parts)

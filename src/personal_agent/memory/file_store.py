@@ -8,6 +8,7 @@ Follows Claude Code's memory design:
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from pathlib import Path
@@ -72,10 +73,38 @@ class FileMemoryStore:
     def __init__(self, storage_dir: str | Path = "~/.personal-agent/memory"):
         self._dir = Path(storage_dir).expanduser()
         self._dir.mkdir(parents=True, exist_ok=True)
+        self._lock = asyncio.Lock()
+        self._name_to_path: dict[str, Path] | None = None  # Cache
 
     @property
     def index_path(self) -> Path:
         return self._dir / "MEMORY.md"
+
+    # ── Cache management ────────────────────────────────────────────────────
+
+    def _invalidate_cache(self) -> None:
+        """Invalidate the name→path cache (call after any write)."""
+        self._name_to_path = None
+
+    def _ensure_cache(self) -> dict[str, Path]:
+        """Build or return the cached name→path mapping."""
+        if self._name_to_path is not None:
+            return self._name_to_path
+
+        cache: dict[str, Path] = {}
+        for f in self._dir.glob("*.md"):
+            if f.name == "MEMORY.md":
+                continue
+            try:
+                with open(f) as fh:
+                    meta, _ = _parse_frontmatter(fh.read())
+                name = meta.get("name", f.stem)
+                cache[name] = f
+            except Exception:
+                continue
+
+        self._name_to_path = cache
+        return cache
 
     # ── CRUD operations ──────────────────────────────────────────────────────
 
@@ -93,7 +122,7 @@ class FileMemoryStore:
             raise ValueError(f"Invalid memory type: {memory_type}. Must be one of {MEMORY_TYPES}")
 
         slug = _slugify(name)
-        filename = f"{memory_type}_{slug}.md" if not name.startswith(memory_type) else f"{slug}.md"
+        filename = f"{memory_type}_{slug}.md"
         filepath = self._dir / filename
 
         frontmatter = _format_frontmatter({
@@ -104,23 +133,27 @@ class FileMemoryStore:
 
         existing_body = ""
         if filepath.exists():
-            _, existing_body = self.get(name)
+            _, existing_body = _parse_frontmatter(filepath.read_text())
 
-        # Merge: keep existing body if new content is empty, otherwise use new
         body = content if content else existing_body
 
         with open(filepath, "w") as f:
             f.write(frontmatter + "\n\n" + body + "\n")
 
-        # Update index
         self._update_index_entry(name, filename, description or name)
+        self._invalidate_cache()
 
         return filepath
 
     def get(self, name: str) -> tuple[dict[str, str], str] | None:
         """Read a memory file by name. Returns (metadata, body) or None."""
-        filepath = self._find_file(name)
-        if filepath is None:
+        cache = self._ensure_cache()
+        filepath = cache.get(name)
+        if filepath is None or not filepath.exists():
+            # File may have been deleted manually — repair index
+            if filepath is not None:
+                self._invalidate_cache()
+                self.repair_index()
             return None
 
         with open(filepath) as f:
@@ -131,20 +164,28 @@ class FileMemoryStore:
     def get_by_type(self, memory_type: str) -> list[dict[str, Any]]:
         """Get all memories of a given type."""
         results = []
-        for entry in self.load_index():
-            meta, body = self.get(entry["name"]) or ({}, "")
-            if meta.get("type") == memory_type:
-                results.append({**entry, "body": body, "metadata": meta})
+        for entry in self.list_all():
+            if entry.get("type") == memory_type:
+                result = self.get(entry["name"])
+                if result:
+                    meta, body = result
+                    results.append({**entry, "body": body, "metadata": meta})
         return results
 
     def delete(self, name: str) -> bool:
         """Delete a memory file and remove from index."""
-        filepath = self._find_file(name)
+        cache = self._ensure_cache()
+        filepath = cache.get(name)
         if filepath is None:
             return False
 
-        filepath.unlink()
+        try:
+            filepath.unlink()
+        except FileNotFoundError:
+            pass
+
         self._remove_index_entry(name)
+        self._invalidate_cache()
         return True
 
     def list_all(self) -> list[dict[str, str]]:
@@ -159,11 +200,14 @@ class FileMemoryStore:
         for f in sorted(self._dir.glob("*.md")):
             if f.name == "MEMORY.md":
                 continue
-            with open(f) as fh:
-                meta, _ = _parse_frontmatter(fh.read())
-            name = meta.get("name", f.stem)
-            desc = meta.get("description", name)
-            entries.append(f"- [{name}]({f.name}) — {desc}")
+            try:
+                with open(f) as fh:
+                    meta, _ = _parse_frontmatter(fh.read())
+                name = meta.get("name", f.stem)
+                desc = meta.get("description", name)
+                entries.append(f"- [{name}]({f.name}) — {desc}")
+            except Exception:
+                continue
 
         index_content = "# Memory Index\n\n"
         if entries:
@@ -174,12 +218,13 @@ class FileMemoryStore:
         with open(self.index_path, "w") as f:
             f.write(index_content)
 
+        self._invalidate_cache()
         return self.index_path
 
     def load_index(self) -> list[dict[str, str]]:
         """Parse MEMORY.md and return a list of memory entries.
 
-        Each entry: {name, filename, description}
+        Each entry: {name, filename, description, type}
         """
         if not self.index_path.exists():
             return []
@@ -189,11 +234,17 @@ class FileMemoryStore:
             for line in f:
                 match = INDEX_ENTRY_RE.match(line.strip())
                 if match:
-                    entries.append({
+                    entry = {
                         "name": match.group(1),
                         "filename": match.group(2),
                         "description": match.group(3),
-                    })
+                    }
+                    # Infer type from filename prefix
+                    for t in MEMORY_TYPES:
+                        if match.group(2).startswith(f"{t}_"):
+                            entry["type"] = t
+                            break
+                    entries.append(entry)
 
         return entries
 
@@ -204,11 +255,32 @@ class FileMemoryStore:
         with open(self.index_path) as f:
             return f.read()
 
+    def repair_index(self) -> int:
+        """Remove stale index entries that point to non-existent files.
+
+        Returns the number of entries removed.
+        """
+        if not self.index_path.exists():
+            return 0
+
+        entries = self.load_index()
+        stale = []
+        for entry in entries:
+            filepath = self._dir / entry["filename"]
+            if not filepath.exists():
+                stale.append(entry)
+
+        if stale:
+            for entry in stale:
+                self._remove_index_entry(entry["name"])
+            self._invalidate_cache()
+
+        return len(stale)
+
     def _update_index_entry(self, name: str, filename: str, description: str) -> None:
         """Add or update an entry in MEMORY.md."""
         entries = self.load_index()
 
-        # Update existing or append
         found = False
         for entry in entries:
             if entry["name"] == name or entry["filename"] == filename:
@@ -220,7 +292,6 @@ class FileMemoryStore:
         if not found:
             entries.append({"name": name, "filename": filename, "description": description})
 
-        # Rebuild index
         index_lines = ["# Memory Index\n"]
         for e in entries:
             index_lines.append(f"- [{e['name']}]({e['filename']}) — {e['description']}")
@@ -244,21 +315,6 @@ class FileMemoryStore:
         with open(self.index_path, "w") as f:
             f.write("\n".join(index_lines))
 
-    def _find_file(self, name: str) -> Path | None:
-        """Find a memory file by name or slug."""
-        slug = _slugify(name)
-        for f in self._dir.glob("*.md"):
-            if f.name == "MEMORY.md":
-                continue
-            if f.stem == slug or f.stem.endswith(f"_{slug}"):
-                return f
-            # Also check frontmatter name
-            with open(f) as fh:
-                meta, _ = _parse_frontmatter(fh.read())
-            if meta.get("name") == name:
-                return f
-        return None
-
     def count(self) -> int:
         """Return the number of memory files (excluding index)."""
         return len([f for f in self._dir.glob("*.md") if f.name != "MEMORY.md"])
@@ -267,3 +323,4 @@ class FileMemoryStore:
         """Delete all memory files and index."""
         for f in self._dir.glob("*.md"):
             f.unlink()
+        self._invalidate_cache()
