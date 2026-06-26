@@ -161,15 +161,13 @@ class WebSocketChannel(Channel):
             await self._send(websocket, {"type": "error", "text": "Empty task"})
             return
 
-        # Get or create agent for this connection
-        agent = await self._get_or_create_agent(conn_id)
-
         # Determine user_id for this connection
         session = self._conn_sessions.get(conn_id)
         user_id = session.user_id if session else "web-user"
         conv_id = session.conversation_id if session else f"conn-{conn_id}"
 
-        # Create channel message and resolve session
+        # Create channel message and resolve session (before creating agent so
+        # _get_or_create_agent sees the correct user_id for memory isolation)
         msg = ChannelMessage(
             channel=WS_CHANNEL,
             user_id=user_id,
@@ -178,6 +176,9 @@ class WebSocketChannel(Channel):
         )
         resolved = self._router.resolve(msg)
         self._conn_sessions[conn_id] = resolved
+
+        # Get or create agent for this connection
+        agent = await self._get_or_create_agent(conn_id)
 
         # Restore session memory into agent
         agent.short_term = resolved.short_term
@@ -247,7 +248,7 @@ class WebSocketChannel(Channel):
         from personal_agent.factory import create_agent
 
         session = self._conn_sessions.get(conn_id)
-        user_id = session.user_id if session else f"web-conn-{conn_id}"
+        user_id = session.user_id if session else "web-user"
         agent = await create_agent(self._settings, user_id=user_id)
         self._conn_agents[conn_id] = agent
         return agent
