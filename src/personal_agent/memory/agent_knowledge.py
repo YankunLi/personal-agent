@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 SECTION_HEADER_RE = re.compile(r"^## (.+)$", re.MULTILINE)
@@ -169,7 +169,7 @@ class AgentKnowledge:
     def _generate_starter(self) -> str:
         """Generate a minimal AGENT.md with empty sections."""
         parts = [AGENT_MD_HEADER.strip(), ""]
-        parts.append(f"*Last updated: {datetime.now(UTC).isoformat()}*")
+        parts.append(f"*Last updated: {datetime.now(timezone.utc).isoformat()}*")
         for name, desc in DEFAULT_SECTIONS.items():
             parts.append(f"\n## {name}\n*{desc}*\n")
         return "\n".join(parts) + "\n"
@@ -195,7 +195,7 @@ class AgentKnowledge:
     def _build_file(self, sections: dict[str, list[str]]) -> str:
         """Rebuild AGENT.md from parsed sections."""
         parts = [AGENT_MD_HEADER.strip(), ""]
-        parts.append(f"*Last updated: {datetime.now(UTC).isoformat()}*")
+        parts.append(f"*Last updated: {datetime.now(timezone.utc).isoformat()}*")
 
         # Write known sections in order first
         for name, desc in DEFAULT_SECTIONS.items():
