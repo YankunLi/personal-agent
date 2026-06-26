@@ -167,9 +167,13 @@ class ReflectionAgent(BaseAgent):
             self._make_message(Role.USER, critique_prompt),
         ]
 
-        # Route through _call_llm for consistent context management
-        critique_state = AgentState(messages=critique_messages)
-        result = await self._call_llm(critique_state)
+        # Call provider directly — critique messages are only 2 messages,
+        # so context management (compression, sliding window) is unnecessary.
+        result = await self.provider.chat(
+            critique_messages,
+            temperature=0.3,
+            max_tokens=4096,
+        )
 
         try:
             content = result.content
