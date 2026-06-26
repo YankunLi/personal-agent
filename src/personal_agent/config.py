@@ -80,6 +80,7 @@ class ToolConfig(BaseModel):
 class MemoryConfig(BaseModel):
     short_term_max_messages: int = 200
     memory_dir: str = "~/.personal-agent/memory"
+    long_term_backend: str = "file"
 
 
 # ── Consolidation ──────────────────────────────────────────────────────────────
