@@ -83,7 +83,10 @@ class PlanAndExecuteAgent(BaseAgent):
         # Phase 2: Execute each step
         step_results = []
         i = 0
-        while i < len(plan):
+        total_steps = 0
+        replan_count = 0
+        while i < len(plan) and total_steps < self.max_steps:
+            total_steps += 1
             step = plan[i]
             logger.info("Executing step %d/%d: %s", i + 1, len(plan), step["description"][:80])
 
@@ -92,12 +95,21 @@ class PlanAndExecuteAgent(BaseAgent):
 
             if step_result.get("error"):
                 logger.warning("Step %d failed: %s", i + 1, step_result["error"])
-                if i < len(plan) - 1:
+                if i < len(plan) - 1 and replan_count < 3:
                     plan = await self._replan(state, plan, step_results, step)
                     self.working.set("plan", plan)
                     i = 0  # Restart from beginning of new plan
+                    replan_count += 1
                     continue
+                else:
+                    logger.warning(
+                        "Cannot replan: %s. Proceeding with remaining steps.",
+                        "max replans reached" if replan_count >= 3 else "last step failed",
+                    )
             i += 1
+
+        if total_steps >= self.max_steps:
+            logger.warning("Plan execution reached max_steps limit (%d)", self.max_steps)
 
         # Phase 3: Synthesis
         final_answer = await self._synthesize(state, plan, step_results)
