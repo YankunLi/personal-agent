@@ -11,13 +11,22 @@ from pathlib import Path
 from personal_agent.memory.short_term import ShortTermMemory
 from personal_agent.memory.working import WorkingMemory
 
+from personal_agent.channels.base import SessionKey
+
 
 @dataclass
 class Session:
-    """An agent session with its own context and memory."""
+    """An agent session with its own context and memory.
+
+    Each session is tied to a specific (channel, user_id, conversation_id) triple
+    for multi-channel routing. For CLI-only usage, these fields default to empty strings.
+    """
 
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     name: str = "default"
+    channel: str = ""
+    user_id: str = ""
+    conversation_id: str = ""
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     short_term: ShortTermMemory = field(default_factory=ShortTermMemory)
@@ -32,6 +41,9 @@ class Session:
         return {
             "id": self.id,
             "name": self.name,
+            "channel": self.channel,
+            "user_id": self.user_id,
+            "conversation_id": self.conversation_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "short_term": self.short_term.to_dict(),
@@ -44,6 +56,9 @@ class Session:
         session = cls(
             id=data.get("id", uuid.uuid4().hex[:12]),
             name=data.get("name", "unnamed"),
+            channel=data.get("channel", ""),
+            user_id=data.get("user_id", ""),
+            conversation_id=data.get("conversation_id", ""),
             created_at=data.get("created_at", time.time()),
             updated_at=data.get("updated_at", time.time()),
         )
@@ -157,6 +172,31 @@ class SessionManager:
             if s.id.startswith(id_or_name):
                 return s
         return None
+
+    def find_by_key(self, key: SessionKey) -> Session | None:
+        """Find a session by its routing key (channel, user_id, conversation_id)."""
+        for s in self._sessions.values():
+            if s.channel == key.channel and s.user_id == key.user_id and s.conversation_id == key.conversation_id:
+                return s
+        return None
+
+    def create_for_key(self, key: SessionKey) -> Session:
+        """Create a new session for the given routing key and switch to it."""
+        # Save current session first
+        if self._current_id and self._current_id in self._sessions:
+            self._save_session(self._sessions[self._current_id])
+
+        name = f"{key.channel}-{key.user_id}-{key.conversation_id}"
+        session = Session(
+            name=name,
+            channel=key.channel,
+            user_id=key.user_id,
+            conversation_id=key.conversation_id,
+        )
+        self._sessions[session.id] = session
+        self._current_id = session.id
+        self._save_session(session)
+        return session
 
     def _session_path(self, session_id: str) -> Path:
         return self._storage_dir / f"{session_id}.json"
