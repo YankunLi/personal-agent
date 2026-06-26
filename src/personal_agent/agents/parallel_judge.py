@@ -10,9 +10,8 @@ from typing import Any
 from personal_agent.config import ParallelAgentConfig
 from personal_agent.core.agent import BaseAgent
 from personal_agent.factory import create_sub_agent
-from personal_agent.providers.base import Provider
 from personal_agent.providers.registry import create_provider, ProviderCredentials
-from personal_agent.types import AgentResult, AgentState, AgentStep, Message, Role
+from personal_agent.types import AgentResult, AgentStep, Message, Role
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +59,18 @@ class ParallelJudgeAgent(BaseAgent):
     async def run(self, task: str, **kwargs: Any) -> AgentResult:
         start_time = time.time()
         state = self._init_state(task)
+
+        # Load relevant long-term memories
+        if self.long_term:
+            entries = await self.long_term.recall(task)
+            if entries:
+                memory_context = "Relevant past memories:\n" + "\n".join(
+                    f"- {e['content']}" for e in entries
+                )
+                state.messages.insert(
+                    1,
+                    self._make_message(Role.SYSTEM, memory_context),
+                )
 
         if not self._agent_configs:
             return AgentResult(
@@ -117,7 +128,10 @@ class ParallelJudgeAgent(BaseAgent):
             system_prompt=cfg.system_prompt,
             tools=cfg.tools,
         )
-        agent = await create_sub_agent(sub_cfg, self._providers)
+        agent = await create_sub_agent(
+            sub_cfg, self._providers,
+            extra_tools=self.tools.list_tools(),
+        )
         try:
             result = await agent.run(task)
             return result.answer, result.token_usage

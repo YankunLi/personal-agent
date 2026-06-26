@@ -39,6 +39,7 @@ async def create_sub_agent(
     context_manager: Any = None,
     skill_manager: Any = None,
     budget_manager: Any = None,
+    extra_tools: list[Any] | None = None,
 ) -> BaseAgent:
     """Create a single sub-agent from SubAgentConfig.
 
@@ -52,6 +53,7 @@ async def create_sub_agent(
         context_manager: Optional ContextManager for context management.
         skill_manager: Optional SkillManager for skills.
         budget_manager: Optional ContextBudgetManager for budget management.
+        extra_tools: Optional list of pre-created Tool objects to register (e.g. MCP tools).
 
     Returns:
         A configured BaseAgent instance (ReActAgent, PlanAndExecuteAgent, or ReflectionAgent).
@@ -87,6 +89,11 @@ async def create_sub_agent(
             tool_registry.register(file_ops_map[tool_name])
 
     tool_executor = ToolExecutor(registry=tool_registry)
+
+    # Register extra tools (e.g. MCP tools from parent agent)
+    if extra_tools:
+        for t in extra_tools:
+            tool_registry.register(t)
 
     # Create agent kwargs
     agent_kwargs = {

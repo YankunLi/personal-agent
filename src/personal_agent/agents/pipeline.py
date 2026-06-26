@@ -10,7 +10,7 @@ from personal_agent.config import PipelineStageConfig, SubAgentConfig
 from personal_agent.core.agent import BaseAgent
 from personal_agent.factory import create_sub_agent
 from personal_agent.providers.registry import ProviderCredentials
-from personal_agent.types import AgentResult, AgentStep
+from personal_agent.types import AgentResult, AgentStep, Role
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,18 @@ class PipelineAgent(BaseAgent):
     async def run(self, task: str, **kwargs: Any) -> AgentResult:
         start_time = time.time()
         state = self._init_state(task)
+
+        # Load relevant long-term memories
+        if self.long_term:
+            entries = await self.long_term.recall(task)
+            if entries:
+                memory_context = "Relevant past memories:\n" + "\n".join(
+                    f"- {e['content']}" for e in entries
+                )
+                state.messages.insert(
+                    1,
+                    self._make_message(Role.SYSTEM, memory_context),
+                )
 
         if not self._stage_configs:
             return AgentResult(
@@ -75,7 +87,10 @@ class PipelineAgent(BaseAgent):
                 tools=stage_cfg.tools,
                 description=stage_cfg.name,
             )
-            stage_agent = await create_sub_agent(sub_cfg, providers=self._providers)
+            stage_agent = await create_sub_agent(
+                sub_cfg, providers=self._providers,
+                extra_tools=self.tools.list_tools(),
+            )
             stage_result = await stage_agent.run(stage_task)
             current_input = stage_result.answer
 

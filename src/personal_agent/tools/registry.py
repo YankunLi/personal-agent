@@ -53,6 +53,10 @@ class ToolRegistry:
         """Return all registered tool names."""
         return list(self._tools.keys())
 
+    def list_tools(self) -> list[Tool]:
+        """Return all registered tool instances."""
+        return list(self._tools.values())
+
     def remove(self, name: str) -> None:
         """Remove a tool from the registry."""
         self._tools.pop(name, None)
