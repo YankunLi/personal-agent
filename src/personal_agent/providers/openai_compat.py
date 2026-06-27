@@ -152,6 +152,7 @@ class OpenAICompatibleProvider(Provider):
             accumulated_content = ""
             tool_call_deltas: dict[int, dict] = {}  # index -> {id, name, arguments_json}
             stream_model = ""
+            usage: dict[str, int] = {}
 
             async for chunk in stream:
                 if not chunk.choices:
@@ -188,7 +189,6 @@ class OpenAICompatibleProvider(Provider):
                                 entry["arguments_json"] += tc_delta.function.arguments
 
                 # Check for usage in the final chunk
-                usage = {}
                 if chunk.usage:
                     usage = {
                         "prompt_tokens": chunk.usage.prompt_tokens or 0,
@@ -196,9 +196,9 @@ class OpenAICompatibleProvider(Provider):
                         "total_tokens": chunk.usage.total_tokens or 0,
                     }
 
-            # Yield final response with accumulated tool calls
+            # Yield final response with accumulated tool calls and usage
+            tool_calls = []
             if tool_call_deltas:
-                tool_calls = []
                 for idx in sorted(tool_call_deltas.keys()):
                     entry = tool_call_deltas[idx]
                     try:
@@ -208,12 +208,12 @@ class OpenAICompatibleProvider(Provider):
                     tool_calls.append(
                         ToolCall(id=entry["id"], name=entry["name"], arguments=args)
                     )
-                yield ChatResponse(
-                    content="",
-                    tool_calls=tool_calls,
-                    finish_reason="tool_calls",
-                    model=stream_model,
-                    usage=usage,
-                )
+            yield ChatResponse(
+                content="",
+                tool_calls=tool_calls if tool_calls else None,
+                finish_reason="tool_calls" if tool_call_deltas else "stop",
+                model=stream_model,
+                usage=usage,
+            )
         except Exception as e:
             raise_provider_error(e)
