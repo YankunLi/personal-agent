@@ -245,7 +245,7 @@ class WebSocketChannel(Channel):
                 # Persist session state even on error
                 resolved.short_term = agent.short_term
                 resolved.working = agent.working
-                self._router.session_manager.save_current()
+                self._router.session_manager.save_session(resolved)
 
     # ── Agent management ─────────────────────────────────────────────────────
 

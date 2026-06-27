@@ -359,7 +359,7 @@ class FeishuChannel(Channel):
             # Persist session state even on error (partial progress may be useful)
             session.short_term = agent.short_term
             session.working = agent.working
-            self._router.session_manager.save_current()
+            self._router.session_manager.save_session(session)
 
 
 # ANSI color for startup message
