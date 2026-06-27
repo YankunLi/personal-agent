@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from personal_agent.tools.base import Tool
-from personal_agent.exceptions import SkillError
+from personal_agent.exceptions import SkillError, ToolNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -458,16 +458,17 @@ class SkillManager:
             for name in skill.tool_names:
                 if name in existing:
                     continue
-                tool = tool_registry.get(name)
-                if tool is not None:
-                    skill.tools.append(tool)
-                    existing.add(name)
-                    resolved += 1
-                else:
+                try:
+                    tool = tool_registry.get(name)
+                except ToolNotFoundError:
                     logger.warning(
                         "Skill '%s' references tool '%s' which is not in the registry",
                         skill.name, name,
                     )
+                    continue
+                skill.tools.append(tool)
+                existing.add(name)
+                resolved += 1
         return resolved
 
     # ── Prompt & tools ────────────────────────────────────────────────────────
