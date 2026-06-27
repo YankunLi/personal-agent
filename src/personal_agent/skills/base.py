@@ -638,7 +638,7 @@ class SkillManager:
             # Discover skills from the cloned repo, tracking which are new
             discover_root = tmp_path / subdir if subdir else tmp_path
             before = set(self._skills.keys())
-            count = self.discover_from(discover_root)
+            self.discover_from(discover_root)
             new_names = set(self._skills.keys()) - before
 
             if not new_names:
