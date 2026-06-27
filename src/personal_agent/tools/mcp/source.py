@@ -90,10 +90,12 @@ class MCPToolSource:
                 timeout=config.timeout,
             )
         except asyncio.TimeoutError:
+            await self._cleanup_context(ctx)
             raise MCPConnectionError(
                 f"MCP server '{config.name}' initialization timed out after {config.timeout}s"
             )
         except Exception as e:
+            await self._cleanup_context(ctx)
             raise MCPConnectionError(
                 f"Failed to initialize MCP server '{config.name}': {e}"
             ) from e
@@ -105,11 +107,13 @@ class MCPToolSource:
             )
         except asyncio.TimeoutError:
             await self._cleanup_session(session)
+            await self._cleanup_context(ctx)
             raise MCPConnectionError(
                 f"MCP server '{config.name}' initialization timed out after {config.timeout}s"
             )
         except Exception as e:
             await self._cleanup_session(session)
+            await self._cleanup_context(ctx)
             raise MCPConnectionError(
                 f"Failed to initialize MCP server '{config.name}': {e}"
             ) from e
@@ -136,6 +140,15 @@ class MCPToolSource:
             await session.__aexit__(None, None, None)
         except Exception:
             pass
+
+    async def _cleanup_context(self, ctx: Any) -> None:
+        """Clean up a transport context and remove it from tracking."""
+        try:
+            await ctx.__aexit__(None, None, None)
+        except Exception:
+            pass
+        if ctx in self._contexts:
+            self._contexts.remove(ctx)
 
     async def disconnect_all(self) -> None:
         """Disconnect from all MCP servers and clean up resources."""
