@@ -72,6 +72,7 @@ class AgentStep:
 class AgentState:
     steps: list[AgentStep] = field(default_factory=list)
     messages: list[Message] = field(default_factory=list)
+    full_messages: list[Message] = field(default_factory=list)
     working_memory: dict[str, Any] = field(default_factory=dict)
     done: bool = False
     final_answer: str | None = None

@@ -102,6 +102,7 @@ class BaseAgent(ABC):
 
         messages = state.messages
         if self.context_manager:
+            state.full_messages = list(messages)
             messages = await self.context_manager.prepare(messages)
             state.messages = messages
 
@@ -131,6 +132,7 @@ class BaseAgent(ABC):
 
         messages = state.messages
         if self.context_manager:
+            state.full_messages = list(messages)
             messages = await self.context_manager.prepare(messages)
             state.messages = messages
 
@@ -377,7 +379,7 @@ class BaseAgent(ABC):
                     max_messages=self._consolidation_max_messages,
                 )
                 existing = await asyncio.to_thread(self.memory_store.list_all)
-                conversation = list(state.messages)
+                conversation = list(state.full_messages) if state.full_messages else list(state.messages)
                 # Only append the final answer if it's not already the last message
                 # (e.g., max_steps exceeded produces a synthetic answer not in the conversation)
                 if answer and answer != "No answer produced.":
