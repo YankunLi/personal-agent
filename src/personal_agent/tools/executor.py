@@ -264,8 +264,12 @@ class ToolExecutor:
                 if isinstance(result, ToolResult):
                     results.append(result)
                 elif isinstance(result, BaseException):
+                    # Defensive: execute() currently never raises, but if it
+                    # ever does, propagate cancellation/interrupts immediately.
                     raise result
                 else:
+                    # Defensive: execute() always returns ToolResult, but if
+                    # a future change returns unexpected types, wrap them.
                     results.append(
                         ToolResult(
                             call_id=non_mutating[i].id,
