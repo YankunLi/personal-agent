@@ -121,11 +121,13 @@ class DebateAgent(BaseAgent):
 
                 # Collect responses
                 previous_responses = {}
+                all_failed = True
                 for role, result in zip(self._roles, round_results):
                     if isinstance(result, Exception):
                         logger.error("Role %s failed: %s", role.name, result)
                         previous_responses[role.name] = f"[Error: {result}]"
                     else:
+                        all_failed = False
                         answer, usage = result
                         previous_responses[role.name] = answer
                         if usage:
@@ -135,6 +137,14 @@ class DebateAgent(BaseAgent):
                             thought=f"Round {round_num} - {role.name}",
                             observation=answer[:1000],
                         ))
+
+            # If all role agents failed in every round, don't synthesize garbage
+            if all_failed:
+                return AgentResult(
+                    answer="All role agents failed to produce responses. Check logs for details.",
+                    steps=all_steps,
+                    token_usage=dict(self._total_usage),
+                )
 
             # Judge synthesizes
             judge_answer = await self._run_judge(task, previous_responses)

@@ -178,7 +178,14 @@ class ReflectionAgent(BaseAgent):
                 content = content.split("```json")[1].split("```")[0]
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0]
-            return json.loads(content)
+            parsed = json.loads(content)
+            if not isinstance(parsed, dict):
+                logger.warning("Critique parsed as %s instead of dict. Response: %s", type(parsed).__name__, result.content[:200])
+                return {
+                    "overall": "N/A",
+                    "summary": f"Failed to parse critique: unexpected type {type(parsed).__name__}",
+                }
+            return parsed
         except (json.JSONDecodeError, KeyError, IndexError) as e:
             logger.warning("Failed to parse critique JSON: %s. Response: %s", e, result.content[:200])
             return {

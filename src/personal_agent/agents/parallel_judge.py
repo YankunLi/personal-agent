@@ -81,6 +81,7 @@ class ParallelJudgeAgent(BaseAgent):
 
         all_steps: list[AgentStep] = []
         agent_answers: dict[str, str] = {}
+        all_failed = True
 
         for cfg, result in zip(self._agent_configs, results):
             name = cfg.name or cfg.provider
@@ -89,12 +90,20 @@ class ParallelJudgeAgent(BaseAgent):
                 agent_answers[name] = f"[Error: {result}]"
                 all_steps.append(AgentStep(thought=f"Agent: {name}", observation=f"Error: {result}"))
             else:
+                all_failed = False
                 answer, usage = result
                 agent_answers[name] = answer
                 all_steps.append(AgentStep(thought=f"Agent: {name}", observation=answer[:1000]))
                 if usage:
                     for key, val in usage.items():
                         self._total_usage[key] = self._total_usage.get(key, 0) + val
+
+        # If all agents failed, return error instead of synthesizing garbage
+        if all_failed:
+            state.done = True
+            state.final_answer = "All parallel agents failed to produce responses. Check logs for details."
+            state.steps = all_steps
+            return await self._finalize(state, start_time, task=task)
 
         # Judge selects/synthesizes
         judge_answer = await self._run_judge(task, agent_answers)
