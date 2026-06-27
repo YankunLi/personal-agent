@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 
 from personal_agent.types import Message, Role
+
+logger = logging.getLogger(__name__)
 
 
 class ContextCompressor(ABC):
@@ -47,7 +50,10 @@ class LLMCompressor(ContextCompressor):
                 temperature=0.3,
             )
             return response.content
-        except Exception:
+        except BaseException:
+            raise
+        except Exception as e:
+            logger.warning("LLM compression failed, using fallback: %s", e)
             # Fallback: return last few messages
             recent = messages[-3:]
             return "Recent context:\n" + "\n".join(

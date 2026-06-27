@@ -103,6 +103,7 @@ class BaseAgent(ABC):
         messages = state.messages
         if self.context_manager:
             messages = await self.context_manager.prepare(messages)
+            state.messages = messages
 
         specs = self.tools.list_specs() if len(self.tools) > 0 else None
         try:
@@ -131,6 +132,7 @@ class BaseAgent(ABC):
         messages = state.messages
         if self.context_manager:
             messages = await self.context_manager.prepare(messages)
+            state.messages = messages
 
         specs = self.tools.list_specs() if len(self.tools) > 0 else None
 

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import AsyncIterator
 
 from personal_agent.providers._errors import raise_provider_error
 from personal_agent.providers.base import ChatResponse, Provider
 from personal_agent.types import Message, Role, ToolCall, ToolSpec
+
+logger = logging.getLogger(__name__)
 
 
 class AnthropicProvider(Provider):
@@ -55,9 +58,13 @@ class AnthropicProvider(Provider):
             m: dict = {"role": msg.role.value, "content": msg.content}
 
             if msg.role == Role.TOOL:
+                tool_use_id = msg.tool_call_id
+                if not tool_use_id:
+                    logger.warning("Tool message missing tool_call_id, using fallback")
+                    tool_use_id = "unknown"
                 m["content"] = [{
                     "type": "tool_result",
-                    "tool_use_id": msg.tool_call_id or "",
+                    "tool_use_id": tool_use_id,
                     "content": msg.content,
                 }]
             elif msg.tool_calls:

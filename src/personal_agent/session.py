@@ -125,42 +125,45 @@ class SessionManager:
 
     def switch(self, session_id_or_name: str) -> Session | None:
         """Switch to a session by ID or name. Saves the current session first."""
-        target = self._find(session_id_or_name)
-        if target is None:
-            return None
+        with self._lock:
+            target = self._find_locked(session_id_or_name)
+            if target is None:
+                return None
 
-        # Save current
-        if self._current_id and self._current_id in self._sessions:
-            self._save_session(self._sessions[self._current_id])
+            # Save current
+            if self._current_id and self._current_id in self._sessions:
+                self._save_session(self._sessions[self._current_id])
 
-        self._current_id = target.id
-        return target
+            self._current_id = target.id
+            return target
 
     def delete(self, session_id_or_name: str) -> bool:
         """Delete a session. Cannot delete the current session."""
-        target = self._find(session_id_or_name)
-        if target is None:
-            return False
+        with self._lock:
+            target = self._find_locked(session_id_or_name)
+            if target is None:
+                return False
 
-        if target.id == self._current_id:
-            return False  # Can't delete active session
+            if target.id == self._current_id:
+                return False  # Can't delete active session
 
-        self._sessions.pop(target.id, None)
-        session_file = self._storage_dir / f"{target.id}.json"
-        if session_file.exists():
-            session_file.unlink()
-        return True
+            self._sessions.pop(target.id, None)
+            session_file = self._storage_dir / f"{target.id}.json"
+            if session_file.exists():
+                session_file.unlink()
+            return True
 
     def rename(self, session_id_or_name: str, new_name: str) -> bool:
         """Rename a session."""
-        target = self._find(session_id_or_name)
-        if target is None:
-            return False
+        with self._lock:
+            target = self._find_locked(session_id_or_name)
+            if target is None:
+                return False
 
-        target.name = new_name
-        target.touch()
-        self._save_session(target)
-        return True
+            target.name = new_name
+            target.touch()
+            self._save_session(target)
+            return True
 
     def save_current(self) -> None:
         """Persist the current session to disk."""
@@ -171,14 +174,15 @@ class SessionManager:
 
     def load_all(self) -> list[Session]:
         """Load all sessions from disk."""
-        self._sessions.clear()
-        for f in sorted(self._storage_dir.glob("*.json")):
-            try:
-                session = self._load_session_file(f)
-                self._sessions[session.id] = session
-            except Exception:
-                pass  # Skip corrupted files
-        return self.list_sessions()
+        with self._lock:
+            self._sessions.clear()
+            for f in sorted(self._storage_dir.glob("*.json")):
+                try:
+                    session = self._load_session_file(f)
+                    self._sessions[session.id] = session
+                except Exception:
+                    pass  # Skip corrupted files
+            return sorted(self._sessions.values(), key=lambda s: s.updated_at, reverse=True)
 
     def cleanup_expired(self) -> list[str]:
         """Remove expired sessions from memory and disk.
@@ -207,18 +211,22 @@ class SessionManager:
     def _find(self, id_or_name: str) -> Session | None:
         """Find a session by ID or name."""
         with self._lock:
-            # Try exact ID match first
-            if id_or_name in self._sessions:
-                return self._sessions[id_or_name]
-            # Try name match
-            for s in self._sessions.values():
-                if s.name == id_or_name:
-                    return s
-            # Try partial ID match
-            for s in self._sessions.values():
-                if s.id.startswith(id_or_name):
-                    return s
-            return None
+            return self._find_locked(id_or_name)
+
+    def _find_locked(self, id_or_name: str) -> Session | None:
+        """Find a session by ID or name. Caller must hold self._lock."""
+        # Try exact ID match first
+        if id_or_name in self._sessions:
+            return self._sessions[id_or_name]
+        # Try name match
+        for s in self._sessions.values():
+            if s.name == id_or_name:
+                return s
+        # Try partial ID match
+        for s in self._sessions.values():
+            if s.id.startswith(id_or_name):
+                return s
+        return None
 
     def find_by_key(self, key: SessionKey) -> Session | None:
         """Find a session by its routing key (channel, user_id, conversation_id)."""

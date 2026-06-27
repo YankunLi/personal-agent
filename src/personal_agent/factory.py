@@ -166,6 +166,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     # Create provider
     creds = settings.get_provider_credentials()
     if "api_key" in overrides:
+        creds = creds.model_copy()
         creds.api_key = overrides["api_key"]
     provider = create_provider(
         provider_name=provider_name,
