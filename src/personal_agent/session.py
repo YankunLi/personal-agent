@@ -119,8 +119,14 @@ class SessionManager:
 
             session = Session(name=name)
             self._sessions[session.id] = session
+            prev_id = self._current_id
             self._current_id = session.id
-            self._save_session(session)
+            try:
+                self._save_session(session)
+            except Exception:
+                self._sessions.pop(session.id, None)
+                self._current_id = prev_id
+                raise
         return session
 
     def switch(self, session_id_or_name: str) -> Session | None:
@@ -258,8 +264,14 @@ class SessionManager:
                 conversation_id=key.conversation_id,
             )
             self._sessions[session.id] = session
+            prev_id = self._current_id
             self._current_id = session.id
-            self._save_session(session)
+            try:
+                self._save_session(session)
+            except Exception:
+                self._sessions.pop(session.id, None)
+                self._current_id = prev_id
+                raise
         return session
 
     def _session_path(self, session_id: str) -> Path:
