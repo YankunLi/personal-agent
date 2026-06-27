@@ -46,26 +46,32 @@ class Skill:
 
     Follows the Agent Skills standard:
     - name: URL-safe slug, max 64 chars (required)
-    - description: When to use this skill, max 1024 chars (required)
+    - description: What this skill does, max 1024 chars (required)
+    - when_to_use: When the model should invoke this skill (optional)
     - prompt: Skill instructions in Markdown
     - tools: Actual Tool objects (for builtin skills; resolved from tool_names)
     - tool_names: Tool names for serialization and registry-based resolution
     - dependencies: Names of other skills this depends on
+    - version: Skill version string (optional)
     - license: SPDX license identifier (optional)
     - compatibility: List of compatible agent tools (optional)
     - allowed_tools: Restrict which tools the skill may invoke (optional)
-    - metadata: Arbitrary extensible metadata (version, author, tags, etc.)
+    - paths: Glob patterns for file paths this skill applies to (optional)
+    - metadata: Arbitrary extensible metadata (author, tags, etc.)
     - base_path: The skill's directory on disk (for directory-based skills)
     """
     name: str
     description: str
     prompt: str = ""
+    when_to_use: str = ""
+    version: str = ""
     tools: list[Tool] = field(default_factory=list)
     tool_names: list[str] = field(default_factory=list)
     dependencies: list[str] = field(default_factory=list)
     license: str = ""
     compatibility: list[str] = field(default_factory=list)
     allowed_tools: list[str] = field(default_factory=list)
+    paths: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
     base_path: Path | None = None
 
@@ -142,6 +148,10 @@ class Skill:
             "description": self.description,
             "prompt": self.prompt,
         }
+        if self.when_to_use:
+            result["when_to_use"] = self.when_to_use
+        if self.version:
+            result["version"] = self.version
         if self.dependencies:
             result["dependencies"] = list(self.dependencies)
         if names:
@@ -152,6 +162,8 @@ class Skill:
             result["compatibility"] = list(self.compatibility)
         if self.allowed_tools:
             result["allowed_tools"] = list(self.allowed_tools)
+        if self.paths:
+            result["paths"] = list(self.paths)
         if self.metadata:
             result["metadata"] = dict(self.metadata)
         return result
@@ -168,6 +180,10 @@ class Skill:
             "name": self.name,
             "description": self.description,
         }
+        if self.when_to_use:
+            frontmatter["when_to_use"] = self.when_to_use
+        if self.version:
+            frontmatter["version"] = self.version
         if self.dependencies:
             frontmatter["dependencies"] = self.dependencies
         if self.tool_names:
@@ -180,6 +196,8 @@ class Skill:
             frontmatter["compatibility"] = self.compatibility
         if self.allowed_tools:
             frontmatter["allowed-tools"] = self.allowed_tools
+        if self.paths:
+            frontmatter["paths"] = self.paths
         if self.metadata:
             frontmatter["metadata"] = self.metadata
 
@@ -193,12 +211,15 @@ class Skill:
             name=data["name"],
             description=data.get("description", ""),
             prompt=data.get("prompt", ""),
+            when_to_use=data.get("when_to_use", ""),
+            version=data.get("version", ""),
             dependencies=data.get("dependencies", []),
             tools=[],  # Resolved by factory via resolve_tools()
             tool_names=data.get("tool_names", []),
             license=data.get("license", ""),
             compatibility=data.get("compatibility", []),
             allowed_tools=data.get("allowed_tools", data.get("allowed-tools", [])),
+            paths=_parse_paths(data.get("paths")),
             metadata=data.get("metadata", {}),
         )
 
@@ -244,6 +265,54 @@ class Skill:
         return skill
 
 
+def _parse_paths(raw: list[str] | str | None) -> list[str]:
+    """Normalize paths from frontmatter (string or list) into a list."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [p.strip() for p in raw.split(",") if p.strip()]
+    return [p.strip() for p in raw if p.strip()]
+
+
+def _glob_to_regex(pattern: str) -> str:
+    """Convert a glob pattern to a regex, supporting ** for recursive matching."""
+    parts = []
+    i = 0
+    while i < len(pattern):
+        c = pattern[i]
+        if c == "*" and i + 1 < len(pattern) and pattern[i + 1] == "*":
+            # ** matches any number of directories (including zero)
+            parts.append(".*")
+            i += 2
+            if i < len(pattern) and pattern[i] == "/":
+                i += 1
+        elif c == "*":
+            parts.append("[^/]*")
+            i += 1
+        elif c == "?":
+            parts.append("[^/]")
+            i += 1
+        elif c in ".+^$()[]{}|\\":
+            parts.append("\\" + c)
+            i += 1
+        else:
+            parts.append(c)
+            i += 1
+    return "^" + "".join(parts) + "$"
+
+
+def _match_paths(file_paths: list[str], patterns: list[str]) -> bool:
+    """Check if any file path matches any of the given glob patterns."""
+    import re
+
+    for file_path in file_paths:
+        for pattern in patterns:
+            regex = _glob_to_regex(pattern)
+            if re.search(regex, file_path):
+                return True
+    return False
+
+
 class SkillManager:
     """Manages skill loading, composition, and activation."""
 
@@ -251,6 +320,7 @@ class SkillManager:
         self._skills: dict[str, Skill] = {}
         self._active: set[str] = set()
         self._builtin: set[str] = set()
+        self._loaded_paths: set[str] = set()  # realpath-based dedup
 
     # ── Registration ──────────────────────────────────────────────────────────
 
@@ -407,14 +477,59 @@ class SkillManager:
 
         Skills are ordered alphabetically by name for deterministic output.
         Each skill's prompt is prefixed with a header identifying the source.
+        If a skill has a base_path, a "Base directory" line is prepended and
+        ${SKILL_DIR} variables in the prompt are replaced with the actual path.
         """
         active_names = sorted(self._active)
         parts = []
         for name in active_names:
             skill = self._skills.get(name)
             if skill and skill.prompt:
-                parts.append(f"## Skill: {name}\n\n{skill.prompt}")
+                header = f"## Skill: {name}"
+                if skill.when_to_use:
+                    header += f"\nWhen to use: {skill.when_to_use}"
+                body = skill.prompt
+                if skill.base_path is not None:
+                    skill_dir = str(skill.base_path)
+                    header = f"Base directory for this skill: {skill_dir}\n\n{header}"
+                    body = body.replace("${SKILL_DIR}", skill_dir)
+                    body = body.replace("${CLAUDE_SKILL_DIR}", skill_dir)
+                parts.append(f"{header}\n\n{body}")
         return "\n\n".join(parts)
+
+    def build_skill_listing(self) -> str:
+        """Build a brief listing of all registered skills for the system prompt.
+
+        This is progressive disclosure: only names, descriptions, and when_to_use
+        are included. Full prompts are loaded on demand via the use_skill tool.
+        """
+        if not self._skills:
+            return ""
+
+        lines = ["## Available Skills", ""]
+        for name in sorted(self._skills.keys()):
+            skill = self._skills[name]
+            desc = skill.description
+            if skill.when_to_use:
+                desc += f" (Use when: {skill.when_to_use})"
+            lines.append(f"- **{name}**: {desc}")
+        return "\n".join(lines)
+
+    def get_skill_prompt(self, name: str) -> str | None:
+        """Get the full prompt for a single skill, with variable substitution."""
+        skill = self._skills.get(name)
+        if not skill or not skill.prompt:
+            return None
+        header = f"## Skill: {name}"
+        if skill.when_to_use:
+            header += f"\nWhen to use: {skill.when_to_use}"
+        body = skill.prompt
+        if skill.base_path is not None:
+            skill_dir = str(skill.base_path)
+            header = f"Base directory for this skill: {skill_dir}\n\n{header}"
+            body = body.replace("${SKILL_DIR}", skill_dir)
+            body = body.replace("${CLAUDE_SKILL_DIR}", skill_dir)
+        return f"{header}\n\n{body}"
 
     def get_active_tools(self) -> list[Tool]:
         """Get all tools from active skills, deduplicated by name."""
@@ -439,11 +554,34 @@ class SkillManager:
         """List active skill names."""
         return list(self._active)
 
+    def activate_for_paths(self, file_paths: list[str]) -> list[str]:
+        """Activate conditional skills whose path patterns match the given files.
+
+        Skills with a non-empty 'paths' field are conditional — they are only
+        activated when a matching file is touched. This method checks all
+        registered (but inactive) skills with paths against the given file list
+        and activates any that match.
+
+        Returns the list of newly activated skill names.
+        """
+        activated: list[str] = []
+        for name, skill in self._skills.items():
+            if name in self._active:
+                continue
+            if not skill.paths:
+                continue
+            if _match_paths(file_paths, skill.paths):
+                self._active.add(name)
+                activated.append(name)
+                logger.info("Activated conditional skill '%s' (matched paths)", name)
+        return activated
+
     def clear(self) -> None:
         """Clear all skills and active set."""
         self._skills.clear()
         self._active.clear()
         self._builtin.clear()
+        self._loaded_paths.clear()
 
     # ── Standard discovery paths ──────────────────────────────────────────────
 
@@ -503,6 +641,12 @@ class SkillManager:
             if not skill_md.exists():
                 continue
             try:
+                # Resolve real path to deduplicate symlinks and overlapping paths
+                real = entry.resolve()
+                real_str = str(real)
+                if real_str in self._loaded_paths:
+                    logger.debug("Skipping already-loaded skill at %s (realpath: %s)", entry, real_str)
+                    continue
                 skill = Skill.from_markdown(skill_md.read_text(), base_path=entry)
                 if skill.name in self._skills:
                     logger.warning(
@@ -510,6 +654,7 @@ class SkillManager:
                         skill.name, entry,
                     )
                     continue
+                self._loaded_paths.add(real_str)
                 self.register(skill)
                 loaded += 1
                 logger.info("Discovered skill '%s' from %s", skill.name, entry)
@@ -525,6 +670,11 @@ class SkillManager:
             if fpath.suffix not in SKILL_EXTENSIONS:
                 continue
             try:
+                real = fpath.resolve()
+                real_str = str(real)
+                if real_str in self._loaded_paths:
+                    logger.debug("Skipping already-loaded skill at %s (realpath: %s)", fpath, real_str)
+                    continue
                 skill = self._load_skill_file(fpath)
                 if skill is None:
                     continue
@@ -534,6 +684,7 @@ class SkillManager:
                         skill.name, fpath,
                     )
                     continue
+                self._loaded_paths.add(real_str)
                 self.register(skill)
                 loaded += 1
                 logger.info("Discovered skill '%s' from %s", skill.name, fpath)

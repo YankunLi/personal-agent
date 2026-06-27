@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from personal_agent.exceptions import ToolExecutionError
 from personal_agent.tools.base import FunctionTool, Tool
@@ -72,12 +73,21 @@ def _validate_within_workspace(path: Path, workspace_dir: str | None) -> None:
         )
 
 
-def create_file_ops_tools(workspace_dir: str | None = None) -> list[Tool]:
-    """Create file operation tools with optional workspace directory."""
+def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any = None) -> tuple[list[Tool], list[Any]]:
+    """Create file operation tools with optional workspace directory.
+
+    Returns (tools, skill_manager_cell) where skill_manager_cell is a mutable
+    cell that can be updated after creation to enable conditional skill activation.
+    """
+    # Use a mutable cell so the skill_manager can be set after creation
+    _sm_cell: list[Any] = [skill_manager]
 
     async def _read_file(path: str) -> str:
         p = _resolve_path(path, workspace_dir)
         _validate_within_workspace(p, workspace_dir)
+        sm = _sm_cell[0]
+        if sm is not None:
+            sm.activate_for_paths([str(p)])
         if not p.exists():
             return f"Error: File not found: {path}"
         if p.is_dir():
@@ -103,6 +113,9 @@ def create_file_ops_tools(workspace_dir: str | None = None) -> list[Tool]:
     async def _write_file(path: str, content: str) -> str:
         p = _resolve_path(path, workspace_dir)
         _validate_within_workspace(p, workspace_dir)
+        sm = _sm_cell[0]
+        if sm is not None:
+            sm.activate_for_paths([str(p)])
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         return f"File written: {path} ({len(content)} bytes)"
@@ -153,11 +166,11 @@ def create_file_ops_tools(workspace_dir: str | None = None) -> list[Tool]:
             ),
             fn=_list_dir,
         ),
-    ]
+    ], _sm_cell
 
 
 # Default instances (no workspace) for backward compatibility
-_defaults = create_file_ops_tools()
+_defaults, _default_cell = create_file_ops_tools()
 read_file = _defaults[0]
 write_file = _defaults[1]
 list_dir = _defaults[2]

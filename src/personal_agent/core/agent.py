@@ -244,7 +244,7 @@ class BaseAgent(ABC):
                 )
 
         if self.skill_manager:
-            skill_prompt = self.skill_manager.build_prompt()
+            skill_prompt = self.skill_manager.build_skill_listing()
             if skill_prompt:
                 parts.append(skill_prompt)
 

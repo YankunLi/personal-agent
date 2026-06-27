@@ -183,7 +183,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
 
     # Create file ops tools with workspace
     ws = workspace_dir if tools_cfg.restrict_to_workspace else None
-    file_ops_tools = create_file_ops_tools(workspace_dir=ws or None)
+    file_ops_tools, _file_ops_sm_cell = create_file_ops_tools(workspace_dir=ws or None)
     file_ops_map = {t.spec.name: t for t in file_ops_tools}
 
     if enabled_tools:
@@ -419,6 +419,14 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     from personal_agent.tools.builtin.skill_install import create_skill_install_tool
     skill_install_tool = create_skill_install_tool(skill_manager=skill_manager)
     tool_registry.register(skill_install_tool)
+
+    # Register use-skill tool (agent can invoke skills on demand)
+    from personal_agent.tools.builtin.use_skill import create_use_skill_tool
+    use_skill_tool = create_use_skill_tool(skill_manager=skill_manager)
+    tool_registry.register(use_skill_tool)
+
+    # Wire skill_manager into file ops for conditional skill activation
+    _file_ops_sm_cell[0] = skill_manager
 
     # Create context manager
     context_manager = ContextManager.create(
