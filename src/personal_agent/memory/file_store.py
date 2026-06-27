@@ -302,8 +302,13 @@ class FileMemoryStore:
         lines.append("")
         content = "\n".join(lines)
         tmp_path = self.index_path.with_suffix(self.index_path.suffix + ".tmp")
-        tmp_path.write_text(content)
-        os.replace(tmp_path, self.index_path)
+        try:
+            tmp_path.write_text(content)
+            os.replace(tmp_path, self.index_path)
+        except Exception:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise
 
     async def _update_index_entry_locked(self, name: str, filename: str, description: str) -> None:
         """Add or update an entry in MEMORY.md. Caller must hold lock."""
