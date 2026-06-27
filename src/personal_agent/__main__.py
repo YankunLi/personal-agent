@@ -254,7 +254,10 @@ def _load_toml(path: Path) -> dict:
         except ImportError:
             return {}
     with open(path, "rb") as f:
-        return tomllib.load(f)
+        try:
+            return tomllib.load(f)
+        except Exception:
+            return {}
 
 
 def _detect_project_info(workdir: Path) -> dict[str, str]:

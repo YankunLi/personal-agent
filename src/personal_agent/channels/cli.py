@@ -86,57 +86,63 @@ class CLIChannel(Channel):
                 print(f"\n{C_YELLOW}Goodbye!{C_RESET}")
                 break
 
-            if self._in_multiline:
-                self._handle_multiline(line)
-                continue
+            try:
+                if self._in_multiline:
+                    self._handle_multiline(line)
+                    continue
 
-            if line.startswith("/"):
-                should_continue = await self._handle_command(line)
-                if not should_continue:
+                if line.startswith("/"):
+                    should_continue = await self._handle_command(line)
+                    if not should_continue:
+                        break
+                    continue
+
+                if not line.strip():
+                    continue
+
+                if line.lower() in ("quit", "exit"):
+                    await self._confirm_and_exit()
                     break
-                continue
 
-            if not line.strip():
-                continue
+                if line.lower() == "clear":
+                    await self._clear_memory()
+                    continue
 
-            if line.lower() in ("quit", "exit"):
-                await self._confirm_and_exit()
-                break
+                if line.lower() == "help":
+                    self._print_help()
+                    continue
 
-            if line.lower() == "clear":
-                await self._clear_memory()
-                continue
+                if line.lower() == "history":
+                    self._print_history()
+                    continue
 
-            if line.lower() == "help":
-                self._print_help()
-                continue
+                if line.strip() == '"""':
+                    self._in_multiline = True
+                    print(f"{C_DIM}Entering multiline mode. Type your task, then empty line to submit, '%%' to cancel.{C_RESET}")
+                    continue
 
-            if line.lower() == "history":
-                self._print_history()
-                continue
-
-            if line.strip() == '"""':
-                self._in_multiline = True
-                print(f"{C_DIM}Entering multiline mode. Type your task, then empty line to submit, '%%' to cancel.{C_RESET}")
-                continue
-
-            await self._process_task(line.strip())
+                await self._process_task(line.strip())
+            except Exception:
+                logger.exception("Unexpected error in CLI loop")
 
         # Cleanup
-        # Cancel any pending background tasks
-        for task in list(self._background_tasks):
-            if not task.done():
-                task.cancel()
-        if self._background_tasks:
-            await asyncio.gather(*self._background_tasks, return_exceptions=True)
-        if self._agent:
-            if self._current_session:
-                async with self._current_session.memory_lock:
-                    self._current_session.short_term = self._agent.short_term
-                    self._current_session.working = self._agent.working
-                self._router.session_manager.save_session(self._current_session)
-            await self._agent.close()
-            self._agent = None
+        try:
+            # Cancel any pending background tasks
+            for task in list(self._background_tasks):
+                if not task.done():
+                    task.cancel()
+            if self._background_tasks:
+                await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            if self._agent:
+                if self._current_session:
+                    async with self._current_session.memory_lock:
+                        self._current_session.short_term = self._agent.short_term
+                        self._current_session.working = self._agent.working
+                    self._router.session_manager.save_session(self._current_session)
+                await self._agent.close()
+                self._agent = None
+        except Exception:
+            logger.exception("Error during CLI cleanup")
 
     async def stop(self) -> None:
         """Stop the CLI channel."""
@@ -466,9 +472,18 @@ class CLIChannel(Channel):
                 self._deactivate_skill(sub_arg)
             else:
                 print(f"{C_RED}Usage: /skill deactivate <name>{C_RESET}")
+        elif sub == "git":
+            if sub_arg:
+                t = asyncio.create_task(self._install_git_skill(sub_arg))
+                self._background_tasks.add(t)
+                t.add_done_callback(self._background_tasks.discard)
+            else:
+                print(f"{C_RED}Usage: /skill git <url>{C_RESET}")
+                print(f"  Examples: /skill git user/repo")
+                print(f"            /skill git https://github.com/user/repo")
         else:
             print(f"{C_RED}Unknown subcommand: /skill {sub}{C_RESET}")
-            print(f"Available: {C_GREEN}list{C_RESET}, {C_GREEN}install{C_RESET}, {C_GREEN}remove{C_RESET}, {C_GREEN}activate{C_RESET}, {C_GREEN}deactivate{C_RESET}")
+            print(f"Available: {C_GREEN}list{C_RESET}, {C_GREEN}install{C_RESET}, {C_GREEN}git{C_RESET}, {C_GREEN}remove{C_RESET}, {C_GREEN}activate{C_RESET}, {C_GREEN}deactivate{C_RESET}")
 
     async def _cmd_memory(self) -> None:
         print(f"{C_BOLD}Memory status:{C_RESET}")
@@ -491,7 +506,9 @@ class CLIChannel(Channel):
             self._session_list()
         elif sub == "create":
             if sub_arg:
-                self._session_create(sub_arg)
+                t = asyncio.create_task(self._session_create(sub_arg))
+                self._background_tasks.add(t)
+                t.add_done_callback(self._background_tasks.discard)
             else:
                 print(f"{C_RED}Usage: /session create <name>{C_RESET}")
         elif sub == "switch":
@@ -585,7 +602,8 @@ class CLIChannel(Channel):
   {C_GREEN}/tools{C_RESET}                   List available tools
   {C_GREEN}/skills{C_RESET}                  List all skills and their status
   {C_GREEN}/skill list{C_RESET}              Same as /skills
-  {C_GREEN}/skill install <path>{C_RESET}    Install a skill from JSON/YAML file
+  {C_GREEN}/skill install <path>{C_RESET}    Install a skill (directory, .md, .json, or .yaml)
+  {C_GREEN}/skill git <url>{C_RESET}         Install a skill from a git repository
   {C_GREEN}/skill remove <name>{C_RESET}     Remove an installed skill
   {C_GREEN}/skill activate <name>{C_RESET}   Activate a skill
   {C_GREEN}/skill deactivate <name>{C_RESET} Deactivate a skill
@@ -680,7 +698,7 @@ class CLIChannel(Channel):
                 extra = f" {C_DIM}[{s.channel}]{C_RESET}"
             print(f"  {marker} {C_CYAN}{s.name:20s}{C_RESET} {C_DIM}{s.id}{C_RESET}{extra}  ({msg_count} msgs)")
 
-    def _session_create(self, name: str) -> None:
+    async def _session_create(self, name: str) -> None:
         session_mgr = self._router.session_manager
         session = session_mgr.create(name)
         self._current_session = session
@@ -733,27 +751,40 @@ class CLIChannel(Channel):
     # ── Skill helpers ────────────────────────────────────────────────────────
 
     def _list_skills(self) -> None:
-        from personal_agent.skills.builtin import BUILTIN_SKILLS
+        if not self._agent.skill_manager:
+            print(f"{C_RED}No skill manager available{C_RESET}")
+            return
 
-        all_skills = list(BUILTIN_SKILLS)
-        if self._agent.skill_manager:
-            registered = self._agent.skill_manager.list_names()
-            for name in registered:
-                skill = self._agent.skill_manager.get(name)
-                if skill and skill not in all_skills:
-                    all_skills.append(skill)
-
-        active = self._settings.agent.skills
-        print(f"{C_BOLD}Skills ({len(all_skills)} available, {len(active)} active):{C_RESET}")
-        for s in all_skills:
-            marker = f"{C_GREEN}● active{C_RESET}" if s.name in active else f"{C_DIM}○ inactive{C_RESET}"
-            print(f"  {C_CYAN}{s.name:16s}{C_RESET} {marker}  {C_DIM}{s.description[:60]}{C_RESET}")
+        sm = self._agent.skill_manager
+        active = set(sm.list_active())
+        print(f"{C_BOLD}Skills ({len(sm)} available, {len(active)} active):{C_RESET}")
+        for skill in sm:
+            marker = f"{C_GREEN}● active{C_RESET}" if skill.name in active else f"{C_DIM}○ inactive{C_RESET}"
+            source = f"{C_DIM}[builtin]{C_RESET}" if sm.is_builtin(skill.name) else f"{C_DIM}[user]{C_RESET}"
+            print(f"  {C_CYAN}{skill.name:16s}{C_RESET} {marker}  {source}  {C_DIM}{skill.description[:60]}{C_RESET}")
         if not active:
             print()
             print(f"  {C_DIM}Tip: /skill activate <name> to enable a skill{C_RESET}")
 
+    async def _install_git_skill(self, url: str) -> None:
+        """Install a skill from a git repository."""
+        if not self._agent.skill_manager:
+            print(f"{C_RED}No skill manager available{C_RESET}")
+            return
+
+        print(f"{C_DIM}Cloning and installing skills from {url}...{C_RESET}")
+        try:
+            installed = await self._agent.skill_manager.install_from_git(url)
+            if installed:
+                print(f"{C_GREEN}✓{C_RESET} Installed {len(installed)} skill(s): {', '.join(installed)}")
+                print(f"  {C_DIM}Use /restart for the skills to take effect{C_RESET}")
+            else:
+                print(f"{C_YELLOW}No skills found in {url}{C_RESET}")
+        except Exception as e:
+            print(f"{C_RED}Failed to install from git: {e}{C_RESET}")
+
     def _install_skill(self, path: str) -> None:
-        from personal_agent.skills.base import Skill
+        from personal_agent.skills.base import Skill, SkillError
 
         p = Path(path).expanduser()
         if not p.exists():
@@ -761,44 +792,56 @@ class CLIChannel(Channel):
             return
 
         try:
-            if p.suffix == ".json":
+            if p.is_dir():
+                # Install from a skill directory (must contain SKILL.md)
+                skill_md = p / "SKILL.md"
+                if not skill_md.exists():
+                    print(f"{C_RED}Directory does not contain SKILL.md: {path}{C_RESET}")
+                    return
+                skill = Skill.from_markdown(skill_md.read_text(), base_path=p)
+            elif p.suffix == ".md":
+                skill = Skill.from_markdown(p.read_text())
+            elif p.suffix == ".json":
                 with open(p) as f:
                     data = json.load(f)
+                skill = Skill.from_dict(data)
             elif p.suffix in (".yaml", ".yml"):
                 import yaml
                 with open(p) as f:
                     data = yaml.safe_load(f)
+                skill = Skill.from_dict(data)
             else:
-                print(f"{C_RED}Unsupported format: {p.suffix}. Use .json or .yaml{C_RESET}")
+                print(f"{C_RED}Unsupported format: {p.suffix}. Use a directory with SKILL.md, or .md/.json/.yaml file{C_RESET}")
                 return
-
-            skill = Skill(
-                name=data["name"],
-                description=data.get("description", ""),
-                prompt=data.get("prompt", ""),
-                dependencies=data.get("dependencies", []),
-            )
             self._agent.skill_manager.register(skill)
+
+            # Persist to user skills directory
+            user_dir = self._agent.skill_manager.get_user_skills_dir()
+            saved = self._agent.skill_manager.save_to(user_dir, skill.name)
+
             print(f"{C_GREEN}✓{C_RESET} Skill installed: {C_CYAN}{skill.name}{C_RESET}")
+            print(f"  {C_DIM}Saved to: {saved}{C_RESET}")
             print(f"  {C_DIM}Use /skill activate {skill.name} to enable it{C_RESET}")
+        except SkillError as e:
+            print(f"{C_RED}Invalid skill: {e}{C_RESET}")
         except KeyError as e:
             print(f"{C_RED}Missing required field in skill file: {e}{C_RESET}")
         except Exception as e:
             print(f"{C_RED}Failed to install skill: {e}{C_RESET}")
 
     def _remove_skill(self, name: str) -> None:
-        from personal_agent.skills.builtin import BUILTIN_SKILLS
-
-        builtin_names = {s.name for s in BUILTIN_SKILLS}
-        if name in builtin_names:
-            print(f"{C_YELLOW}Cannot remove builtin skill '{name}'. Use /skill deactivate instead.{C_RESET}")
-            return
-
-        if not self._agent.skill_manager or name not in self._agent.skill_manager.list_names():
+        if not self._agent.skill_manager or name not in self._agent.skill_manager:
             print(f"{C_RED}Skill not found: {name}{C_RESET}")
             return
 
-        self._agent.skill_manager.deactivate(name)
+        if self._agent.skill_manager.is_builtin(name):
+            print(f"{C_YELLOW}Cannot remove builtin skill '{name}'. Use /skill deactivate instead.{C_RESET}")
+            return
+
+        # Unregister (includes deactivate) and delete from disk
+        self._agent.skill_manager.unregister(name)
+        user_dir = self._agent.skill_manager.get_user_skills_dir()
+        self._agent.skill_manager.delete_from(user_dir, name)
         if name in self._settings.agent.skills:
             self._settings.agent.skills.remove(name)
         print(f"{C_GREEN}✓{C_RESET} Skill removed: {C_CYAN}{name}{C_RESET}")
@@ -808,7 +851,7 @@ class CLIChannel(Channel):
             print(f"{C_RED}No skill manager available{C_RESET}")
             return
 
-        if name not in self._agent.skill_manager.list_names():
+        if name not in self._agent.skill_manager:
             print(f"{C_RED}Skill not found: {name}{C_RESET}")
             print(f"  {C_DIM}Available: {', '.join(self._agent.skill_manager.list_names())}{C_RESET}")
             return
@@ -827,7 +870,11 @@ class CLIChannel(Channel):
             print(f"{C_RED}No skill manager available{C_RESET}")
             return
 
-        self._agent.skill_manager.deactivate(name)
+        try:
+            self._agent.skill_manager.deactivate(name)
+        except Exception as e:
+            print(f"{C_RED}{e}{C_RESET}")
+            return
         if name in self._settings.agent.skills:
             self._settings.agent.skills.remove(name)
         print(f"{C_GREEN}✓{C_RESET} Skill deactivated: {C_CYAN}{name}{C_RESET}")

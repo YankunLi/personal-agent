@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -13,7 +14,7 @@ from personal_agent.memory.file_store import FileMemoryStore
 from personal_agent.memory.short_term import ShortTermMemory
 from personal_agent.memory.working import WorkingMemory
 from personal_agent.providers.base import ChatResponse, Provider
-from personal_agent.skills.manager import SkillManager
+from personal_agent.skills import SkillManager
 from personal_agent.tools.executor import ToolExecutor
 from personal_agent.tools.registry import ToolRegistry
 from personal_agent.exceptions import AgentError, PersonalAgentError

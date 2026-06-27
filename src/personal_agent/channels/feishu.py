@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 FEISHU_CHANNEL = "feishu"
 FEISHU_API_HOST = "https://open.feishu.cn"
 TOKEN_REFRESH_MARGIN = 300  # Refresh token 5 minutes before expiry
+AGENT_TTL = 1800  # Evict idle per-user agents after 30 minutes
 
 
 class FeishuAPIClient:
@@ -144,10 +145,12 @@ class FeishuChannel(Channel):
         self._app: web.Application | None = None
         self._runner: web.AppRunner | None = None
         self._conn_agents: dict[str, Any] = {}
+        self._conn_agent_times: dict[str, float] = {}
         self._conn_sessions: dict[str, Any] = {}
         self._pending_tasks: set[asyncio.Task] = set()
         self._agent_lock = asyncio.Lock()
         self._user_locks: dict[str, asyncio.Lock] = {}
+        self._user_locks_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
 
     # ── Channel interface ────────────────────────────────────────────────────
@@ -200,6 +203,7 @@ class FeishuChannel(Channel):
             except Exception:
                 pass
         self._conn_agents.clear()
+        self._conn_agent_times.clear()
         self._conn_sessions.clear()
         self._user_locks.clear()
         if self._api:
@@ -231,7 +235,8 @@ class FeishuChannel(Channel):
             return web.json_response({"code": 1, "msg": "Invalid JSON"}, status=400)
 
         # Feishu event format: {"schema": "2.0", "header": {...}, "event": {...}}
-        event_type = body.get("header", {}).get("event_type", "")
+        header = body.get("header")
+        event_type = header.get("event_type", "") if header else ""
         event = body.get("event", {})
 
         if event_type == "im.message.receive_v1":
@@ -297,8 +302,9 @@ class FeishuChannel(Channel):
         )
 
         # Serialize message processing per user to prevent concurrent state corruption
-        if user_id not in self._user_locks:
-            self._user_locks[user_id] = asyncio.Lock()
+        async with self._user_locks_lock:
+            if user_id not in self._user_locks:
+                self._user_locks[user_id] = asyncio.Lock()
         user_lock = self._user_locks[user_id]
 
         async with user_lock:
@@ -325,18 +331,44 @@ class FeishuChannel(Channel):
     async def _get_or_create_agent(self, user_id: str) -> Any:
         """Get or create an agent for a Feishu user."""
         if user_id in self._conn_agents:
+            self._conn_agent_times[user_id] = time.time()
             return self._conn_agents[user_id]
 
         async with self._agent_lock:
             # Double-check: another task may have created the agent while we waited
             if user_id in self._conn_agents:
+                self._conn_agent_times[user_id] = time.time()
                 return self._conn_agents[user_id]
+
+            # Evict idle agents to prevent unbounded memory growth
+            await self._evict_idle_agents()
 
             from personal_agent.factory import create_agent
 
             agent = await create_agent(self._settings, user_id=user_id)
             self._conn_agents[user_id] = agent
+            self._conn_agent_times[user_id] = time.time()
             return agent
+
+    async def _evict_idle_agents(self) -> None:
+        """Evict agents that have been idle longer than AGENT_TTL."""
+        now = time.time()
+        stale = [
+            uid for uid, last_used in self._conn_agent_times.items()
+            if now - last_used > AGENT_TTL
+        ]
+        for uid in stale:
+            agent = self._conn_agents.pop(uid, None)
+            self._conn_agent_times.pop(uid, None)
+            self._conn_sessions.pop(uid, None)
+            self._user_locks.pop(uid, None)
+            if agent:
+                try:
+                    await agent.close()
+                except Exception:
+                    pass
+        if stale:
+            logger.info("Evicted %d idle Feishu agent(s)", len(stale))
 
     async def _run_agent(self, agent: Any, session: Any, text: str, message_id: str) -> None:
         """Run the agent and send the reply. Called under per-user lock."""

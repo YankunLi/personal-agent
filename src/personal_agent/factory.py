@@ -10,6 +10,7 @@ from personal_agent.config import Settings, SubAgentConfig, load_config
 from personal_agent.context.budget import ContextBudgetManager
 from personal_agent.context.manager import ContextManager
 from personal_agent.core.agent import BaseAgent
+from personal_agent.exceptions import SkillError
 from personal_agent.memory.agent_knowledge import AgentKnowledge
 from personal_agent.memory.file_store import FileMemoryStore
 from personal_agent.memory.short_term import ShortTermMemory
@@ -386,18 +387,38 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     # Create skill manager and register skill tools
     skill_manager = SkillManager()
     enabled_skills = overrides.get("skills", agent_cfg.skills)
+
+    # Load builtin skills
+    from personal_agent.skills.builtin import BUILTIN_SKILLS
+    for bs in BUILTIN_SKILLS:
+        skill_manager.register_builtin(bs)
+
+    # Discover skills from all standard directories
+    # (user: ~/.claude/skills/, ~/.agents/skills/; project: .claude/skills/, .agents/skills/)
+    skill_manager.discover_all(project_root=workspace_dir)
+
+    # Activate enabled skills
     if enabled_skills:
-        from personal_agent.skills.builtin import BUILTIN_SKILLS
-
         for skill_name in enabled_skills:
-            for bs in BUILTIN_SKILLS:
-                if bs.name == skill_name:
-                    skill_manager.register(bs)
+            if skill_name in skill_manager:
+                try:
                     skill_manager.activate(skill_name)
+                except SkillError as e:
+                    logger.warning("Failed to activate skill '%s': %s", skill_name, e)
+            else:
+                logger.warning("Skill '%s' not found (enabled in config but not registered)", skill_name)
 
-        # Register all tools from active skills
-        for tool in skill_manager.get_active_tools():
-            tool_registry.register(tool)
+    # Resolve tool_names to actual Tool objects from the registry
+    skill_manager.resolve_tools(tool_registry)
+
+    # Register all tools from active skills
+    for tool in skill_manager.get_active_tools():
+        tool_registry.register(tool)
+
+    # Register skill-install tool (agent can install skills from git repos)
+    from personal_agent.tools.builtin.skill_install import create_skill_install_tool
+    skill_install_tool = create_skill_install_tool(skill_manager=skill_manager)
+    tool_registry.register(skill_install_tool)
 
     # Create context manager
     context_manager = ContextManager.create(

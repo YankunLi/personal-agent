@@ -69,6 +69,7 @@ class WebSocketChannel(Channel):
         self._conn_counter = 0
         self._agent_lock = asyncio.Lock()
         self._conn_locks: dict[int, asyncio.Lock] = {}
+        self._conn_locks_lock = asyncio.Lock()
 
     # ── Channel interface ────────────────────────────────────────────────────
 
@@ -165,8 +166,9 @@ class WebSocketChannel(Channel):
             return
 
         # Serialize task execution per connection to prevent concurrent state corruption
-        if conn_id not in self._conn_locks:
-            self._conn_locks[conn_id] = asyncio.Lock()
+        async with self._conn_locks_lock:
+            if conn_id not in self._conn_locks:
+                self._conn_locks[conn_id] = asyncio.Lock()
         conn_lock = self._conn_locks[conn_id]
 
         async with conn_lock:

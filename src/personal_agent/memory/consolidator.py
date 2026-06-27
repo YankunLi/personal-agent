@@ -170,9 +170,10 @@ class MemoryConsolidator:
             Message(role=Role.SYSTEM, content=CONSOLIDATION_SYSTEM_PROMPT),
             Message(
                 role=Role.USER,
-                content=CONSOLIDATION_USER_PROMPT.format(
-                    conversation=conversation,
-                    existing_memories=existing_text,
+                content=CONSOLIDATION_USER_PROMPT.replace(
+                    "{conversation}", conversation
+                ).replace(
+                    "{existing_memories}", existing_text
                 ),
             ),
         ]
