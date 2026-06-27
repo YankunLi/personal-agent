@@ -268,7 +268,7 @@ class CLIChannel(Channel):
             if self._current_session:
                 self._current_session.short_term = self._agent.short_term
                 self._current_session.working = self._agent.working
-                session_mgr.save_session(self._current_session)
+                self._router.session_manager.save_session(self._current_session)
 
     # ── Multiline input ──────────────────────────────────────────────────────
 
