@@ -51,17 +51,22 @@ class ToolExecutor:
     # Default max characters for tool output (prevents context blowout)
     DEFAULT_MAX_OUTPUT_CHARS = 100_000
 
+    # Max recent calls to track per tool for duplicate detection
+    DEFAULT_MAX_RECENT_CALLS = 10
+
     def __init__(
         self,
         registry: ToolRegistry,
         timeout: float = 60.0,
         max_retries: int = 1,
         max_output_chars: int = DEFAULT_MAX_OUTPUT_CHARS,
+        max_recent_calls: int = DEFAULT_MAX_RECENT_CALLS,
     ):
         self._registry = registry
         self._timeout = timeout
         self._max_retries = max_retries
         self._max_output_chars = max_output_chars
+        self._max_recent_calls = max_recent_calls
 
         # Per-run result cache: only non-mutating tools
         self._cache: dict[str, ToolResult] = {}
@@ -71,6 +76,9 @@ class ToolExecutor:
 
         # Fallback registry: {tool_name: fallback_tool_name}
         self._fallbacks: dict[str, str] = {}
+
+        # Recent calls per tool for duplicate detection: {tool_name: [(args, result), ...]}
+        self._recent_calls: dict[str, list[tuple[dict[str, Any], ToolResult]]] = {}
 
     # ── cache ──────────────────────────────────────────────────────────
 
@@ -90,8 +98,40 @@ class ToolExecutor:
         self._cache[key] = result
 
     def clear_cache(self) -> None:
-        """Clear the per-run result cache. Called between agent runs."""
+        """Clear the per-run result cache and recent calls. Called between agent runs."""
         self._cache.clear()
+        self._recent_calls.clear()
+
+    def _check_recent_duplicate(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult | None:
+        """Check if arguments are equivalent to a recent call for the same tool.
+
+        Returns the previous ToolResult if a duplicate is detected, or None.
+        """
+        from personal_agent.tools.base import FunctionTool
+
+        try:
+            tool = self._registry.get(tool_name)
+        except ToolNotFoundError:
+            return None
+
+        if not isinstance(tool, FunctionTool) or tool.inputs_equivalent is None:
+            return None
+
+        recent = self._recent_calls.get(tool_name, [])
+        for prev_args, prev_result in recent:
+            if tool.inputs_equivalent(arguments, prev_args):
+                return prev_result
+        return None
+
+    def _record_recent_call(self, tool_name: str, arguments: dict[str, Any], result: ToolResult) -> None:
+        """Record a tool call result for duplicate detection."""
+        if tool_name not in self._recent_calls:
+            self._recent_calls[tool_name] = []
+        recent = self._recent_calls[tool_name]
+        recent.append((dict(arguments), result))
+        # Trim to max size
+        while len(recent) > self._max_recent_calls:
+            recent.pop(0)
 
     # ── retry classification ───────────────────────────────────────────
 
@@ -133,6 +173,19 @@ class ToolExecutor:
 
     async def execute(self, tool_call: ToolCall) -> ToolResult:
         """Execute a single tool call with caching, validation, timeout, retry, and fallback."""
+        # Check for duplicate/redundant calls (inputsEquivalent)
+        dup = self._check_recent_duplicate(tool_call.name, tool_call.arguments)
+        if dup is not None:
+            logger.debug(
+                "Duplicate tool call detected: %s(%s), returning cached result",
+                tool_call.name, tool_call.arguments,
+            )
+            return ToolResult(
+                call_id=tool_call.id,
+                name=tool_call.name,
+                output=f"[Duplicate call detected — returning previous result]\n{dup.output}",
+            )
+
         # Check cache for non-mutating tools
         try:
             tool = self._registry.get(tool_call.name)
@@ -162,6 +215,8 @@ class ToolExecutor:
                 # Cache non-mutating results
                 if not tool.spec.mutating:
                     self._set_cache(tool_call.name, tool_call.arguments, result)
+                # Record for duplicate detection
+                self._record_recent_call(tool_call.name, tool_call.arguments, result)
                 return result
 
             except ToolNotFoundError:
@@ -233,13 +288,14 @@ class ToolExecutor:
     async def execute_all(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
         """Execute multiple tool calls.
 
-        Runs non-mutating tools in parallel, then mutating tools sequentially
-        to avoid race conditions on shared resources.
+        Runs concurrency-safe non-mutating tools in parallel, then
+        non-concurrency-safe non-mutating tools sequentially, then mutating
+        tools sequentially to avoid race conditions on shared resources.
         """
         if not tool_calls:
             return []
 
-        # Separate mutating and non-mutating calls
+        # Separate calls into three groups
         mutating: list[ToolCall] = []
         non_mutating: list[ToolCall] = []
         for tc in tool_calls:
@@ -252,31 +308,44 @@ class ToolExecutor:
             except ToolNotFoundError:
                 non_mutating.append(tc)
 
+        # Within non-mutating, split by concurrency safety
+        concurrent: list[ToolCall] = []
+        sequential: list[ToolCall] = []
+        for tc in non_mutating:
+            try:
+                tool = self._registry.get(tc.name)
+                if tool.spec.concurrency_safe:
+                    concurrent.append(tc)
+                else:
+                    sequential.append(tc)
+            except ToolNotFoundError:
+                sequential.append(tc)
+
         results: list[ToolResult] = []
 
-        # Run non-mutating tools in parallel
-        if non_mutating:
+        # Run concurrency-safe non-mutating tools in parallel
+        if concurrent:
             parallel_results = await asyncio.gather(
-                *[self.execute(tc) for tc in non_mutating],
+                *[self.execute(tc) for tc in concurrent],
                 return_exceptions=True,
             )
             for i, result in enumerate(parallel_results):
                 if isinstance(result, ToolResult):
                     results.append(result)
                 elif isinstance(result, BaseException):
-                    # Defensive: execute() currently never raises, but if it
-                    # ever does, propagate cancellation/interrupts immediately.
                     raise result
                 else:
-                    # Defensive: execute() always returns ToolResult, but if
-                    # a future change returns unexpected types, wrap them.
                     results.append(
                         ToolResult(
-                            call_id=non_mutating[i].id,
-                            name=non_mutating[i].name,
+                            call_id=concurrent[i].id,
+                            name=concurrent[i].name,
                             error=str(result),
                         )
                     )
+
+        # Run non-concurrency-safe non-mutating tools sequentially
+        for tc in sequential:
+            results.append(await self.execute(tc))
 
         # Run mutating tools sequentially
         for tc in mutating:

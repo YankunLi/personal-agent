@@ -38,19 +38,44 @@ class Tool(ABC):
 
     async def __call__(self, **kwargs: Any) -> Any:
         self._validate_args(**kwargs)
+        error_msg = self._validate_input(**kwargs)
+        if error_msg is not None:
+            return f"Validation error: {error_msg}"
         return await self.execute(**kwargs)
+
+    def _validate_input(self, **kwargs: Any) -> str | None:
+        """Run the optional validate callback. Returns error message or None."""
+        if isinstance(self, FunctionTool) and self._validate is not None:
+            is_valid, error_msg = self._validate(kwargs)
+            if not is_valid:
+                return error_msg or "Invalid input"
+        return None
 
 
 class FunctionTool(Tool):
     """A tool backed by a plain async function."""
 
-    def __init__(self, spec: ToolSpec, fn: Callable[..., Any]):
+    def __init__(
+        self,
+        spec: ToolSpec,
+        fn: Callable[..., Any],
+        *,
+        validate: Callable[[dict[str, Any]], tuple[bool, str | None]] | None = None,
+        inputs_equivalent: Callable[[dict[str, Any], dict[str, Any]], bool] | None = None,
+    ):
         self._spec = spec
         self._fn = fn
+        self._validate = validate
+        self._inputs_equivalent = inputs_equivalent
 
     @property
     def spec(self) -> ToolSpec:
         return self._spec
+
+    @property
+    def inputs_equivalent(self) -> Callable[[dict[str, Any], dict[str, Any]], bool] | None:
+        """Optional callback to detect duplicate/equivalent tool calls."""
+        return self._inputs_equivalent
 
     async def execute(self, **kwargs: Any) -> Any:
         result = self._fn(**kwargs)
@@ -63,6 +88,9 @@ def tool(
     name: str,
     description: str,
     parameters: dict[str, Any],
+    *,
+    mutating: bool = False,
+    concurrency_safe: bool = False,
 ) -> Callable:
     """Decorator to create a Tool from a function.
 
@@ -72,7 +100,13 @@ def tool(
     """
     def decorator(fn: Callable[..., Any]) -> FunctionTool:
         return FunctionTool(
-            spec=ToolSpec(name=name, description=description, parameters=parameters),
+            spec=ToolSpec(
+                name=name,
+                description=description,
+                parameters=parameters,
+                mutating=mutating,
+                concurrency_safe=concurrency_safe,
+            ),
             fn=fn,
         )
     return decorator

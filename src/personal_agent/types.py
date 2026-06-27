@@ -49,6 +49,7 @@ class ToolSpec:
     description: str
     parameters: dict[str, Any]  # JSON Schema
     mutating: bool = False  # True if the tool modifies external state (e.g. write_file)
+    concurrency_safe: bool = False  # True if safe to run in parallel with other tools
 
     def to_openai_schema(self) -> dict[str, Any]:
         return {

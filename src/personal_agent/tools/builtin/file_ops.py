@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from personal_agent.exceptions import ToolExecutionError
 from personal_agent.tools.base import FunctionTool, Tool
+from personal_agent.tools.builtin._workspace_utils import (
+    resolve_path,
+    validate_within_workspace,
+)
 from personal_agent.types import ToolSpec
 
 READ_FILE_PARAMETERS = {
@@ -51,28 +53,6 @@ DEFAULT_MAX_READ_BYTES = 200_000
 DEFAULT_MAX_LIST_ENTRIES = 5_000
 
 
-def _resolve_path(path: str, workspace_dir: str | None = None) -> Path:
-    """Resolve a path. Relative paths are resolved against workspace_dir."""
-    p = Path(path).expanduser()
-    if not p.is_absolute() and workspace_dir:
-        p = Path(workspace_dir) / p
-    return p.resolve()
-
-
-def _validate_within_workspace(path: Path, workspace_dir: str | None) -> None:
-    """Raise ValueError if path escapes the workspace directory."""
-    if workspace_dir is None:
-        return
-    ws = Path(workspace_dir).expanduser().resolve()
-    try:
-        path.relative_to(ws)
-    except ValueError:
-        raise ToolExecutionError(
-            f"Path traversal detected: '{path}' is outside workspace '{ws}'. "
-            f"Use paths within the workspace directory only."
-        )
-
-
 def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any = None) -> tuple[list[Tool], list[Any]]:
     """Create file operation tools with optional workspace directory.
 
@@ -83,8 +63,8 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
     _sm_cell: list[Any] = [skill_manager]
 
     async def _read_file(path: str) -> str:
-        p = _resolve_path(path, workspace_dir)
-        _validate_within_workspace(p, workspace_dir)
+        p = resolve_path(path, workspace_dir)
+        validate_within_workspace(p, workspace_dir)
         sm = _sm_cell[0]
         if sm is not None:
             sm.activate_for_paths([str(p)])
@@ -111,8 +91,8 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
         return content
 
     async def _write_file(path: str, content: str) -> str:
-        p = _resolve_path(path, workspace_dir)
-        _validate_within_workspace(p, workspace_dir)
+        p = resolve_path(path, workspace_dir)
+        validate_within_workspace(p, workspace_dir)
         sm = _sm_cell[0]
         if sm is not None:
             sm.activate_for_paths([str(p)])
@@ -121,8 +101,8 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
         return f"File written: {path} ({len(content)} bytes)"
 
     async def _list_dir(path: str) -> str:
-        p = _resolve_path(path, workspace_dir)
-        _validate_within_workspace(p, workspace_dir)
+        p = resolve_path(path, workspace_dir)
+        validate_within_workspace(p, workspace_dir)
         if not p.exists():
             return f"Error: Directory not found: {path}"
         if not p.is_dir():

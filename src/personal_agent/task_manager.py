@@ -1,0 +1,212 @@
+"""Task manager — file-based task persistence with auto-incrementing IDs."""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+TASK_STATUSES = ["pending", "in_progress", "completed"]
+HIGH_WATER_MARK_FILE = ".highwatermark"
+
+
+def _get_tasks_dir(session_id: str) -> Path:
+    """Get the tasks directory for a session."""
+    return Path("~/.personal-agent/tasks").expanduser() / session_id
+
+
+def _get_task_path(session_id: str, task_id: str) -> Path:
+    """Get the file path for a specific task."""
+    return _get_tasks_dir(session_id) / f"{task_id}.json"
+
+
+def _ensure_tasks_dir(session_id: str) -> Path:
+    """Ensure the tasks directory exists and return it."""
+    d = _get_tasks_dir(session_id)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _read_high_water_mark(session_id: str) -> int:
+    """Read the highest task ID ever assigned."""
+    path = _get_tasks_dir(session_id) / HIGH_WATER_MARK_FILE
+    try:
+        return int(path.read_text().strip())
+    except (FileNotFoundError, ValueError):
+        return 0
+
+
+def _write_high_water_mark(session_id: str, value: int) -> None:
+    """Write the high water mark."""
+    path = _get_tasks_dir(session_id) / HIGH_WATER_MARK_FILE
+    _ensure_tasks_dir(session_id)
+    path.write_text(str(value))
+
+
+def _find_highest_task_id(session_id: str) -> int:
+    """Find the highest task ID from existing files and high water mark."""
+    from_files = 0
+    try:
+        for f in _get_tasks_dir(session_id).iterdir():
+            if f.suffix == ".json" and not f.name.startswith("."):
+                try:
+                    tid = int(f.stem)
+                    if tid > from_files:
+                        from_files = tid
+                except ValueError:
+                    pass
+    except FileNotFoundError:
+        pass
+    return max(from_files, _read_high_water_mark(session_id))
+
+
+def create_task(
+    session_id: str,
+    subject: str,
+    description: str,
+    activeForm: str | None = None,
+    status: str = "pending",
+    owner: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> str:
+    """Create a new task and return its ID."""
+    _ensure_tasks_dir(session_id)
+    highest = _find_highest_task_id(session_id)
+    task_id = str(highest + 1)
+
+    task: dict[str, Any] = {
+        "id": task_id,
+        "subject": subject,
+        "description": description,
+        "activeForm": activeForm,
+        "owner": owner,
+        "status": status,
+        "blocks": [],
+        "blockedBy": [],
+        "metadata": metadata or {},
+    }
+
+    path = _get_task_path(session_id, task_id)
+    path.write_text(json.dumps(task, indent=2, ensure_ascii=False))
+    return task_id
+
+
+def get_task(session_id: str, task_id: str) -> dict[str, Any] | None:
+    """Read a task by ID."""
+    path = _get_task_path(session_id, task_id)
+    try:
+        return json.loads(path.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def update_task(
+    session_id: str,
+    task_id: str,
+    updates: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Update a task with partial fields."""
+    existing = get_task(session_id, task_id)
+    if existing is None:
+        return None
+    existing.update(updates)
+    existing["id"] = task_id  # Ensure id is never overwritten
+    path = _get_task_path(session_id, task_id)
+    path.write_text(json.dumps(existing, indent=2, ensure_ascii=False))
+    return existing
+
+
+def delete_task(session_id: str, task_id: str) -> bool:
+    """Delete a task by ID. Updates high water mark to prevent ID reuse."""
+    path = _get_task_path(session_id, task_id)
+    try:
+        # Update high water mark before deleting
+        numeric_id = int(task_id)
+        current_mark = _read_high_water_mark(session_id)
+        if numeric_id > current_mark:
+            _write_high_water_mark(session_id, numeric_id)
+
+        os.unlink(path)
+
+        # Remove references from other tasks
+        for task in list_tasks(session_id):
+            changed = False
+            blocks = task.get("blocks", [])
+            blocked_by = task.get("blockedBy", [])
+            if task_id in blocks:
+                blocks.remove(task_id)
+                changed = True
+            if task_id in blocked_by:
+                blocked_by.remove(task_id)
+                changed = True
+            if changed:
+                update_task(session_id, task["id"], {"blocks": blocks, "blockedBy": blocked_by})
+
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def list_tasks(session_id: str) -> list[dict[str, Any]]:
+    """List all tasks for a session."""
+    try:
+        files = sorted(_get_tasks_dir(session_id).glob("*.json"))
+    except FileNotFoundError:
+        return []
+    tasks = []
+    for f in files:
+        if f.name.startswith("."):
+            continue
+        try:
+            tasks.append(json.loads(f.read_text()))
+        except (json.JSONDecodeError, FileNotFoundError):
+            pass
+    return tasks
+
+
+def block_task(session_id: str, from_task_id: str, to_task_id: str) -> bool:
+    """Set up a dependency: from_task_id blocks to_task_id."""
+    from_task = get_task(session_id, from_task_id)
+    to_task = get_task(session_id, to_task_id)
+    if not from_task or not to_task:
+        return False
+
+    if to_task_id not in from_task.get("blocks", []):
+        blocks = from_task.get("blocks", [])
+        blocks.append(to_task_id)
+        update_task(session_id, from_task_id, {"blocks": blocks})
+
+    if from_task_id not in to_task.get("blockedBy", []):
+        blocked_by = to_task.get("blockedBy", [])
+        blocked_by.append(from_task_id)
+        update_task(session_id, to_task_id, {"blockedBy": blocked_by})
+
+    return True
+
+
+def resolve_dependencies(
+    session_id: str,
+    task_id: str,
+    status: str,
+) -> dict[str, Any] | None:
+    """Update a task's status and resolve dependencies.
+
+    When a task is completed, unblock tasks that depend on it.
+    """
+    task = update_task(session_id, task_id, {"status": status})
+    if task is None:
+        return None
+
+    if status == "completed":
+        # Unblock all tasks that this task was blocking
+        for other in list_tasks(session_id):
+            if task_id in other.get("blockedBy", []):
+                blocked_by = other["blockedBy"]
+                blocked_by.remove(task_id)
+                update_task(session_id, other["id"], {"blockedBy": blocked_by})
+
+    return task

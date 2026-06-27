@@ -14,7 +14,7 @@ from personal_agent.types import ToolCall, ToolSpec
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def make_tool(name: str, fn: Any, mutating: bool = False, **params_kwargs) -> FunctionTool:
+def make_tool(name: str, fn: Any, mutating: bool = False, concurrency_safe: bool = False, **params_kwargs) -> FunctionTool:
     """Create a FunctionTool with minimal boilerplate."""
     return FunctionTool(
         spec=ToolSpec(
@@ -26,6 +26,7 @@ def make_tool(name: str, fn: Any, mutating: bool = False, **params_kwargs) -> Fu
                 "required": list(params_kwargs.keys()),
             },
             mutating=mutating,
+            concurrency_safe=concurrency_safe,
         ),
         fn=fn,
     )
@@ -406,9 +407,9 @@ class TestExecuteAll:
             return tool_name
 
         tools = [
-            make_tool("t1", concurrent_tool, mutating=False, tool_name={"type": "string"}),
-            make_tool("t2", concurrent_tool, mutating=False, tool_name={"type": "string"}),
-            make_tool("t3", concurrent_tool, mutating=False, tool_name={"type": "string"}),
+            make_tool("t1", concurrent_tool, mutating=False, concurrency_safe=True, tool_name={"type": "string"}),
+            make_tool("t2", concurrent_tool, mutating=False, concurrency_safe=True, tool_name={"type": "string"}),
+            make_tool("t3", concurrent_tool, mutating=False, concurrency_safe=True, tool_name={"type": "string"}),
         ]
         executor = make_executor(tools)
 

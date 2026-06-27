@@ -19,8 +19,30 @@ from personal_agent.providers.registry import ProviderCredentials, create_provid
 from personal_agent.selector import classify
 from personal_agent.skills.base import SkillManager
 from personal_agent.tools.builtin import (
+    create_ask_user_tool,
     create_code_exec_tool,
+    create_cron_create_tool,
+    create_cron_delete_tool,
+    create_cron_list_tool,
+    create_enter_plan_mode_tool,
+    create_exit_plan_mode_tool,
+    create_enter_worktree_tool,
+    create_exit_worktree_tool,
+    create_file_edit_tool,
     create_file_ops_tools,
+    create_glob_tool,
+    create_grep_tool,
+    create_list_mcp_resources_tool,
+    create_lsp_tool,
+    create_notebook_edit_tool,
+    create_read_mcp_resource_tool,
+    create_sleep_tool,
+    create_task_create_tool,
+    create_task_get_tool,
+    create_task_list_tool,
+    create_task_stop_tool,
+    create_task_update_tool,
+    create_todo_tool,
     create_web_search_tool,
 )
 from personal_agent.tools.executor import ToolExecutor
@@ -108,6 +130,7 @@ async def create_sub_agent(
         "agent_knowledge": agent_knowledge,
         "context_manager": context_manager,
         "skill_manager": skill_manager,
+        "cron_scheduler": cron_scheduler,
         "budget_manager": budget_manager,
         "max_steps": sub_cfg.max_steps,
         "system_prompt": sub_cfg.system_prompt,
@@ -201,6 +224,12 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
                 )
             elif tool_name in file_ops_map:
                 tool_registry.register(file_ops_map[tool_name])
+            elif tool_name == "file_edit":
+                tool_registry.register(create_file_edit_tool(workspace_dir=ws or None))
+            elif tool_name == "grep":
+                tool_registry.register(create_grep_tool(workspace_dir=ws or None))
+            elif tool_name == "glob":
+                tool_registry.register(create_glob_tool(workspace_dir=ws or None))
     else:
         tool_registry.register(create_web_search_tool(
             timeout=tools_cfg.web_search.timeout,
@@ -209,6 +238,9 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         tool_registry.register(create_code_exec_tool(timeout=tools_cfg.code_exec.timeout))
         for t in file_ops_tools:
             tool_registry.register(t)
+        tool_registry.register(create_file_edit_tool(workspace_dir=ws or None))
+        tool_registry.register(create_grep_tool(workspace_dir=ws or None))
+        tool_registry.register(create_glob_tool(workspace_dir=ws or None))
 
     # Create tool executor with config
     tool_executor = ToolExecutor(
@@ -384,6 +416,47 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     )
     tool_registry.register(update_tool)
 
+    # Register ask_user tool (agent can ask user questions during execution)
+    tool_registry.register(create_ask_user_tool())
+
+    # Register todo_write tool (agent can manage its own todo list)
+    tool_registry.register(create_todo_tool(working_memory=working))
+
+    # Register task tools (agent can manage structured task list with dependencies)
+    tool_registry.register(create_task_create_tool())
+    tool_registry.register(create_task_get_tool())
+    tool_registry.register(create_task_list_tool())
+    tool_registry.register(create_task_update_tool())
+    tool_registry.register(create_task_stop_tool())
+
+    # Register cron tools (agent can schedule tasks)
+    from personal_agent.cron_scheduler import CronScheduler
+
+    cron_scheduler = CronScheduler()
+    tool_registry.register(create_cron_create_tool(scheduler=cron_scheduler))
+    tool_registry.register(create_cron_delete_tool(scheduler=cron_scheduler))
+    tool_registry.register(create_cron_list_tool(scheduler=cron_scheduler))
+
+    # Register sleep tool
+    tool_registry.register(create_sleep_tool())
+
+    # Register notebook_edit tool
+    tool_registry.register(create_notebook_edit_tool(workspace_dir=ws or None))
+
+    # Register plan mode tools
+    tool_registry.register(create_enter_plan_mode_tool(working_memory=working))
+    tool_registry.register(create_exit_plan_mode_tool(working_memory=working))
+
+    # Register worktree tools
+    tool_registry.register(create_enter_worktree_tool(
+        project_dir=workspace_dir or None,
+        workspace_dir=ws or None,
+    ))
+    tool_registry.register(create_exit_worktree_tool(workspace_dir=ws or None))
+
+    # Register LSP tool
+    tool_registry.register(create_lsp_tool(workspace_dir=ws or None))
+
     # Create skill manager and register skill tools
     skill_manager = SkillManager()
     enabled_skills = overrides.get("skills", agent_cfg.skills)
@@ -479,6 +552,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         "budget_manager": budget_manager,
         "context_manager": context_manager,
         "skill_manager": skill_manager,
+        "cron_scheduler": cron_scheduler,
         "max_steps": agent_cfg.max_steps,
         "system_prompt": agent_cfg.system_prompt,
         "temperature": agent_cfg.temperature,
@@ -546,5 +620,11 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         )
         await mcp_source.connect_all()
         agent._mcp_source = mcp_source
+
+        # Register MCP resource tools (after mcp_source is connected)
+        tool_registry.register(create_list_mcp_resources_tool(mcp_source=mcp_source))
+        tool_registry.register(create_read_mcp_resource_tool(
+            mcp_source=mcp_source, workspace_dir=ws or None,
+        ))
 
     return agent
