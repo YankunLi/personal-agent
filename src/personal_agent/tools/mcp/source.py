@@ -89,6 +89,16 @@ class MCPToolSource:
                 session.__aenter__(),
                 timeout=config.timeout,
             )
+        except asyncio.TimeoutError:
+            raise MCPConnectionError(
+                f"MCP server '{config.name}' initialization timed out after {config.timeout}s"
+            )
+        except Exception as e:
+            raise MCPConnectionError(
+                f"Failed to initialize MCP server '{config.name}': {e}"
+            ) from e
+
+        try:
             await asyncio.wait_for(
                 session.initialize(),
                 timeout=config.timeout,
