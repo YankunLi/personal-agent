@@ -302,6 +302,7 @@ class WebSocketChannel(Channel):
             if conn_id in self._conn_agents:
                 current.short_term = self._conn_agents[conn_id].short_term
                 current.working = self._conn_agents[conn_id].working
+            current.touch()
             session_mgr._save_session(current)
 
         target = session_mgr.switch(session_id)

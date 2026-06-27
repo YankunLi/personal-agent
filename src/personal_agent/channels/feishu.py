@@ -293,27 +293,27 @@ class FeishuChannel(Channel):
             user_id, chat_id, text[:100],
         )
 
-        # Create channel message and route to session
-        msg = ChannelMessage(
-            channel=FEISHU_CHANNEL,
-            user_id=user_id,
-            conversation_id=chat_id,
-            text=text,
-        )
-        session = self._router.resolve(msg)
-        self._conn_sessions[user_id] = session
-
-        # Get or create agent for this user
-        agent = await self._get_or_create_agent(user_id)
-        agent.short_term = session.short_term
-        agent.working = session.working
-
         # Serialize message processing per user to prevent concurrent state corruption
         if user_id not in self._user_locks:
             self._user_locks[user_id] = asyncio.Lock()
         user_lock = self._user_locks[user_id]
 
         async with user_lock:
+            # Create channel message and route to session (under lock to avoid races)
+            msg = ChannelMessage(
+                channel=FEISHU_CHANNEL,
+                user_id=user_id,
+                conversation_id=chat_id,
+                text=text,
+            )
+            session = self._router.resolve(msg)
+            self._conn_sessions[user_id] = session
+
+            # Get or create agent for this user
+            agent = await self._get_or_create_agent(user_id)
+            agent.short_term = session.short_term
+            agent.working = session.working
+
             await self._run_agent(agent, session, text, message_id)
 
     # ── Agent management ─────────────────────────────────────────────────────

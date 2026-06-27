@@ -67,7 +67,7 @@ class ShortTermMemory:
             role = Role(m["role"])
             tool_calls = None
             if m.get("tool_calls"):
-                tool_calls = [ToolCall(**tc) for tc in m["tool_calls"]]
+                tool_calls = [ToolCall(**tc) for tc in m["tool_calls"] if tc is not None]
             mem._messages.append(Message(
                 role=role,
                 content=m["content"],

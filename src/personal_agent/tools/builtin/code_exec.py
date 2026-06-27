@@ -38,7 +38,7 @@ async def _run_command(cmd: list[str], timeout: float = 30) -> tuple[str, str, i
             proc.kill()
             await proc.wait()
             return "", f"Timeout: execution exceeded {timeout} seconds", -1
-        return stdout.decode(), stderr.decode(), proc.returncode or 0
+        return stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace"), proc.returncode or 0
     except BaseException:
         proc.kill()
         await proc.wait()
