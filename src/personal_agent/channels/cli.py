@@ -103,9 +103,7 @@ class CLIChannel(Channel):
                 break
 
             if line.lower() == "clear":
-                self._agent.short_term.clear()
-                self._agent.working.clear()
-                print(f"{C_GREEN}✓{C_RESET} Memory cleared.")
+                await self._clear_memory()
                 continue
 
             if line.lower() == "help":
@@ -302,9 +300,7 @@ class CLIChannel(Channel):
             self._print_help()
 
         elif cmd == "/clear":
-            self._agent.short_term.clear()
-            self._agent.working.clear()
-            print(f"{C_GREEN}✓{C_RESET} Memory cleared.")
+            await self._clear_memory()
 
         elif cmd == "/history":
             self._print_history()
@@ -615,6 +611,17 @@ class CLIChannel(Channel):
             print(f"     {C_DIM}{t['elapsed_ms']:.0f}ms | {t['steps']} steps{C_RESET}")
         print(f"{C_DIM}{'─' * 60}{C_RESET}")
         print()
+
+    async def _clear_memory(self) -> None:
+        """Clear conversation memory and persist to session."""
+        self._agent.short_term.clear()
+        self._agent.working.clear()
+        session_mgr = self._router.session_manager
+        if session_mgr.current:
+            session_mgr.current.short_term = self._agent.short_term
+            session_mgr.current.working = self._agent.working
+            session_mgr.save_current()
+        print(f"{C_GREEN}✓{C_RESET} Memory cleared.")
 
     # ── Session helpers ──────────────────────────────────────────────────────
 
