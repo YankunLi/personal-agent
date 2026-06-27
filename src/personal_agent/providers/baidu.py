@@ -16,6 +16,7 @@ import httpx
 
 from personal_agent.providers._errors import raise_provider_error
 from personal_agent.providers.base import ChatResponse, Provider
+from personal_agent.exceptions import ProviderError
 from personal_agent.types import Message, Role, ToolCall, ToolSpec
 
 logger = logging.getLogger(__name__)
