@@ -55,11 +55,15 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
                 f.write(code)
                 tmp_path = f.name
             try:
-                stdout, stderr, code_ = await _run_command(["python3", tmp_path], timeout=timeout)
+                stdout, stderr, code_ = await _run_command(
+                    ["python3", "-I", tmp_path], timeout=timeout,
+                )
             finally:
                 os.unlink(tmp_path)
         elif language == "bash":
-            stdout, stderr, code_ = await _run_command(["bash", "-c", code], timeout=timeout)
+            stdout, stderr, code_ = await _run_command(
+                ["bash", "-e", "-u", "-o", "pipefail", "-c", code], timeout=timeout,
+            )
         else:
             return f"Unsupported language: {language}"
 
@@ -75,7 +79,7 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
     return FunctionTool(
         spec=ToolSpec(
             name="code_exec",
-            description="Execute Python or Bash code in a subprocess. Returns stdout, stderr, and exit code.",
+            description="Execute Python (isolated mode) or Bash (safe mode) code in a subprocess. Returns stdout, stderr, and exit code.",
             parameters=CODE_EXEC_PARAMETERS,
         ),
         fn=_execute,
