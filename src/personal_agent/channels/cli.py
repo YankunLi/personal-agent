@@ -129,12 +129,14 @@ class CLIChannel(Channel):
                 task.cancel()
         if self._background_tasks:
             await asyncio.gather(*self._background_tasks, return_exceptions=True)
-        if self._current_session:
-            async with self._current_session.memory_lock:
-                self._current_session.short_term = self._agent.short_term
-                self._current_session.working = self._agent.working
-            self._router.session_manager.save_session(self._current_session)
-        await self._agent.close()
+        if self._agent:
+            if self._current_session:
+                async with self._current_session.memory_lock:
+                    self._current_session.short_term = self._agent.short_term
+                    self._current_session.working = self._agent.working
+                self._router.session_manager.save_session(self._current_session)
+            await self._agent.close()
+            self._agent = None
 
     async def stop(self) -> None:
         """Stop the CLI channel."""
@@ -392,6 +394,15 @@ class CLIChannel(Channel):
     async def _cmd_restart(self) -> None:
         from personal_agent.factory import create_agent
         print(f"{C_YELLOW}Restarting agent...{C_RESET}")
+
+        # Cancel any pending background tasks (e.g. multiline input) before
+        # touching the agent to prevent concurrent access during restart.
+        for task in list(self._background_tasks):
+            if not task.done():
+                task.cancel()
+        if self._background_tasks:
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            self._background_tasks.clear()
 
         session_mgr = self._router.session_manager
         if self._current_session:
@@ -679,23 +690,26 @@ class CLIChannel(Channel):
         print(f"{C_GREEN}✓{C_RESET} Session created: {C_CYAN}{session.name}{C_RESET} ({session.id})")
 
     async def _session_switch(self, name: str) -> None:
-        session_mgr = self._router.session_manager
-        if self._current_session:
-            async with self._current_session.memory_lock:
-                self._current_session.short_term = self._agent.short_term
-                self._current_session.working = self._agent.working
-            session_mgr.save_session(self._current_session)
+        """Switch to a different session. Serializes with _process_task to prevent
+        memory cross-contamination when a task is running concurrently."""
+        async with self._task_lock:
+            session_mgr = self._router.session_manager
+            if self._current_session:
+                async with self._current_session.memory_lock:
+                    self._current_session.short_term = self._agent.short_term
+                    self._current_session.working = self._agent.working
+                session_mgr.save_session(self._current_session)
 
-        target = session_mgr.switch(name)
-        if target is None:
-            print(f"{C_RED}Session not found: {name}{C_RESET}")
-            return
-        self._current_session = target
-        async with target.memory_lock:
-            self._agent.short_term = target.short_term
-            self._agent.working = target.working
-        print(f"{C_GREEN}✓{C_RESET} Switched to: {C_CYAN}{target.name}{C_RESET} ({target.id})")
-        print(f"  {C_DIM}{len(target.short_term)} messages, {len(target.working)} working keys{C_RESET}")
+            target = session_mgr.switch(name)
+            if target is None:
+                print(f"{C_RED}Session not found: {name}{C_RESET}")
+                return
+            self._current_session = target
+            async with target.memory_lock:
+                self._agent.short_term = target.short_term
+                self._agent.working = target.working
+            print(f"{C_GREEN}✓{C_RESET} Switched to: {C_CYAN}{target.name}{C_RESET} ({target.id})")
+            print(f"  {C_DIM}{len(target.short_term)} messages, {len(target.working)} working keys{C_RESET}")
 
     def _session_delete(self, name: str) -> None:
         session_mgr = self._router.session_manager
@@ -842,4 +856,6 @@ class CLIChannel(Channel):
 
     async def _confirm_and_exit(self) -> None:
         print(f"{C_YELLOW}Goodbye!{C_RESET}")
-        await self._agent.close()
+        if self._agent:
+            await self._agent.close()
+            self._agent = None

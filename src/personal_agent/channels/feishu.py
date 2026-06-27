@@ -186,6 +186,14 @@ class FeishuChannel(Channel):
         self._stop_event.set()
         if self._runner:
             await self._runner.cleanup()
+        # Cancel pending tasks first, then await them, THEN close agents
+        # to avoid closing agents while tasks are still executing agent.run()
+        for task in list(self._pending_tasks):
+            if not task.done():
+                task.cancel()
+        if self._pending_tasks:
+            await asyncio.gather(*self._pending_tasks, return_exceptions=True)
+        self._pending_tasks.clear()
         for agent in self._conn_agents.values():
             try:
                 await agent.close()
@@ -194,11 +202,6 @@ class FeishuChannel(Channel):
         self._conn_agents.clear()
         self._conn_sessions.clear()
         self._user_locks.clear()
-        # Cancel pending message processing tasks
-        for task in list(self._pending_tasks):
-            if not task.done():
-                task.cancel()
-        self._pending_tasks.clear()
         if self._api:
             try:
                 await self._api.close()
