@@ -154,7 +154,7 @@ class CLIChannel(Channel):
         if project_data:
             self._project_data = project_data
             sid = project_data.get("session_id")
-            if sid and sid in session_mgr._sessions:
+            if sid and session_mgr.has_session(sid):
                 session_mgr.switch(sid)
 
         # If no session exists yet, create one via the routing key

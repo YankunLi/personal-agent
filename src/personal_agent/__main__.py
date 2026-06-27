@@ -51,7 +51,7 @@ async def run_agent(task: str, config_path: str | None = None, workdir: Path | N
 
     if project_data:
         sid = project_data.get("session_id")
-        if sid and sid in session_mgr._sessions:
+        if sid and session_mgr.has_session(sid):
             session_mgr.switch(sid)
 
     # Show which config was loaded

@@ -208,11 +208,6 @@ class SessionManager:
 
         return expired_ids
 
-    def _find(self, id_or_name: str) -> Session | None:
-        """Find a session by ID or name."""
-        with self._lock:
-            return self._find_locked(id_or_name)
-
     def _find_locked(self, id_or_name: str) -> Session | None:
         """Find a session by ID or name. Caller must hold self._lock."""
         # Try exact ID match first
@@ -227,6 +222,11 @@ class SessionManager:
             if s.id.startswith(id_or_name):
                 return s
         return None
+
+    def has_session(self, session_id: str) -> bool:
+        """Check if a session exists by ID. Thread-safe."""
+        with self._lock:
+            return session_id in self._sessions
 
     def find_by_key(self, key: SessionKey) -> Session | None:
         """Find a session by its routing key (channel, user_id, conversation_id)."""
