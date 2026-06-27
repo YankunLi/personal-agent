@@ -91,6 +91,7 @@ class DebateAgent(BaseAgent):
         all_steps: list[AgentStep] = []
         previous_responses: dict[str, str] = {}
         judge_answer = "No debate result produced."
+        all_failed = True
 
         try:
             # Create role sub-agents (once, reused across rounds)
@@ -119,17 +120,20 @@ class DebateAgent(BaseAgent):
 
                 round_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                # Collect responses
-                previous_responses = {}
-                all_failed = True
+                # Collect responses; only update previous_responses if this round
+                # has at least one success, so failed rounds don't overwrite valid
+                # responses from earlier rounds.
+                new_responses: dict[str, str] = {}
+                round_has_success = False
                 for role, result in zip(self._roles, round_results):
                     if isinstance(result, Exception):
                         logger.error("Role %s failed: %s", role.name, result)
-                        previous_responses[role.name] = f"[Error: {result}]"
+                        new_responses[role.name] = f"[Error: {result}]"
                     else:
+                        round_has_success = True
                         all_failed = False
                         answer, usage = result
-                        previous_responses[role.name] = answer
+                        new_responses[role.name] = answer
                         if usage:
                             for key, val in usage.items():
                                 self._total_usage[key] = self._total_usage.get(key, 0) + val
@@ -137,6 +141,9 @@ class DebateAgent(BaseAgent):
                             thought=f"Round {round_num} - {role.name}",
                             observation=answer[:1000],
                         ))
+
+                if round_has_success:
+                    previous_responses = new_responses
 
             # If all role agents failed in every round, don't synthesize garbage
             if all_failed:

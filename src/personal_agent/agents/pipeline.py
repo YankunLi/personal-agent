@@ -102,7 +102,7 @@ class PipelineAgent(BaseAgent):
                     thought=f"Stage {i+1}: {stage_cfg.name or stage_cfg.pattern}",
                     observation=f"Error: {e}",
                 ))
-                # Keep current_input unchanged for the next stage
+                current_input = f"[Pipeline stage '{stage_cfg.name}' failed: {e}]"
             finally:
                 try:
                     await stage_agent.close()
