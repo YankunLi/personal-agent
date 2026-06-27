@@ -239,7 +239,7 @@ class FileMemoryStore:
             return []
 
         entries = []
-        with open(self.index_path) as f:
+        with open(self.index_path, encoding="utf-8") as f:
             for line in f:
                 match = INDEX_ENTRY_RE.match(line.strip())
                 if match:

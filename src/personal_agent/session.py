@@ -172,6 +172,13 @@ class SessionManager:
                 self._sessions[self._current_id].touch()
                 self._save_session(self._sessions[self._current_id])
 
+    def save_session(self, session: Session) -> None:
+        """Persist a specific session to disk. Thread-safe."""
+        with self._lock:
+            if session.id in self._sessions:
+                session.touch()
+                self._save_session(session)
+
     def load_all(self) -> list[Session]:
         """Load all sessions from disk."""
         with self._lock:
