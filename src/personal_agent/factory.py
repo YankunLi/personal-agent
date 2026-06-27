@@ -44,6 +44,7 @@ from personal_agent.tools.builtin import (
     create_task_update_tool,
     create_todo_tool,
     create_web_search_tool,
+    create_web_fetch_tool,
 )
 from personal_agent.tools.executor import ToolExecutor
 from personal_agent.tools.mcp import MCPToolSource
@@ -218,6 +219,13 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
                         rate_limit=tools_cfg.web_search.rate_limit,
                     )
                 )
+            elif tool_name == "web_fetch":
+                tool_registry.register(
+                    create_web_fetch_tool(
+                        timeout=tools_cfg.web_fetch.timeout,
+                        max_content_chars=tools_cfg.web_fetch.max_content_chars,
+                    )
+                )
             elif tool_name == "code_exec":
                 tool_registry.register(
                     create_code_exec_tool(timeout=tools_cfg.code_exec.timeout)
@@ -241,6 +249,10 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         tool_registry.register(create_file_edit_tool(workspace_dir=ws or None))
         tool_registry.register(create_grep_tool(workspace_dir=ws or None))
         tool_registry.register(create_glob_tool(workspace_dir=ws or None))
+        tool_registry.register(create_web_fetch_tool(
+            timeout=tools_cfg.web_fetch.timeout,
+            max_content_chars=tools_cfg.web_fetch.max_content_chars,
+        ))
 
     # Create tool executor with config
     tool_executor = ToolExecutor(

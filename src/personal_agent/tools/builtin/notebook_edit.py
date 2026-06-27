@@ -114,7 +114,7 @@ def create_notebook_edit_tool(workspace_dir: str | None = None) -> Tool:
                 cells.append(new_cell)
                 action = "Inserted new cell at end"
 
-            if cell_type == "code":
+            if new_cell["cell_type"] == "code":
                 new_cell["outputs"] = []
                 new_cell["execution_count"] = None
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 from personal_agent.exceptions import ToolExecutionError
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.types import ToolSpec
+
+_WT_NAME_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 ENTER_WORKTREE_PARAMETERS = {
     "type": "object",
@@ -29,9 +32,13 @@ EXIT_WORKTREE_PARAMETERS = {
             "enum": ["keep", "remove"],
             "description": "\"keep\" leaves the worktree and branch on disk; \"remove\" deletes both.",
         },
+        "path": {
+            "type": "string",
+            "description": "The path of the worktree to remove (required for action=\"remove\").",
+        },
         "discard_changes": {
             "type": "boolean",
-            "description": "Required true when action is \"remove\" and the worktree has uncommitted changes. The tool will refuse and list them otherwise.",
+            "description": "If true, use --force to remove the worktree even with uncommitted changes.",
         },
     },
     "required": ["action"],
@@ -65,8 +72,26 @@ def create_enter_worktree_tool(
             return "Error: git is not available"
 
         # Generate a name if not provided
+        if name is not None:
+            if not _WT_NAME_RE.match(name):
+                return (
+                    f"Error: Invalid worktree name '{name}'. "
+                    "Name may contain only letters, digits, dots, underscores, and dashes."
+                )
+            if len(name) > 64:
+                return f"Error: Worktree name must be 64 characters or fewer."
         wt_name = name or f"wt-{uuid.uuid4().hex[:8]}"
-        wt_path = Path(repo_root) / ".claude" / "worktrees" / wt_name
+        wt_path = (Path(repo_root) / ".claude" / "worktrees" / wt_name).resolve()
+
+        # Ensure the resolved path is within the expected worktree directory
+        expected_parent = (Path(repo_root) / ".claude" / "worktrees").resolve()
+        try:
+            wt_path.relative_to(expected_parent)
+        except ValueError:
+            return (
+                f"Error: Path traversal detected. Worktree path '{wt_path}' "
+                f"is outside the expected directory '{expected_parent}'."
+            )
 
         # Check if already exists
         if wt_path.exists():
@@ -115,26 +140,52 @@ def create_exit_worktree_tool(
 
     async def _exit_worktree(
         action: str,
+        path: str | None = None,
         discard_changes: bool = False,
     ) -> str:
         if action == "keep":
             return "Worktree kept on disk. Branch preserved."
 
-        # action == "remove" — requires a worktree path
-        # Since we don't track the current worktree in this simple implementation,
-        # we ask the user to specify the path
-        return (
-            "To remove a worktree, run:\n"
-            "  git worktree remove <path> [--force]\n"
-            "  git branch -D <branch-name>\n\n"
-            "The worktree path is typically under .claude/worktrees/<name>"
-        )
+        if not path:
+            return "Error: 'path' parameter is required for action='remove'."
+
+        wt_path = Path(path).expanduser()
+        if not wt_path.exists():
+            return f"Error: Worktree path not found: {path}"
+
+        # Remove the worktree
+        try:
+            args = ["git", "worktree", "remove"]
+            if discard_changes:
+                args.append("--force")
+            args.append(str(wt_path))
+
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                err = stderr.decode().strip()
+                if "modified" in err.lower() or "uncommitted" in err.lower():
+                    return (
+                        f"Error: Worktree has uncommitted changes: {err}\n"
+                        "Use discard_changes=true to force removal."
+                    )
+                return f"Error: Failed to remove worktree: {err}"
+            return f"Worktree removed: {path}"
+        except FileNotFoundError:
+            return "Error: git is not available"
+        except Exception as e:
+            return f"Error: Failed to remove worktree: {e}"
 
     return FunctionTool(
         spec=ToolSpec(
             name="exit_worktree",
             description="Exit a worktree session created by EnterWorktree. "
-            "Use \"keep\" to leave the worktree on disk, or \"remove\" to delete it.",
+            "Use \"keep\" to leave the worktree on disk, or \"remove\" to delete it. "
+            "Requires the path parameter when action is \"remove\".",
             parameters=EXIT_WORKTREE_PARAMETERS,
             mutating=True,
             concurrency_safe=False,

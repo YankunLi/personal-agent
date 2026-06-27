@@ -34,6 +34,7 @@ from personal_agent.tools.builtin.task import (
 )
 from personal_agent.tools.builtin.todo import create_todo_tool
 from personal_agent.tools.builtin.web_search import create_web_search_tool, web_search
+from personal_agent.tools.builtin.web_fetch import create_web_fetch_tool
 from personal_agent.tools.builtin.worktree import (
     create_enter_worktree_tool,
     create_exit_worktree_tool,
@@ -73,4 +74,5 @@ __all__ = [
     "create_task_list_tool",
     "create_task_update_tool",
     "create_task_stop_tool",
+    "create_web_fetch_tool",
 ]

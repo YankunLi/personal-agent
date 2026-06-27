@@ -49,11 +49,23 @@ async def test_exit_worktree_keep(executor):
 
 @pytest.mark.asyncio
 async def test_exit_worktree_remove(executor):
-    """Exit with remove action should return instructions."""
+    """Exit with remove action without path should return error."""
     tc = ToolCall(
         id="1", name="exit_worktree",
         arguments={"action": "remove"},
     )
     result = await executor.execute(tc)
     assert result.error is None
-    assert "git worktree remove" in result.output
+    assert "path" in result.output.lower()
+
+
+@pytest.mark.asyncio
+async def test_exit_worktree_remove_nonexistent(executor):
+    """Exit with remove action on nonexistent path should return error."""
+    tc = ToolCall(
+        id="1", name="exit_worktree",
+        arguments={"action": "remove", "path": "/nonexistent/worktree/path"},
+    )
+    result = await executor.execute(tc)
+    assert result.error is None
+    assert "not found" in result.output.lower()

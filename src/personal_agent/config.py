@@ -62,6 +62,11 @@ class WebSearchToolConfig(BaseModel):
     rate_limit: float = 2.0
 
 
+class WebFetchToolConfig(BaseModel):
+    timeout: float = 30.0
+    max_content_chars: int = 100_000
+
+
 class CodeExecToolConfig(BaseModel):
     timeout: float = 30.0
 
@@ -72,6 +77,7 @@ class ToolConfig(BaseModel):
     max_retries: int = 1
     restrict_to_workspace: bool = False
     web_search: WebSearchToolConfig = Field(default_factory=WebSearchToolConfig)
+    web_fetch: WebFetchToolConfig = Field(default_factory=WebFetchToolConfig)
     code_exec: CodeExecToolConfig = Field(default_factory=CodeExecToolConfig)
 
 

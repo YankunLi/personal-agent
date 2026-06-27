@@ -109,7 +109,11 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
             return f"Error: Not a directory: {path}"
 
         items = []
-        for entry in sorted(p.iterdir()):
+        try:
+            dir_entries = sorted(p.iterdir())
+        except PermissionError:
+            return f"Error: Permission denied: {path}"
+        for entry in dir_entries:
             suffix = "/" if entry.is_dir() else ""
             items.append(f"  {entry.name}{suffix}")
             if len(items) >= DEFAULT_MAX_LIST_ENTRIES:

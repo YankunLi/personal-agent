@@ -7,6 +7,8 @@ import os
 import re
 from typing import Any
 
+from pathlib import Path
+
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.tools.builtin._workspace_utils import (
     resolve_path,
@@ -233,8 +235,9 @@ def create_grep_tool(
     ) -> str:
         # Resolve search path
         if path:
-            search_path = str(resolve_path(path, workspace_dir))
-            validate_within_workspace(search_path, workspace_dir)  # type: ignore[arg-type]
+            resolved = resolve_path(path, workspace_dir)
+            validate_within_workspace(resolved, workspace_dir)
+            search_path = str(resolved)
         elif workspace_dir:
             search_path = str(resolve_path(workspace_dir))
         else:
@@ -253,7 +256,7 @@ def create_grep_tool(
 
         # Try ripgrep first
         args = _build_rg_args(
-            pattern, path or search_path if path else None,
+            pattern, search_path,
             glob, output_mode, after, before, context,
             show_line_numbers, case_insensitive, file_type, multiline,
         )

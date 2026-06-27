@@ -6,6 +6,10 @@ import json
 from typing import Any
 
 from personal_agent.tools.base import FunctionTool, Tool
+from personal_agent.tools.builtin._workspace_utils import (
+    resolve_path,
+    validate_within_workspace,
+)
 from personal_agent.types import ToolSpec
 
 LSP_PARAMETERS = {
@@ -65,10 +69,8 @@ def create_lsp_tool(workspace_dir: str | None = None) -> Tool:
     ) -> str:
         from pathlib import Path
 
-        p = Path(filePath).expanduser()
-        if not p.is_absolute() and workspace_dir:
-            p = Path(workspace_dir) / p
-        p = p.resolve()
+        p = resolve_path(filePath, workspace_dir)
+        validate_within_workspace(p, workspace_dir)
 
         if not p.exists():
             return f"Error: File not found: {filePath}"

@@ -30,6 +30,8 @@ def _parse_cron_field(value: str, min_val: int, max_val: int) -> set[int]:
         if "/" in part:
             base, step_str = part.split("/", 1)
             step = int(step_str)
+            if step == 0:
+                raise ValueError(f"Step value cannot be zero: '{part}'")
             if base == "*":
                 base_range = range(min_val, max_val + 1)
             else:
