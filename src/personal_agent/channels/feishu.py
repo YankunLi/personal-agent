@@ -340,11 +340,6 @@ class FeishuChannel(Channel):
             result = await agent.run(text)
             reply = result.answer[:self.MAX_REPLY_LENGTH]
 
-            # Persist session
-            session.short_term = agent.short_term
-            session.working = agent.working
-            self._router.session_manager.save_current()
-
             # Send reply
             if self._api:
                 resp = await self._api.reply_text(message_id, reply)
@@ -360,6 +355,11 @@ class FeishuChannel(Channel):
                     await self._api.reply_text(message_id, f"Error: {str(e)[:500]}")
                 except Exception:
                     pass
+        finally:
+            # Persist session state even on error (partial progress may be useful)
+            session.short_term = agent.short_term
+            session.working = agent.working
+            self._router.session_manager.save_current()
 
 
 # ANSI color for startup message

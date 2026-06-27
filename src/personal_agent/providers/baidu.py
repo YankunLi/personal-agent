@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from typing import AsyncIterator
 
@@ -16,6 +17,8 @@ import httpx
 from personal_agent.providers._errors import raise_provider_error
 from personal_agent.providers.base import ChatResponse, Provider
 from personal_agent.types import Message, Role, ToolCall, ToolSpec
+
+logger = logging.getLogger(__name__)
 
 # Baidu Qianfan API base URLs
 QIANFAN_AUTH_URL = "https://aip.baidubce.com/oauth/2.0/token"
@@ -102,6 +105,11 @@ class BaiduProvider(Provider):
         for msg in messages:
             m = {"role": msg.role.value, "content": msg.content}
             if msg.tool_calls:
+                if len(msg.tool_calls) > 1:
+                    logger.warning(
+                        "Baidu provider only supports a single tool call per message, "
+                        "dropping %d extra tool calls", len(msg.tool_calls) - 1
+                    )
                 m["function_call"] = {
                     "name": msg.tool_calls[0].name,
                     "arguments": json.dumps(msg.tool_calls[0].arguments, ensure_ascii=False),

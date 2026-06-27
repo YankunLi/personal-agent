@@ -78,7 +78,7 @@ def _detect_code_blocks(text: str) -> list[dict]:
 
     Returns list of: {start, end, language, code}
     """
-    pattern = re.compile(r"```(\w*)\n(.*?)```", re.DOTALL)
+    pattern = re.compile(r"```(\w*)\r?\n(.*?)```", re.DOTALL)
     blocks = []
     for match in pattern.finditer(text):
         blocks.append({

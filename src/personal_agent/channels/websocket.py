@@ -223,11 +223,6 @@ class WebSocketChannel(Channel):
             result = await agent.run(text)
             elapsed_ms = (time.time() - start) * 1000
 
-            # Persist session memory
-            resolved.short_term = agent.short_term
-            resolved.working = agent.working
-            self._router.session_manager.save_current()
-
             # Send final status
             await self._send(websocket, {
                 "type": "status",
@@ -238,6 +233,11 @@ class WebSocketChannel(Channel):
         except Exception as e:
             logger.exception("Task execution failed for conn %d", conn_id)
             await self._send(websocket, {"type": "error", "text": str(e)})
+        finally:
+            # Persist session state even on error
+            resolved.short_term = agent.short_term
+            resolved.working = agent.working
+            self._router.session_manager.save_current()
 
     # ── Agent management ─────────────────────────────────────────────────────
 
@@ -285,12 +285,13 @@ class WebSocketChannel(Channel):
         """Switch to a different session."""
         session_id = data.get("id", "")
         session_mgr = self._router.session_manager
-        session_mgr.save_current()
+        # Persist the current connection's session state before switching
         current = self._conn_sessions.get(conn_id)
         if current:
             if conn_id in self._conn_agents:
                 current.short_term = self._conn_agents[conn_id].short_term
                 current.working = self._conn_agents[conn_id].working
+            session_mgr._save_session(current)
 
         target = session_mgr.switch(session_id)
         if target is None:

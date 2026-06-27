@@ -166,7 +166,7 @@ class FileMemoryStore:
     async def get_by_type(self, memory_type: str) -> list[dict[str, Any]]:
         """Get all memories of a given type."""
         results = []
-        for entry in self.list_all():
+        for entry in await self.list_all_async():
             if entry.get("type") == memory_type:
                 result = await self.get(entry["name"])
                 if result:
@@ -193,8 +193,15 @@ class FileMemoryStore:
         return True
 
     def list_all(self) -> list[dict[str, str]]:
-        """List all memory entries from the index."""
+        """List all memory entries from the index (synchronous, for sync callers).
+
+        For async callers, use list_all_async() instead.
+        """
         return self._load_index()
+
+    async def list_all_async(self) -> list[dict[str, str]]:
+        """List all memory entries from the index (async-safe)."""
+        return await asyncio.to_thread(self._load_index)
 
     # ── Index management ─────────────────────────────────────────────────────
 

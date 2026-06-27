@@ -277,7 +277,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         """Read a specific memory file by name. Use this to recall details about the user, project, or past feedback."""
         result = await memory_store.get(name)
         if result is None:
-            return f"No memory found with name '{name}'. Available memories: {[e['name'] for e in memory_store.list_all()]}"
+            return f"No memory found with name '{name}'. Available memories: {[e['name'] for e in await memory_store.list_all_async()]}"
         meta, body = result
         return f"## {meta.get('name', name)}\n*Type: {meta.get('type', 'unknown')}*\n\n{body}"
 
@@ -348,7 +348,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         deleted = await memory_store.delete(name)
         if deleted:
             return f"Memory '{name}' deleted successfully."
-        available = [e["name"] for e in memory_store.list_all()]
+        available = [e["name"] for e in await memory_store.list_all_async()]
         return f"No memory found with name '{name}'. Available memories: {available}"
 
     tool_registry.register(FunctionTool(
