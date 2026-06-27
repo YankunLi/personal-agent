@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
 
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.tools.builtin._workspace_utils import (
@@ -52,7 +52,7 @@ def create_glob_tool(
         if not search_dir.is_dir():
             return f"Error: Not a directory: {path or search_dir}"
 
-        matches = sorted(search_dir.glob(pattern))
+        matches = sorted(search_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
         # Filter out directories and hidden files
         files = [m for m in matches if not m.name.startswith(".")]
 

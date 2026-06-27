@@ -246,7 +246,9 @@ def create_grep_tool(
         # Extract optional flags
         after = kwargs.get("-A")
         before = kwargs.get("-B")
-        context = kwargs.get("context") or kwargs.get("-C")
+        context = kwargs.get("context")
+        if context is None:
+            context = kwargs.get("-C")
         show_line_numbers = kwargs.get("-n")
         case_insensitive = kwargs.get("-i")
         file_type = kwargs.get("type")

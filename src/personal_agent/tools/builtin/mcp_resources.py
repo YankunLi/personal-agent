@@ -57,6 +57,11 @@ def create_list_mcp_resources_tool(mcp_source: Any = None) -> Tool:
         errors: list[str] = []
 
         for session in sessions:
+            session_name = getattr(session, "name", None) or getattr(
+                session, "server_name", None
+            )
+            if server is not None and session_name and session_name != server:
+                continue
             try:
                 result = await asyncio.wait_for(
                     session.list_resources(), timeout=30.0,
@@ -122,6 +127,12 @@ def create_read_mcp_resource_tool(
             return "No connected MCP servers"
 
         for session in sessions:
+            # Filter by server name if session has a name attribute
+            session_name = getattr(session, "name", None) or getattr(
+                session, "server_name", None
+            )
+            if session_name and session_name != server:
+                continue
             try:
                 result = await asyncio.wait_for(
                     session.read_resource(uri), timeout=30.0,

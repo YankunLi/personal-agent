@@ -101,7 +101,7 @@ async def create_sub_agent(
 
     # Create tool registry with configured tools
     tool_registry = ToolRegistry()
-    file_ops_tools = create_file_ops_tools(workspace_dir=ws)
+    file_ops_tools, _file_ops_sm_cell = create_file_ops_tools(workspace_dir=ws)
     file_ops_map = {t.spec.name: t for t in file_ops_tools}
 
     for tool_name in sub_cfg.tools:
@@ -131,7 +131,7 @@ async def create_sub_agent(
         "agent_knowledge": agent_knowledge,
         "context_manager": context_manager,
         "skill_manager": skill_manager,
-        "cron_scheduler": cron_scheduler,
+        "cron_scheduler": None,  # Sub-agents don't get their own cron scheduler
         "budget_manager": budget_manager,
         "max_steps": sub_cfg.max_steps,
         "system_prompt": sub_cfg.system_prompt,

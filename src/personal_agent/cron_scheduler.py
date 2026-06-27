@@ -157,9 +157,8 @@ class CronScheduler:
         """Start the scheduler loop. Loads durable jobs from disk."""
         self._callback = callback
         self._load_durable()
-        if self._jobs:
-            self._running = True
-            self._task = asyncio.create_task(self._loop())
+        self._running = True
+        self._task = asyncio.create_task(self._loop())
 
     async def stop(self) -> None:
         """Stop the scheduler loop."""

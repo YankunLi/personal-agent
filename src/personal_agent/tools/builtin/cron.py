@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from personal_agent.cron_scheduler import CronScheduler
+from personal_agent.cron_scheduler import CronScheduler, _next_cron_match
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.types import ToolSpec
 
@@ -70,7 +70,11 @@ def create_cron_create_tool(scheduler: CronScheduler) -> Tool:
             return f"Error: {e}"
 
         job = scheduler.get_job(job_id)
-        next_fire = job.to_dict().get("next_fire", "unknown") if job else "unknown"
+        if job:
+            next_match = _next_cron_match(job.cron)
+            next_fire = next_match.isoformat() if next_match else "unknown"
+        else:
+            next_fire = "unknown"
         return (
             f"Cron job created: {job_id}\n"
             f"  Schedule: {cron}\n"
