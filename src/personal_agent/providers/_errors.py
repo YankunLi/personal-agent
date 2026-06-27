@@ -15,6 +15,10 @@ def raise_provider_error(error: Exception) -> None:
 
     Shared across all provider implementations to avoid code duplication.
     """
+    # Pass through existing provider errors to avoid double-wrapping
+    if isinstance(error, (ProviderAuthError, ProviderRateLimitError, ProviderTimeoutError, ProviderError)):
+        raise
+
     error_str = str(error).lower()
     if "401" in error_str or "unauthorized" in error_str or "invalid api key" in error_str or "authentication error" in error_str:
         raise ProviderAuthError(str(error)) from error
