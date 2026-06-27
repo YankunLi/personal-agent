@@ -55,9 +55,12 @@ class AnthropicProvider(Provider):
                 system_parts.append(msg.content)
                 continue
 
-            m: dict = {"role": msg.role.value, "content": msg.content}
+            m: dict
 
             if msg.role == Role.TOOL:
+                # Anthropic accepts only "user" and "assistant" roles.
+                # Tool results must be sent as user messages with tool_result content blocks.
+                m = {"role": "user", "content": msg.content}
                 tool_use_id = msg.tool_call_id
                 if not tool_use_id:
                     logger.warning("Tool message missing tool_call_id, using fallback")
@@ -68,6 +71,7 @@ class AnthropicProvider(Provider):
                     "content": msg.content,
                 }]
             elif msg.tool_calls:
+                m = {"role": msg.role.value, "content": msg.content}
                 content_blocks = []
                 if msg.content:
                     content_blocks.append({"type": "text", "text": msg.content})
@@ -79,6 +83,8 @@ class AnthropicProvider(Provider):
                         "input": tc.arguments,
                     })
                 m["content"] = content_blocks
+            else:
+                m = {"role": msg.role.value, "content": msg.content}
 
             anthropic_msgs.append(m)
 
