@@ -102,7 +102,11 @@ class BaseAgent(ABC):
 
         messages = state.messages
         if self.context_manager:
-            state.full_messages = list(messages)
+            # Accumulate full conversation before pruning for memory consolidation
+            captured_ids = {id(m) for m in state.full_messages}
+            for m in messages:
+                if id(m) not in captured_ids:
+                    state.full_messages.append(m)
             messages = await self.context_manager.prepare(messages)
             state.messages = messages
 
@@ -132,7 +136,11 @@ class BaseAgent(ABC):
 
         messages = state.messages
         if self.context_manager:
-            state.full_messages = list(messages)
+            # Accumulate full conversation before pruning for memory consolidation
+            captured_ids = {id(m) for m in state.full_messages}
+            for m in messages:
+                if id(m) not in captured_ids:
+                    state.full_messages.append(m)
             messages = await self.context_manager.prepare(messages)
             state.messages = messages
 
@@ -302,7 +310,7 @@ class BaseAgent(ABC):
                 ))
 
         messages.append(Message(role=Role.USER, content=task))
-        return AgentState(messages=messages)
+        return AgentState(messages=messages, full_messages=list(messages))
 
     def _make_message(self, role: Role, content: str) -> Message:
         """Create a Message. Shared across all agent subclasses."""
