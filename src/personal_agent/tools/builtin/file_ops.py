@@ -84,17 +84,20 @@ def create_file_ops_tools(workspace_dir: str | None = None) -> list[Tool]:
             return f"Error: Path is a directory: {path}"
 
         try:
+            file_size = p.stat().st_size
+            if file_size > DEFAULT_MAX_READ_BYTES:
+                with open(p, "r", encoding="utf-8") as f:
+                    content = f.read(DEFAULT_MAX_READ_BYTES)
+                return (
+                    f"{content}\n\n"
+                    f"[File truncated: {file_size} bytes total, "
+                    f"showing first {DEFAULT_MAX_READ_BYTES}. "
+                    f"Use a more specific path or read in chunks.]"
+                )
             content = p.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             return f"Error: Cannot read binary file: {path}"
 
-        if len(content) > DEFAULT_MAX_READ_BYTES:
-            return (
-                f"{content[:DEFAULT_MAX_READ_BYTES]}\n\n"
-                f"[File truncated: {len(content)} bytes total, "
-                f"showing first {DEFAULT_MAX_READ_BYTES}. "
-                f"Use a more specific path or read in chunks.]"
-            )
         return content
 
     async def _write_file(path: str, content: str) -> str:
