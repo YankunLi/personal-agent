@@ -384,7 +384,7 @@ class BaseAgent(ABC):
                 # (e.g., max_steps exceeded produces a synthetic answer not in the conversation)
                 if answer and answer != "No answer produced.":
                     last_msg = conversation[-1] if conversation else None
-                    if not last_msg or last_msg.role != Role.ASSISTANT or last_msg.content != answer[:2000]:
+                    if not last_msg or last_msg.role != Role.ASSISTANT or last_msg.content[:2000] != answer[:2000]:
                         conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
                 # Prune completed tasks before adding new ones
                 self._consolidation_tasks = [t for t in self._consolidation_tasks if not t.done()]
