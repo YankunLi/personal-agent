@@ -166,25 +166,21 @@ class CLIChannel(Channel):
             if sid and session_mgr.has_session(sid):
                 session_mgr.switch(sid)
 
-        # If no session exists yet, create one via the routing key
-        if session_mgr.current is None:
-            key = SessionKey(channel=CLI_CHANNEL, user_id=CLI_USER, conversation_id=CLI_CONVERSATION)
-            session = session_mgr.find_by_key(key)
-            if session is None:
-                session = session_mgr.create_for_key(key)
-            else:
-                session_mgr.switch(session.id)
+        # Use key-based lookup to find/create the CLI session
+        # (independent of the shared _current_id to avoid races with other channels)
+        cli_key = SessionKey(channel=CLI_CHANNEL, user_id=CLI_USER, conversation_id=CLI_CONVERSATION)
+        session = session_mgr.find_by_key(cli_key)
+        if session is None:
+            session = session_mgr.create_for_key(cli_key)
+        else:
+            session_mgr.switch(session.id)
+        self._current_session = session
 
         # Link project to session if needed
         if project_data and not project_data.get("session_id"):
-            current = session_mgr.current
-            if current:
-                project_data["session_id"] = current.id
-                save_root = find_project_root(start=wd) or wd
-                save_project(project_data, save_root)
-
-        # Store own session reference to avoid depending on global state
-        self._current_session = session_mgr.current
+            project_data["session_id"] = session.id
+            save_root = find_project_root(start=wd) or wd
+            save_project(project_data, save_root)
 
     async def _create_agent(self) -> None:
         """Create the agent from settings."""
