@@ -48,6 +48,7 @@ class BaiduProvider(Provider):
         self._access_token: str | None = None
         self._token_expiry: float = 0.0
         self._token_lock = asyncio.Lock()
+        self._client_lock = asyncio.Lock()
         self._httpx_client: httpx.AsyncClient | None = None
 
     @property
@@ -60,7 +61,9 @@ class BaiduProvider(Provider):
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._httpx_client is None:
-            self._httpx_client = httpx.AsyncClient(timeout=self._timeout)
+            async with self._client_lock:
+                if self._httpx_client is None:
+                    self._httpx_client = httpx.AsyncClient(timeout=self._timeout)
         return self._httpx_client
 
     async def _ensure_token(self) -> str:

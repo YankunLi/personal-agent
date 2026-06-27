@@ -150,7 +150,7 @@ class ReflectionAgent(BaseAgent):
 
         critique_prompt = (
             f"Original task: {task}\n\n"
-            f"Response to evaluate:\n{response}\n\n"
+            f"Response to evaluate:\n{response[:8000]}\n\n"
             "Please provide your critique in JSON format."
         )
 

@@ -183,7 +183,7 @@ class OpenAICompatibleProvider(Provider):
                             entry["id"] = tc_delta.id
                         if tc_delta.function:
                             if tc_delta.function.name:
-                                entry["name"] += tc_delta.function.name
+                                entry["name"] = tc_delta.function.name
                             if tc_delta.function.arguments:
                                 entry["arguments_json"] += tc_delta.function.arguments
 

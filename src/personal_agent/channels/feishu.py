@@ -193,6 +193,7 @@ class FeishuChannel(Channel):
                 pass
         self._conn_agents.clear()
         self._conn_sessions.clear()
+        self._user_locks.clear()
         # Cancel pending message processing tasks
         for task in list(self._pending_tasks):
             if not task.done():
