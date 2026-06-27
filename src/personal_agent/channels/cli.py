@@ -130,8 +130,9 @@ class CLIChannel(Channel):
         if self._background_tasks:
             await asyncio.gather(*self._background_tasks, return_exceptions=True)
         if self._current_session:
-            self._current_session.short_term = self._agent.short_term
-            self._current_session.working = self._agent.working
+            async with self._current_session.memory_lock:
+                self._current_session.short_term = self._agent.short_term
+                self._current_session.working = self._agent.working
             self._router.session_manager.save_session(self._current_session)
         await self._agent.close()
 
@@ -196,8 +197,9 @@ class CLIChannel(Channel):
 
         # Restore session memory into agent
         if self._current_session:
-            self._agent.short_term = self._current_session.short_term
-            self._agent.working = self._current_session.working
+            async with self._current_session.memory_lock:
+                self._agent.short_term = self._current_session.short_term
+                self._agent.working = self._current_session.working
 
     # ── Task processing ──────────────────────────────────────────────────────
 
@@ -262,8 +264,9 @@ class CLIChannel(Channel):
 
             # Persist session state after each task
             if self._current_session:
-                self._current_session.short_term = self._agent.short_term
-                self._current_session.working = self._agent.working
+                async with self._current_session.memory_lock:
+                    self._current_session.short_term = self._agent.short_term
+                    self._current_session.working = self._agent.working
                 self._router.session_manager.save_session(self._current_session)
 
     # ── Multiline input ──────────────────────────────────────────────────────
@@ -392,8 +395,9 @@ class CLIChannel(Channel):
 
         session_mgr = self._router.session_manager
         if self._current_session:
-            self._current_session.short_term = self._agent.short_term
-            self._current_session.working = self._agent.working
+            async with self._current_session.memory_lock:
+                self._current_session.short_term = self._agent.short_term
+                self._current_session.working = self._agent.working
             session_mgr.save_session(self._current_session)
 
         await self._agent.close()
@@ -401,8 +405,9 @@ class CLIChannel(Channel):
         self._agent = new_agent
 
         if self._current_session:
-            self._agent.short_term = self._current_session.short_term
-            self._agent.working = self._current_session.working
+            async with self._current_session.memory_lock:
+                self._agent.short_term = self._current_session.short_term
+                self._agent.working = self._current_session.working
 
         print(f"{C_GREEN}✓{C_RESET} Agent restarted with current settings.")
 
@@ -618,8 +623,9 @@ class CLIChannel(Channel):
         self._agent.short_term.clear()
         self._agent.working.clear()
         if self._current_session:
-            self._current_session.short_term = self._agent.short_term
-            self._current_session.working = self._agent.working
+            async with self._current_session.memory_lock:
+                self._current_session.short_term = self._agent.short_term
+                self._current_session.working = self._agent.working
             self._router.session_manager.save_session(self._current_session)
         print(f"{C_GREEN}✓{C_RESET} Memory cleared.")
 
@@ -667,15 +673,17 @@ class CLIChannel(Channel):
         session_mgr = self._router.session_manager
         session = session_mgr.create(name)
         self._current_session = session
-        self._agent.short_term = session.short_term
-        self._agent.working = session.working
+        async with session.memory_lock:
+            self._agent.short_term = session.short_term
+            self._agent.working = session.working
         print(f"{C_GREEN}✓{C_RESET} Session created: {C_CYAN}{session.name}{C_RESET} ({session.id})")
 
     async def _session_switch(self, name: str) -> None:
         session_mgr = self._router.session_manager
         if self._current_session:
-            self._current_session.short_term = self._agent.short_term
-            self._current_session.working = self._agent.working
+            async with self._current_session.memory_lock:
+                self._current_session.short_term = self._agent.short_term
+                self._current_session.working = self._agent.working
             session_mgr.save_session(self._current_session)
 
         target = session_mgr.switch(name)
@@ -683,8 +691,9 @@ class CLIChannel(Channel):
             print(f"{C_RED}Session not found: {name}{C_RESET}")
             return
         self._current_session = target
-        self._agent.short_term = target.short_term
-        self._agent.working = target.working
+        async with target.memory_lock:
+            self._agent.short_term = target.short_term
+            self._agent.working = target.working
         print(f"{C_GREEN}✓{C_RESET} Switched to: {C_CYAN}{target.name}{C_RESET} ({target.id})")
         print(f"  {C_DIM}{len(target.short_term)} messages, {len(target.working)} working keys{C_RESET}")
 

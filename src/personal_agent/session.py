@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import threading
@@ -36,6 +37,10 @@ class Session:
     updated_at: float = field(default_factory=time.time)
     short_term: ShortTermMemory = field(default_factory=ShortTermMemory)
     working: WorkingMemory = field(default_factory=WorkingMemory)
+
+    # Per-session lock to prevent concurrent memory access across channels
+    # that share the same session. Not serialized to disk.
+    memory_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
 
     @property
     def expired(self) -> bool:

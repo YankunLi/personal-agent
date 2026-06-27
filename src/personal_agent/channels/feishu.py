@@ -311,8 +311,9 @@ class FeishuChannel(Channel):
 
             # Get or create agent for this user
             agent = await self._get_or_create_agent(user_id)
-            agent.short_term = session.short_term
-            agent.working = session.working
+            async with session.memory_lock:
+                agent.short_term = session.short_term
+                agent.working = session.working
 
             await self._run_agent(agent, session, text, message_id)
 
@@ -357,8 +358,9 @@ class FeishuChannel(Channel):
                     pass
         finally:
             # Persist session state even on error (partial progress may be useful)
-            session.short_term = agent.short_term
-            session.working = agent.working
+            async with session.memory_lock:
+                session.short_term = agent.short_term
+                session.working = agent.working
             self._router.session_manager.save_session(session)
 
 

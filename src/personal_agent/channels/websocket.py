@@ -190,8 +190,9 @@ class WebSocketChannel(Channel):
             agent = await self._get_or_create_agent(conn_id)
 
             # Restore session memory into agent
-            agent.short_term = resolved.short_term
-            agent.working = resolved.working
+            async with resolved.memory_lock:
+                agent.short_term = resolved.short_term
+                agent.working = resolved.working
 
             # Wire up callbacks to stream to WebSocket
             from personal_agent.types import AgentCallbacks
@@ -243,8 +244,9 @@ class WebSocketChannel(Channel):
                 await self._send(websocket, {"type": "error", "text": str(e)})
             finally:
                 # Persist session state even on error
-                resolved.short_term = agent.short_term
-                resolved.working = agent.working
+                async with resolved.memory_lock:
+                    resolved.short_term = agent.short_term
+                    resolved.working = agent.working
                 self._router.session_manager.save_session(resolved)
 
     # ── Agent management ─────────────────────────────────────────────────────
@@ -277,8 +279,9 @@ class WebSocketChannel(Channel):
         # Save old session state before replacing it
         old_session = self._conn_sessions.get(conn_id)
         if old_session and conn_id in self._conn_agents:
-            old_session.short_term = self._conn_agents[conn_id].short_term
-            old_session.working = self._conn_agents[conn_id].working
+            async with old_session.memory_lock:
+                old_session.short_term = self._conn_agents[conn_id].short_term
+                old_session.working = self._conn_agents[conn_id].working
             session_mgr.save_session(old_session)
 
         session = session_mgr.create(name)
@@ -308,8 +311,9 @@ class WebSocketChannel(Channel):
         current = self._conn_sessions.get(conn_id)
         if current:
             if conn_id in self._conn_agents:
-                current.short_term = self._conn_agents[conn_id].short_term
-                current.working = self._conn_agents[conn_id].working
+                async with current.memory_lock:
+                    current.short_term = self._conn_agents[conn_id].short_term
+                    current.working = self._conn_agents[conn_id].working
             session_mgr.save_session(current)
 
         target = session_mgr.switch(session_id)
@@ -319,8 +323,9 @@ class WebSocketChannel(Channel):
 
         self._conn_sessions[conn_id] = target
         if conn_id in self._conn_agents:
-            self._conn_agents[conn_id].short_term = target.short_term
-            self._conn_agents[conn_id].working = target.working
+            async with target.memory_lock:
+                self._conn_agents[conn_id].short_term = target.short_term
+                self._conn_agents[conn_id].working = target.working
         await self._send(websocket, {
             "type": "session_info",
             "id": target.id,
