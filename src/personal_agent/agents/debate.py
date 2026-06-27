@@ -126,10 +126,14 @@ class DebateAgent(BaseAgent):
                         logger.error("Role %s failed: %s", role.name, result)
                         previous_responses[role.name] = f"[Error: {result}]"
                     else:
-                        previous_responses[role.name] = result
+                        answer, usage = result
+                        previous_responses[role.name] = answer
+                        if usage:
+                            for key, val in usage.items():
+                                self._total_usage[key] = self._total_usage.get(key, 0) + val
                         all_steps.append(AgentStep(
                             thought=f"Round {round_num} - {role.name}",
-                            observation=result[:1000],
+                            observation=answer[:1000],
                         ))
 
             # Judge synthesizes
@@ -156,8 +160,11 @@ class DebateAgent(BaseAgent):
         task: str,
         previous_responses: dict[str, str],
         round_num: int,
-    ) -> str:
-        """Run a single role agent for one debate round."""
+    ) -> tuple[str, dict]:
+        """Run a single role agent for one debate round.
+
+        Returns (answer, token_usage_dict).
+        """
         agent = self._role_agents[role.name]
 
         if round_num == 1:
@@ -174,7 +181,7 @@ class DebateAgent(BaseAgent):
             )
 
         result = await agent.run(round_task)
-        return result.answer
+        return result.answer, result.token_usage or {}
 
     async def _run_judge(self, task: str, responses: dict[str, str]) -> str:
         """Run the judge agent to synthesize debate responses."""
