@@ -185,7 +185,7 @@ class BaseAgent(ABC):
 
         return ChatResponse(
             content=accumulated_content,
-            tool_calls=accumulated_tool_calls if accumulated_tool_calls else None,
+            tool_calls=accumulated_tool_calls,
             finish_reason="tool_calls" if accumulated_tool_calls else last_finish_reason,
             usage=call_usage,
         )
