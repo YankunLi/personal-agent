@@ -64,6 +64,7 @@ class CLIChannel(Channel):
         self._project_data: dict | None = None
         self._task_lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task] = set()
+        self._current_session: Any = None  # Track own session to avoid global state
 
     # ── Channel interface ────────────────────────────────────────────────────
 
@@ -128,7 +129,10 @@ class CLIChannel(Channel):
                 task.cancel()
         if self._background_tasks:
             await asyncio.gather(*self._background_tasks, return_exceptions=True)
-        self._router.session_manager.save_current()
+        if self._current_session:
+            self._current_session.short_term = self._agent.short_term
+            self._current_session.working = self._agent.working
+            self._router.session_manager.save_session(self._current_session)
         await self._agent.close()
 
     async def stop(self) -> None:
@@ -179,6 +183,9 @@ class CLIChannel(Channel):
                 save_root = find_project_root(start=wd) or wd
                 save_project(project_data, save_root)
 
+        # Store own session reference to avoid depending on global state
+        self._current_session = session_mgr.current
+
     async def _create_agent(self) -> None:
         """Create the agent from settings."""
         from personal_agent.factory import create_agent
@@ -192,10 +199,9 @@ class CLIChannel(Channel):
             raise
 
         # Restore session memory into agent
-        current = self._router.session_manager.current
-        if current:
-            self._agent.short_term = current.short_term
-            self._agent.working = current.working
+        if self._current_session:
+            self._agent.short_term = self._current_session.short_term
+            self._agent.working = self._current_session.working
 
     # ── Task processing ──────────────────────────────────────────────────────
 
@@ -259,11 +265,10 @@ class CLIChannel(Channel):
             })
 
             # Persist session state after each task
-            session_mgr = self._router.session_manager
-            if session_mgr.current:
-                session_mgr.current.short_term = self._agent.short_term
-                session_mgr.current.working = self._agent.working
-                session_mgr.save_current()
+            if self._current_session:
+                self._current_session.short_term = self._agent.short_term
+                self._current_session.working = self._agent.working
+                session_mgr.save_session(self._current_session)
 
     # ── Multiline input ──────────────────────────────────────────────────────
 
@@ -390,18 +395,18 @@ class CLIChannel(Channel):
         print(f"{C_YELLOW}Restarting agent...{C_RESET}")
 
         session_mgr = self._router.session_manager
-        if session_mgr.current:
-            session_mgr.current.short_term = self._agent.short_term
-            session_mgr.current.working = self._agent.working
-            session_mgr.save_current()
+        if self._current_session:
+            self._current_session.short_term = self._agent.short_term
+            self._current_session.working = self._agent.working
+            session_mgr.save_session(self._current_session)
 
         await self._agent.close()
         new_agent = await create_agent(self._settings, **self._overrides)
         self._agent = new_agent
 
-        if session_mgr.current:
-            self._agent.short_term = session_mgr.current.short_term
-            self._agent.working = session_mgr.current.working
+        if self._current_session:
+            self._agent.short_term = self._current_session.short_term
+            self._agent.working = self._current_session.working
 
         print(f"{C_GREEN}✓{C_RESET} Agent restarted with current settings.")
 
@@ -539,8 +544,8 @@ class CLIChannel(Channel):
         if self._project_data:
             proj = self._project_data.get("project", {})
             print(f"  {C_BOLD}Project:{C_RESET}  {C_CYAN}{proj.get('name', 'unknown')}{C_RESET}")
-        if session_mgr.current:
-            print(f"  {C_BOLD}Session:{C_RESET}  {C_GREEN}{session_mgr.current.name}{C_RESET}  {C_DIM}({session_mgr.current.id}){C_RESET}")
+        if self._current_session:
+            print(f"  {C_BOLD}Session:{C_RESET}  {C_GREEN}{self._current_session.name}{C_RESET}  {C_DIM}({self._current_session.id}){C_RESET}")
         print(f"  {C_BOLD}Pattern:{C_RESET}  {C_GREEN}{settings.agent.pattern}{C_RESET}")
         if self._agent is not None:
             print(f"  {C_BOLD}Model:{C_RESET}    {C_GREEN}{self._agent.provider.model_name}{C_RESET}")
@@ -616,18 +621,16 @@ class CLIChannel(Channel):
         """Clear conversation memory and persist to session."""
         self._agent.short_term.clear()
         self._agent.working.clear()
-        session_mgr = self._router.session_manager
-        if session_mgr.current:
-            session_mgr.current.short_term = self._agent.short_term
-            session_mgr.current.working = self._agent.working
-            session_mgr.save_current()
+        if self._current_session:
+            self._current_session.short_term = self._agent.short_term
+            self._current_session.working = self._agent.working
+            self._router.session_manager.save_session(self._current_session)
         print(f"{C_GREEN}✓{C_RESET} Memory cleared.")
 
     # ── Session helpers ──────────────────────────────────────────────────────
 
     def _session_info(self) -> None:
-        session_mgr = self._router.session_manager
-        current = session_mgr.current
+        current = self._current_session
         if not current:
             print(f"{C_DIM}No active session. Use /session create <name> to create one.{C_RESET}")
             return
@@ -654,7 +657,7 @@ class CLIChannel(Channel):
             print(f"{C_DIM}No sessions found. Use /session create <name> to create one.{C_RESET}")
             return
 
-        current = session_mgr.current
+        current = self._current_session
         print(f"{C_BOLD}Sessions ({len(sessions)}):{C_RESET}")
         for s in sessions:
             marker = f"{C_GREEN}● current{C_RESET}" if current and s.id == current.id else " "
@@ -667,22 +670,23 @@ class CLIChannel(Channel):
     def _session_create(self, name: str) -> None:
         session_mgr = self._router.session_manager
         session = session_mgr.create(name)
+        self._current_session = session
         self._agent.short_term = session.short_term
         self._agent.working = session.working
         print(f"{C_GREEN}✓{C_RESET} Session created: {C_CYAN}{session.name}{C_RESET} ({session.id})")
 
     async def _session_switch(self, name: str) -> None:
         session_mgr = self._router.session_manager
-        session_mgr.save_current()
-        current = session_mgr.current
-        if current:
-            current.short_term = self._agent.short_term
-            current.working = self._agent.working
+        if self._current_session:
+            self._current_session.short_term = self._agent.short_term
+            self._current_session.working = self._agent.working
+            session_mgr.save_session(self._current_session)
 
         target = session_mgr.switch(name)
         if target is None:
             print(f"{C_RED}Session not found: {name}{C_RESET}")
             return
+        self._current_session = target
         self._agent.short_term = target.short_term
         self._agent.working = target.working
         print(f"{C_GREEN}✓{C_RESET} Switched to: {C_CYAN}{target.name}{C_RESET} ({target.id})")
@@ -690,7 +694,7 @@ class CLIChannel(Channel):
 
     def _session_delete(self, name: str) -> None:
         session_mgr = self._router.session_manager
-        current = session_mgr.current
+        current = self._current_session
         if current and (current.name == name or current.id == name):
             print(f"{C_RED}Cannot delete the active session. Switch to another session first.{C_RESET}")
             return
