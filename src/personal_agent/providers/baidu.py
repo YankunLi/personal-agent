@@ -281,6 +281,7 @@ class BaiduProvider(Provider):
 
     async def close(self) -> None:
         """Close the HTTP client."""
-        if self._httpx_client:
-            await self._httpx_client.aclose()
-            self._httpx_client = None
+        async with self._client_lock:
+            if self._httpx_client:
+                await self._httpx_client.aclose()
+                self._httpx_client = None
