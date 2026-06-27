@@ -127,6 +127,7 @@ class WebSocketChannel(Channel):
                     pass
             self._conn_sessions.pop(conn_id, None)
             self._connections.pop(conn_id, None)
+            self._conn_locks.pop(conn_id, None)
 
     async def _conn_loop(self, conn_id: int, websocket: ServerConnection) -> None:
         """Main message loop for a single connection."""
@@ -276,7 +277,10 @@ class WebSocketChannel(Channel):
         self._conn_sessions[conn_id] = session
         # Reset agent for new session
         if conn_id in self._conn_agents:
-            await self._conn_agents[conn_id].close()
+            try:
+                await self._conn_agents[conn_id].close()
+            except Exception:
+                pass
             del self._conn_agents[conn_id]
         await self._send(websocket, {
             "type": "session_info",

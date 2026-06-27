@@ -128,7 +128,10 @@ class ParallelJudgeAgent(BaseAgent):
             result = await agent.run(task)
             return result.answer, result.token_usage
         finally:
-            await agent.close()
+            try:
+                await agent.close()
+            except Exception:
+                pass
 
     async def _run_judge(self, task: str, answers: dict[str, str]) -> str:
         """Run the judge to evaluate and select the best answer."""

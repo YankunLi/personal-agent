@@ -138,7 +138,10 @@ class DebateAgent(BaseAgent):
         finally:
             # Clean up role agents
             for agent in self._role_agents.values():
-                await agent.close()
+                try:
+                    await agent.close()
+                except Exception:
+                    pass
             self._role_agents.clear()
 
         state.done = True
