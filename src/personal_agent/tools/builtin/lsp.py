@@ -120,13 +120,16 @@ def _handle_python(
     character: int,
 ) -> str:
     """Handle LSP operations for Python files using Jedi."""
+    # Jedi expects 1-based line and 0-based column, but the tool's
+    # character parameter is documented as 1-based (as shown in editors).
+    column = character - 1
     try:
         script = jedi.Script(source, path=path)
     except Exception as e:
         return f"Error: Failed to parse Python file: {e}"
 
     if operation == "goToDefinition":
-        definitions = script.goto(line=line, column=character)
+        definitions = script.goto(line=line, column=column)
         if not definitions:
             return "No definition found"
 
@@ -140,7 +143,7 @@ def _handle_python(
         return "\n".join(lines)
 
     elif operation == "findReferences":
-        references = script.get_references(line=line, column=character)
+        references = script.get_references(line=line, column=column)
         if not references:
             return "No references found"
 
@@ -154,7 +157,7 @@ def _handle_python(
         return f"Found {len(lines)} references:\n" + "\n".join(lines)
 
     elif operation == "hover":
-        helps = script.help(line=line, column=character)
+        helps = script.help(line=line, column=column)
         if not helps:
             return "No hover information available"
 

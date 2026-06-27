@@ -172,7 +172,15 @@ def _python_fallback(
     file_count = 0
     match_count = 0
 
-    for root, dirs, files in os.walk(search_root):
+    # Handle single file path (os.walk only works on directories)
+    if os.path.isfile(search_root):
+        file_walker: list[tuple[str, list[str], list[str]]] = [
+            (os.path.dirname(search_root) or ".", [], [os.path.basename(search_root)])
+        ]
+    else:
+        file_walker = os.walk(search_root)
+
+    for root, dirs, files in file_walker:
         # Skip hidden/VCS directories
         dirs[:] = [d for d in dirs if not d.startswith(".")]
 
