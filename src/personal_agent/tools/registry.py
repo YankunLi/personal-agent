@@ -58,9 +58,18 @@ class ToolRegistry:
         return list(self._tools.values())
 
     def list_mcp_tools(self) -> list[Tool]:
-        """Return only MCP tool instances (safe to share with sub-agents)."""
+        """Return copies of MCP tool instances for sharing with sub-agents.
+
+        Each call returns new MCPToolWrapper instances sharing the same MCP
+        session, so sub-agents can safely close their own copies without
+        affecting other sub-agents or the parent agent.
+        """
         from personal_agent.tools.mcp.wrapper import MCPToolWrapper
-        return [t for t in self._tools.values() if isinstance(t, MCPToolWrapper)]
+        return [
+            MCPToolWrapper(t._session, t._tool_info)
+            for t in self._tools.values()
+            if isinstance(t, MCPToolWrapper)
+        ]
 
     def remove(self, name: str) -> None:
         """Remove a tool from the registry."""
