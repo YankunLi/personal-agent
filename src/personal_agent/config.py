@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
+from personal_agent.exceptions import ConfigError
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -291,7 +292,10 @@ def _parse_config_file(path: Path) -> Settings:
 
     if path.suffix == ".json":
         with open(path) as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError as e:
+                raise ConfigError(f"Invalid JSON in config file '{path}': {e}") from e
     elif path.suffix in (".yaml", ".yml"):
         try:
             import yaml  # type: ignore
@@ -302,7 +306,10 @@ def _parse_config_file(path: Path) -> Settings:
             )
 
         with open(path) as f:
-            data = yaml.safe_load(f)
+            try:
+                data = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                raise ConfigError(f"Invalid YAML in config file '{path}': {e}") from e
     else:
         raise ValueError(f"Unsupported config format: {path.suffix}")
 
