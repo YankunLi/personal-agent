@@ -32,7 +32,7 @@ class LLMCompressor(ContextCompressor):
     async def summarize(self, messages: list[Message]) -> str:
         """Summarize messages using a lightweight LLM call."""
         conversation = "\n".join(
-            f"[{m.role.value}]: {m.content[:1000]}" for m in messages
+            f"[{m.role.value}]: {(m.content or '')[:1000]}" for m in messages
         )
 
         prompt = (
@@ -58,7 +58,7 @@ class LLMCompressor(ContextCompressor):
             # Fallback: return last few messages
             recent = messages[-3:]
             return "Recent context:\n" + "\n".join(
-                f"[{m.role.value}]: {m.content[:200]}" for m in recent
+                f"[{m.role.value}]: {(m.content or '')[:200]}" for m in recent
             )
 
 
@@ -69,13 +69,12 @@ class RuleBasedCompressor(ContextCompressor):
         """Create a simple summary by extracting key information."""
         key_points = []
         for msg in messages:
+            content = msg.content or ""
             if msg.role == Role.USER:
-                key_points.append(f"User asked: {msg.content[:200]}")
+                key_points.append(f"User asked: {content[:200]}")
             elif msg.role == Role.ASSISTANT and not msg.tool_calls:
-                key_points.append(f"Assistant answered: {msg.content[:200]}")
+                key_points.append(f"Assistant answered: {content[:200]}")
             elif msg.role == Role.TOOL:
-                # Shorten tool outputs
-                output = msg.content[:100]
-                key_points.append(f"Tool result: {output}")
+                key_points.append(f"Tool result: {content[:100]}")
 
         return "Previous conversation summary:\n" + "\n".join(key_points[-20:])
