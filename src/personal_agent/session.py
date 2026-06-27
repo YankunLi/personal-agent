@@ -255,12 +255,12 @@ class SessionManager:
             return None
 
     def create_for_key(self, key: SessionKey) -> Session:
-        """Create a new session for the given routing key and switch to it."""
-        with self._lock:
-            # Save current session first
-            if self._current_id and self._current_id in self._sessions:
-                self._save_session(self._sessions[self._current_id])
+        """Create a new session for the given routing key.
 
+        Does NOT change the global current session pointer — callers
+        that need to switch should call switch() explicitly.
+        """
+        with self._lock:
             name = f"{key.channel}-{key.user_id}-{key.conversation_id}"
             session = Session(
                 name=name,
@@ -269,13 +269,10 @@ class SessionManager:
                 conversation_id=key.conversation_id,
             )
             self._sessions[session.id] = session
-            prev_id = self._current_id
-            self._current_id = session.id
             try:
                 self._save_session(session)
             except Exception:
                 self._sessions.pop(session.id, None)
-                self._current_id = prev_id
                 raise
         return session
 

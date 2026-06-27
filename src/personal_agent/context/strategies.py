@@ -73,7 +73,13 @@ class CompressionStrategy(ContextStrategy):
     @staticmethod
     def _estimate_tokens(messages: list[Message]) -> int:
         """Rough token estimation: ~4 chars per token."""
-        return sum(len(m.content) // 4 for m in messages)
+        total = 0
+        for m in messages:
+            total += len(m.content or "") // 4
+            if m.tool_calls:
+                for tc in m.tool_calls:
+                    total += len(str(tc.arguments)) // 4
+        return total
 
 
 class HybridStrategy(ContextStrategy):

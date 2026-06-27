@@ -64,7 +64,10 @@ class ShortTermMemory:
 
         mem = cls(max_messages=data.get("max_messages", 200))
         for m in data.get("messages", []):
-            role = Role(m["role"])
+            try:
+                role = Role(m["role"])
+            except (ValueError, KeyError):
+                role = Role.USER
             tool_calls = None
             if m.get("tool_calls"):
                 tool_calls = [ToolCall(**tc) for tc in m["tool_calls"] if tc is not None]

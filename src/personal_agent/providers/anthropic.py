@@ -50,7 +50,7 @@ class AnthropicProvider(Provider):
         system_parts = []
         anthropic_msgs = []
 
-        for msg in messages:
+        for idx, msg in enumerate(messages):
             if msg.role == Role.SYSTEM:
                 system_parts.append(msg.content)
                 continue
@@ -64,7 +64,7 @@ class AnthropicProvider(Provider):
                 tool_use_id = msg.tool_call_id
                 if not tool_use_id:
                     logger.warning("Tool message missing tool_call_id, using fallback")
-                    tool_use_id = "unknown"
+                    tool_use_id = f"unknown_{idx}"
                 m["content"] = [{
                     "type": "tool_result",
                     "tool_use_id": tool_use_id,

@@ -88,6 +88,7 @@ class BaiduProvider(Provider):
                     "client_secret": self._secret_key,
                 },
             )
+            response.raise_for_status()
             data = response.json()
 
             if "error" in data:
@@ -114,9 +115,9 @@ class BaiduProvider(Provider):
                 m = {"role": msg.role.value, "content": msg.content}
             if msg.tool_calls:
                 if len(msg.tool_calls) > 1:
-                    logger.warning(
-                        "Baidu provider only supports a single tool call per message, "
-                        "dropping %d extra tool calls", len(msg.tool_calls) - 1
+                    raise ProviderError(
+                        f"Baidu provider only supports a single tool call per message, "
+                        f"got {len(msg.tool_calls)}. Use a different provider for parallel tool calls."
                     )
                 m["function_call"] = {
                     "name": msg.tool_calls[0].name,
