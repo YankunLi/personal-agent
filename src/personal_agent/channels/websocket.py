@@ -277,6 +277,12 @@ class WebSocketChannel(Channel):
         self._conn_sessions[conn_id] = session
         # Reset agent for new session
         if conn_id in self._conn_agents:
+            # Sync current agent memory to the connection's session
+            current_session = self._conn_sessions.get(conn_id)
+            if current_session:
+                current_session.short_term = self._conn_agents[conn_id].short_term
+                current_session.working = self._conn_agents[conn_id].working
+                session_mgr.save_session(current_session)
             try:
                 await self._conn_agents[conn_id].close()
             except Exception:
