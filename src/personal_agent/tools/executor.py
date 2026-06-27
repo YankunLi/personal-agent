@@ -263,6 +263,8 @@ class ToolExecutor:
             for i, result in enumerate(parallel_results):
                 if isinstance(result, ToolResult):
                     results.append(result)
+                elif isinstance(result, BaseException):
+                    raise result
                 else:
                     results.append(
                         ToolResult(
