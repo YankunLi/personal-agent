@@ -63,6 +63,7 @@ class CLIChannel(Channel):
         self._in_multiline = False
         self._project_data: dict | None = None
         self._task_lock = asyncio.Lock()
+        self._background_tasks: set[asyncio.Task] = set()
 
     # ── Channel interface ────────────────────────────────────────────────────
 
@@ -123,6 +124,12 @@ class CLIChannel(Channel):
             await self._process_task(line.strip())
 
         # Cleanup
+        # Cancel any pending background tasks
+        for task in list(self._background_tasks):
+            if not task.done():
+                task.cancel()
+        if self._background_tasks:
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
         self._router.session_manager.save_current()
         await self._agent.close()
 
@@ -270,10 +277,8 @@ class CLIChannel(Channel):
             self._in_multiline = False
             if task.strip():
                 t = asyncio.create_task(self._process_task(task))
-                t.add_done_callback(
-                    lambda t: logger.error("Multiline task failed: %s", t.exception())
-                    if t.exception() else None
-                )
+                self._background_tasks.add(t)
+                t.add_done_callback(self._background_tasks.discard)
         elif line.strip() == "%%":
             self._multiline_buffer = []
             self._in_multiline = False
@@ -479,10 +484,8 @@ class CLIChannel(Channel):
         elif sub == "switch":
             if sub_arg:
                 t = asyncio.create_task(self._session_switch(sub_arg))
-                t.add_done_callback(
-                    lambda t: logger.error("Session switch failed: %s", t.exception())
-                    if t.exception() else None
-                )
+                self._background_tasks.add(t)
+                t.add_done_callback(self._background_tasks.discard)
             else:
                 print(f"{C_RED}Usage: /session switch <name>{C_RESET}")
         elif sub == "delete":
