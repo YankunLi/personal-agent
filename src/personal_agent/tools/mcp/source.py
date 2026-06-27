@@ -46,6 +46,9 @@ class MCPToolSource:
                 count = await self._connect_server(config)
                 total_tools += count
                 logger.info("MCP server '%s': %d tools registered", config.name, count)
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                await self.disconnect_all()
+                raise
             except Exception as e:
                 logger.error("Failed to connect to MCP server '%s': %s", config.name, e)
         return total_tools

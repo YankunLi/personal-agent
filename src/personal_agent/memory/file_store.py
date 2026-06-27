@@ -155,7 +155,8 @@ class FileMemoryStore:
         filepath = cache.get(name)
         if filepath is None or not filepath.exists():
             if filepath is not None:
-                self._invalidate_cache()
+                async with self._lock:
+                    self._invalidate_cache()
                 await self.repair_index()
             return None
 

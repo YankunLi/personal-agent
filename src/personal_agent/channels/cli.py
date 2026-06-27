@@ -62,6 +62,7 @@ class CLIChannel(Channel):
         self._multiline_buffer: list[str] = []
         self._in_multiline = False
         self._project_data: dict | None = None
+        self._task_lock = asyncio.Lock()
 
     # ── Channel interface ────────────────────────────────────────────────────
 
@@ -199,64 +200,65 @@ class CLIChannel(Channel):
         from personal_agent.selector import classify, explain
         from personal_agent.types import AgentCallbacks
 
-        start = time.time()
+        async with self._task_lock:
+            start = time.time()
 
-        # Show auto-selected pattern if in auto mode
-        if self._settings.agent.pattern == "auto":
-            suggested = classify(task)
-            print(f"{C_DIM}Auto pattern:{C_RESET} {C_GREEN}{suggested}{C_RESET} {C_DIM}— {explain(task)}{C_RESET}")
+            # Show auto-selected pattern if in auto mode
+            if self._settings.agent.pattern == "auto":
+                suggested = classify(task)
+                print(f"{C_DIM}Auto pattern:{C_RESET} {C_GREEN}{suggested}{C_RESET} {C_DIM}— {explain(task)}{C_RESET}")
 
-        # Wire up rich terminal display
-        display = TerminalDisplay()
-        self._agent._callbacks = AgentCallbacks(
-            on_step_start=display.on_step_start,
-            on_thought=display.on_thought,
-            on_tool_call=display.on_tool_call,
-            on_tool_result=display.on_tool_result,
-            on_answer=display.on_answer,
-            on_text_delta=display.on_text_delta,
-            on_tool_call_stream=display.on_tool_call_stream,
-        )
-        self._agent._streaming_enabled = True
+            # Wire up rich terminal display
+            display = TerminalDisplay()
+            self._agent._callbacks = AgentCallbacks(
+                on_step_start=display.on_step_start,
+                on_thought=display.on_thought,
+                on_tool_call=display.on_tool_call,
+                on_tool_result=display.on_tool_result,
+                on_answer=display.on_answer,
+                on_text_delta=display.on_text_delta,
+                on_tool_call_stream=display.on_tool_call_stream,
+            )
+            self._agent._streaming_enabled = True
 
-        try:
-            result = await self._agent.run(task)
-        except KeyboardInterrupt:
-            print(f"\n{C_YELLOW}Interrupted{C_RESET}")
-            return
-        except Exception as e:
-            logger.exception("Task processing failed: %s", e)
-            print(f"{C_RED}Error: {e}{C_RESET}")
-            return
+            try:
+                result = await self._agent.run(task)
+            except KeyboardInterrupt:
+                print(f"\n{C_YELLOW}Interrupted{C_RESET}")
+                return
+            except Exception as e:
+                logger.exception("Task processing failed: %s", e)
+                print(f"{C_RED}Error: {e}{C_RESET}")
+                return
 
-        elapsed = (time.time() - start) * 1000
+            elapsed = (time.time() - start) * 1000
 
-        # Status line
-        status_parts = []
-        if result.token_usage:
-            tokens = result.token_usage
-            total = tokens.get("total_tokens", tokens.get("input_tokens", 0) + tokens.get("output_tokens", 0))
-            status_parts.append(f"{C_DIM}{total} tokens{C_RESET}")
-        status_parts.append(f"{C_DIM}{len(result.steps)} steps{C_RESET}")
-        status_parts.append(f"{C_DIM}{elapsed:.0f}ms{C_RESET}")
-        print("  ".join(status_parts))
-        print()
+            # Status line
+            status_parts = []
+            if result.token_usage:
+                tokens = result.token_usage
+                total = tokens.get("total_tokens", tokens.get("input_tokens", 0) + tokens.get("output_tokens", 0))
+                status_parts.append(f"{C_DIM}{total} tokens{C_RESET}")
+            status_parts.append(f"{C_DIM}{len(result.steps)} steps{C_RESET}")
+            status_parts.append(f"{C_DIM}{elapsed:.0f}ms{C_RESET}")
+            print("  ".join(status_parts))
+            print()
 
-        # Record session history
-        self._session_tasks.append({
-            "task": task[:200],
-            "answer": result.answer[:1000],
-            "elapsed_ms": elapsed,
-            "token_usage": result.token_usage,
-            "steps": len(result.steps),
-        })
+            # Record session history
+            self._session_tasks.append({
+                "task": task[:200],
+                "answer": result.answer[:1000],
+                "elapsed_ms": elapsed,
+                "token_usage": result.token_usage,
+                "steps": len(result.steps),
+            })
 
-        # Persist session state after each task
-        session_mgr = self._router.session_manager
-        if session_mgr.current:
-            session_mgr.current.short_term = self._agent.short_term
-            session_mgr.current.working = self._agent.working
-            session_mgr.save_current()
+            # Persist session state after each task
+            session_mgr = self._router.session_manager
+            if session_mgr.current:
+                session_mgr.current.short_term = self._agent.short_term
+                session_mgr.current.working = self._agent.working
+                session_mgr.save_current()
 
     # ── Multiline input ──────────────────────────────────────────────────────
 

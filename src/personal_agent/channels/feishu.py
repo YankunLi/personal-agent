@@ -147,6 +147,7 @@ class FeishuChannel(Channel):
         self._conn_sessions: dict[str, Any] = {}
         self._pending_tasks: set[asyncio.Task] = set()
         self._agent_lock = asyncio.Lock()
+        self._user_locks: dict[str, asyncio.Lock] = {}
         self._stop_event = asyncio.Event()
 
     # ── Channel interface ────────────────────────────────────────────────────
@@ -306,7 +307,34 @@ class FeishuChannel(Channel):
         agent.short_term = session.short_term
         agent.working = session.working
 
-        # Run agent
+        # Serialize message processing per user to prevent concurrent state corruption
+        if user_id not in self._user_locks:
+            self._user_locks[user_id] = asyncio.Lock()
+        user_lock = self._user_locks[user_id]
+
+        async with user_lock:
+            await self._run_agent(agent, session, text, message_id)
+
+    # ── Agent management ─────────────────────────────────────────────────────
+
+    async def _get_or_create_agent(self, user_id: str) -> Any:
+        """Get or create an agent for a Feishu user."""
+        if user_id in self._conn_agents:
+            return self._conn_agents[user_id]
+
+        async with self._agent_lock:
+            # Double-check: another task may have created the agent while we waited
+            if user_id in self._conn_agents:
+                return self._conn_agents[user_id]
+
+            from personal_agent.factory import create_agent
+
+            agent = await create_agent(self._settings, user_id=user_id)
+            self._conn_agents[user_id] = agent
+            return agent
+
+    async def _run_agent(self, agent: Any, session: Any, text: str, message_id: str) -> None:
+        """Run the agent and send the reply. Called under per-user lock."""
         try:
             result = await agent.run(text)
             reply = result.answer[:self.MAX_REPLY_LENGTH]
@@ -331,24 +359,6 @@ class FeishuChannel(Channel):
                     await self._api.reply_text(message_id, f"Error: {str(e)[:500]}")
                 except Exception:
                     pass
-
-    # ── Agent management ─────────────────────────────────────────────────────
-
-    async def _get_or_create_agent(self, user_id: str) -> Any:
-        """Get or create an agent for a Feishu user."""
-        if user_id in self._conn_agents:
-            return self._conn_agents[user_id]
-
-        async with self._agent_lock:
-            # Double-check: another task may have created the agent while we waited
-            if user_id in self._conn_agents:
-                return self._conn_agents[user_id]
-
-            from personal_agent.factory import create_agent
-
-            agent = await create_agent(self._settings, user_id=user_id)
-            self._conn_agents[user_id] = agent
-            return agent
 
 
 # ANSI color for startup message

@@ -203,4 +203,7 @@ class DebateAgent(BaseAgent):
                     self._total_usage[key] = self._total_usage.get(key, 0) + val
             return result.answer
         finally:
-            await judge_agent.close()
+            try:
+                await judge_agent.close()
+            except Exception:
+                pass

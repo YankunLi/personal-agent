@@ -166,4 +166,7 @@ class ParallelJudgeAgent(BaseAgent):
             return response.content
         finally:
             if hasattr(judge_provider, "close"):
-                await judge_provider.close()
+                try:
+                    await judge_provider.close()
+                except Exception:
+                    pass

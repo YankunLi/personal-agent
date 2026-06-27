@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 
@@ -50,7 +51,7 @@ class LLMCompressor(ContextCompressor):
                 temperature=0.3,
             )
             return response.content
-        except BaseException:
+        except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
             raise
         except Exception as e:
             logger.warning("LLM compression failed, using fallback: %s", e)
