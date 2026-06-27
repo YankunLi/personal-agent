@@ -103,7 +103,15 @@ class BaiduProvider(Provider):
         """Convert internal messages to Baidu Qianfan format."""
         baidu_msgs = []
         for msg in messages:
-            m = {"role": msg.role.value, "content": msg.content}
+            if msg.role == Role.TOOL:
+                # Baidu Qianfan expects function results with role="function" and a name
+                m = {
+                    "role": "function",
+                    "name": msg.metadata.get("tool_name", msg.tool_call_id or "unknown"),
+                    "content": msg.content,
+                }
+            else:
+                m = {"role": msg.role.value, "content": msg.content}
             if msg.tool_calls:
                 if len(msg.tool_calls) > 1:
                     logger.warning(

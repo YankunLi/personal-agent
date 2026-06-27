@@ -343,6 +343,7 @@ class BaseAgent(ABC):
                     role=Role.TOOL,
                     content=content,
                     tool_call_id=result.call_id,
+                    metadata={"tool_name": result.name},
                 )
             )
 
