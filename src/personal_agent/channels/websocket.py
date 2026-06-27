@@ -273,16 +273,18 @@ class WebSocketChannel(Channel):
         """Create a new session."""
         name = data.get("name", f"web-{conn_id}")
         session_mgr = self._router.session_manager
+
+        # Save old session state before replacing it
+        old_session = self._conn_sessions.get(conn_id)
+        if old_session and conn_id in self._conn_agents:
+            old_session.short_term = self._conn_agents[conn_id].short_term
+            old_session.working = self._conn_agents[conn_id].working
+            session_mgr.save_session(old_session)
+
         session = session_mgr.create(name)
         self._conn_sessions[conn_id] = session
         # Reset agent for new session
         if conn_id in self._conn_agents:
-            # Sync current agent memory to the connection's session
-            current_session = self._conn_sessions.get(conn_id)
-            if current_session:
-                current_session.short_term = self._conn_agents[conn_id].short_term
-                current_session.working = self._conn_agents[conn_id].working
-                session_mgr.save_session(current_session)
             try:
                 await self._conn_agents[conn_id].close()
             except Exception:
