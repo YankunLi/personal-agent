@@ -158,7 +158,11 @@ class FileMemoryStore:
                 async with self._lock:
                     self._invalidate_cache()
                 await self.repair_index()
-            return None
+                # Retry with rebuilt cache
+                cache = await self._ensure_cache()
+                filepath = cache.get(name)
+            if filepath is None or not filepath.exists():
+                return None
 
         text = await asyncio.to_thread(filepath.read_text)
         return _parse_frontmatter(text)

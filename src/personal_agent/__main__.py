@@ -100,7 +100,10 @@ async def run_agent(task: str, config_path: str | None = None, workdir: Path | N
         on_tool_call=display.on_tool_call,
         on_tool_result=display.on_tool_result,
         on_answer=display.on_answer,
+        on_text_delta=display.on_text_delta,
+        on_tool_call_stream=display.on_tool_call_stream,
     )
+    agent._streaming_enabled = True
 
     try:
         result = await agent.run(task)

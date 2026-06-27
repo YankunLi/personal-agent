@@ -156,6 +156,8 @@ class BaseAgent(ABC):
                         # Only fire for complete tool calls (name + arguments present)
                         if tc.name:
                             await self._fire("on_tool_call_stream", tc.name, tc.arguments)
+                        # Deduplicate by id: later chunks may have more complete data
+                        accumulated_tool_calls = [t for t in accumulated_tool_calls if t.id != tc.id]
                         accumulated_tool_calls.append(tc)
 
                 if chunk.finish_reason != "stop":
@@ -380,7 +382,7 @@ class BaseAgent(ABC):
                 # (e.g., max_steps exceeded produces a synthetic answer not in the conversation)
                 if answer and answer != "No answer produced.":
                     last_msg = conversation[-1] if conversation else None
-                    if not last_msg or last_msg.role != Role.ASSISTANT or last_msg.content != answer:
+                    if not last_msg or last_msg.role != Role.ASSISTANT or last_msg.content != answer[:2000]:
                         conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
                 # Prune completed tasks before adding new ones
                 self._consolidation_tasks = [t for t in self._consolidation_tasks if not t.done()]

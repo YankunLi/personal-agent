@@ -68,6 +68,7 @@ class WebSocketChannel(Channel):
         self._conn_sessions: dict[int, Any] = {}
         self._conn_counter = 0
         self._agent_lock = asyncio.Lock()
+        self._conn_locks: dict[int, asyncio.Lock] = {}
 
     # ── Channel interface ────────────────────────────────────────────────────
 
@@ -162,82 +163,88 @@ class WebSocketChannel(Channel):
             await self._send(websocket, {"type": "error", "text": "Empty task"})
             return
 
-        # Determine user_id for this connection
-        session = self._conn_sessions.get(conn_id)
-        user_id = session.user_id if session else "web-user"
-        conv_id = session.conversation_id if session else f"conn-{conn_id}"
+        # Serialize task execution per connection to prevent concurrent state corruption
+        if conn_id not in self._conn_locks:
+            self._conn_locks[conn_id] = asyncio.Lock()
+        conn_lock = self._conn_locks[conn_id]
 
-        # Create channel message and resolve session (before creating agent so
-        # _get_or_create_agent sees the correct user_id for memory isolation)
-        msg = ChannelMessage(
-            channel=WS_CHANNEL,
-            user_id=user_id,
-            conversation_id=conv_id,
-            text=text,
-        )
-        resolved = self._router.resolve(msg)
-        self._conn_sessions[conn_id] = resolved
+        async with conn_lock:
+            # Determine user_id for this connection
+            session = self._conn_sessions.get(conn_id)
+            user_id = session.user_id if session else "web-user"
+            conv_id = session.conversation_id if session else f"conn-{conn_id}"
 
-        # Get or create agent for this connection
-        agent = await self._get_or_create_agent(conn_id)
+            # Create channel message and resolve session (before creating agent so
+            # _get_or_create_agent sees the correct user_id for memory isolation)
+            msg = ChannelMessage(
+                channel=WS_CHANNEL,
+                user_id=user_id,
+                conversation_id=conv_id,
+                text=text,
+            )
+            resolved = self._router.resolve(msg)
+            self._conn_sessions[conn_id] = resolved
 
-        # Restore session memory into agent
-        agent.short_term = resolved.short_term
-        agent.working = resolved.working
+            # Get or create agent for this connection
+            agent = await self._get_or_create_agent(conn_id)
 
-        # Wire up callbacks to stream to WebSocket
-        from personal_agent.types import AgentCallbacks
+            # Restore session memory into agent
+            agent.short_term = resolved.short_term
+            agent.working = resolved.working
 
-        agent._callbacks = AgentCallbacks(
-            on_step_start=lambda step, total: self._send(
-                websocket, {"type": "step_start", "step": step, "total": total},
-            ),
-            on_thought=lambda thought: self._send(
-                websocket, {"type": "thought", "text": thought},
-            ),
-            on_tool_call=lambda name, args: self._send(
-                websocket, {"type": "tool_call", "name": name, "arguments": args},
-            ),
-            on_tool_result=lambda name, output, error: self._send(
-                websocket, {
-                    "type": "tool_result",
-                    "name": name,
-                    "output": str(output)[:5000] if output else None,
-                    "error": error,
-                },
-            ),
-            on_answer=lambda answer: self._send(
-                websocket, {"type": "answer", "text": answer},
-            ),
-            on_text_delta=lambda text: self._send(
-                websocket, {"type": "text_delta", "text": text},
-            ),
-            on_tool_call_stream=lambda name, args: self._send(
-                websocket, {"type": "tool_call_stream", "name": name, "arguments": args},
-            ),
-        )
-        agent._streaming_enabled = True
+            # Wire up callbacks to stream to WebSocket
+            from personal_agent.types import AgentCallbacks
 
-        start = time.time()
-        try:
-            result = await agent.run(text)
-            elapsed_ms = (time.time() - start) * 1000
+            agent._callbacks = AgentCallbacks(
+                on_step_start=lambda step, total: self._send(
+                    websocket, {"type": "step_start", "step": step, "total": total},
+                ),
+                on_thought=lambda thought: self._send(
+                    websocket, {"type": "thought", "text": thought},
+                ),
+                on_tool_call=lambda name, args: self._send(
+                    websocket, {"type": "tool_call", "name": name, "arguments": args},
+                ),
+                on_tool_result=lambda name, output, error: self._send(
+                    websocket, {
+                        "type": "tool_result",
+                        "name": name,
+                        "output": str(output)[:5000] if output else None,
+                        "error": error,
+                    },
+                ),
+                on_answer=lambda answer: self._send(
+                    websocket, {"type": "answer", "text": answer},
+                ),
+                on_text_delta=lambda text: self._send(
+                    websocket, {"type": "text_delta", "text": text},
+                ),
+                on_tool_call_stream=lambda name, args: self._send(
+                    websocket, {"type": "tool_call_stream", "name": name, "arguments": args},
+                ),
+            )
+            agent._streaming_enabled = True
 
-            # Send final status
-            await self._send(websocket, {
-                "type": "status",
-                "token_usage": result.token_usage,
-                "elapsed_ms": elapsed_ms,
-                "steps": len(result.steps),
-            })
-        except Exception as e:
-            logger.exception("Task execution failed for conn %d", conn_id)
-            await self._send(websocket, {"type": "error", "text": str(e)})
-        finally:
-            # Persist session state even on error
-            resolved.short_term = agent.short_term
-            resolved.working = agent.working
-            self._router.session_manager.save_current()
+            start = time.time()
+            try:
+                result = await agent.run(text)
+                elapsed_ms = (time.time() - start) * 1000
+
+                # Send final status
+                await self._send(websocket, {
+                    "type": "status",
+                    "token_usage": result.token_usage,
+                    "elapsed_ms": elapsed_ms,
+                    "steps": len(result.steps),
+                })
+            except Exception as e:
+                logger.exception("Task execution failed for conn %d", conn_id)
+                await self._send(websocket, {"type": "error", "text": str(e)})
+            finally:
+                # Persist session state even on error
+                resolved.short_term = agent.short_term
+                resolved.working = agent.working
+                self._router.session_manager.save_current()
 
     # ── Agent management ─────────────────────────────────────────────────────
 
