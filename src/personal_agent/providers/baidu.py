@@ -218,6 +218,7 @@ class BaiduProvider(Provider):
                 params={"access_token": token},
                 json=payload,
             ) as response:
+                usage: dict[str, int] = {}
                 async for line in response.aiter_lines():
                     if line.startswith("data:"):
                         data_str = line[5:].strip()
@@ -243,6 +244,14 @@ class BaiduProvider(Provider):
                                     )
                                 )
 
+                            # Accumulate usage from the last chunk
+                            if "usage" in data:
+                                usage = {
+                                    "prompt_tokens": data["usage"].get("prompt_tokens", 0),
+                                    "completion_tokens": data["usage"].get("completion_tokens", 0),
+                                    "total_tokens": data["usage"].get("total_tokens", 0),
+                                }
+
                             if content or tool_calls:
                                 yield ChatResponse(
                                     content=content,
@@ -251,6 +260,13 @@ class BaiduProvider(Provider):
                                 )
                         except json.JSONDecodeError:
                             continue
+
+                # Yield final chunk with usage
+                yield ChatResponse(
+                    content="",
+                    model=self._model,
+                    usage=usage,
+                )
 
         except Exception as e:
             raise_provider_error(e)
