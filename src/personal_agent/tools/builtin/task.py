@@ -278,6 +278,7 @@ def create_task_update_tool(session_id: str = "default") -> Tool:
             })
 
         updated_fields: list[str] = []
+        updates: dict[str, Any] = {}
 
         # Handle status changes (including delete)
         if status is not None:
@@ -292,9 +293,9 @@ def create_task_update_tool(session_id: str = "default") -> Tool:
             else:
                 resolve_dependencies(session_id, taskId, status)
                 updated_fields.append("status")
+                updates["status"] = status
 
         # Build updates dict for non-status fields
-        updates: dict[str, Any] = {}
         if subject is not None and subject != existing.get("subject"):
             updates["subject"] = subject
             updated_fields.append("subject")
