@@ -32,6 +32,9 @@ class LongTermMemory:
     async def recall(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
         """Search all stored memories using keyword matching."""
         entries = await asyncio.to_thread(self._store.list_all)
+        if not entries:
+            return []
+
         memory_entries = []
         for entry in entries:
             result = await self._store.get(entry["name"])

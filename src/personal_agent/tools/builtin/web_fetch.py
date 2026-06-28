@@ -128,6 +128,7 @@ def create_web_fetch_tool(
             ),
             parameters=WEB_FETCH_PARAMETERS,
             mutating=False,
+            concurrency_safe=True,
         ),
         fn=_execute,
     )

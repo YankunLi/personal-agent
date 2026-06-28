@@ -87,7 +87,7 @@ def classify(task: str) -> AgentPattern:
             return "plan_execute"
         return "react"
 
-    return best  # type: ignore
+    return best
 
 
 def explain(task: str) -> str:

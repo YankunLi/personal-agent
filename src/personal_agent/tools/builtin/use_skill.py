@@ -62,4 +62,5 @@ def create_use_skill_tool(skill_manager: Any = None) -> Any:
         name="use_skill",
         description="Invoke a skill by name to load its full instructions. Use this when a skill matches the user's request.",
         parameters=USE_SKILL_PARAMETERS,
+        mutating=True,
     )(_use_skill)

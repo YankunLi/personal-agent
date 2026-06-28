@@ -81,7 +81,7 @@ class PlanAndExecuteAgent(BaseAgent):
         self.working.set("plan", plan)
 
         # Prune plan generation messages to prevent context growth
-        del state.messages[base_msg_count:]
+        state.messages = state.messages[:base_msg_count]
 
         # Phase 2: Execute each step
         step_results = []
@@ -92,7 +92,7 @@ class PlanAndExecuteAgent(BaseAgent):
         while i < len(plan) and total_steps < self.max_steps:
             total_steps += 1
             step = plan[i]
-            logger.info("Executing step %d/%d: %s", i + 1, len(plan), step["description"][:80])
+            logger.info("Executing step %d/%d: %s", i + 1, len(plan), step.get("description", str(step))[:80])
 
             step_result = await self._execute_step(state, step)
             step_results.append(step_result)
@@ -102,7 +102,7 @@ class PlanAndExecuteAgent(BaseAgent):
                 if i < len(plan) - 1 and replan_count < self.MAX_REPLAN_ATTEMPTS:
                     new_plan = await self._replan(state, plan, step_results, step)
                     replan_count += 1
-                    del state.messages[base_msg_count:]  # Prune replan messages
+                    state.messages = state.messages[:base_msg_count]  # Prune replan messages
                     if new_plan is plan:
                         # Replan returned the same plan (fallback) — skip the failed step
                         i += 1
@@ -189,16 +189,15 @@ class PlanAndExecuteAgent(BaseAgent):
 
                 for tc, result in zip(response.tool_calls, results):
                     await self._fire("on_tool_result", tc.name, result.output, result.error)
-                for tc, result in zip(response.tool_calls, results):
                     state.steps.append(AgentStep(thought=response.content, action=tc, observation=result))
-                self._add_tool_results_to_messages(state.messages, results)
 
-                # Track consecutive failures to prevent infinite retry loops
-                for tc, result in zip(response.tool_calls, results):
+                    # Track consecutive failures to prevent infinite retry loops
                     if result.is_error:
                         consecutive_failures[tc.name] = consecutive_failures.get(tc.name, 0) + 1
                     else:
                         consecutive_failures.pop(tc.name, None)
+
+                self._add_tool_results_to_messages(state.messages, results)
 
                 for tool_name, fail_count in list(consecutive_failures.items()):
                     if fail_count >= self.MAX_CONSECUTIVE_TOOL_FAILURES:

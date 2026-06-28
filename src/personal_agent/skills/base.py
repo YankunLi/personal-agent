@@ -760,6 +760,9 @@ class SkillManager:
         Returns:
             List of installed skill names.
         """
+        if not url or not url.strip():
+            raise SkillError("Git URL is required")
+
         if target_dir is None:
             target_dir = self.get_user_skills_dir()
 

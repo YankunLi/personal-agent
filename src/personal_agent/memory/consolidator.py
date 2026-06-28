@@ -6,6 +6,7 @@ and context from the conversation and saves them as structured memory files.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -133,12 +134,14 @@ class MemoryConsolidator:
                     added = await agent_knowledge.append_learnings(learnings)
                     if added:
                         logger.info("Agent knowledge: %d new learnings added", added)
+                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                    raise
                 except Exception as e:
                     logger.warning("Failed to append agent learnings: %s", e)
 
             return applied
         except Exception as e:
-            logger.warning("Consolidation failed: %s", e)
+            logger.exception("Consolidation failed: %s", e)
             return []
 
     async def _extract(

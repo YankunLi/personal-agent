@@ -72,13 +72,19 @@ class CompressionStrategy(ContextStrategy):
 
     @staticmethod
     def _estimate_tokens(messages: list[Message]) -> int:
-        """Rough token estimation: ~4 chars per token."""
+        """Rough token estimation: ~4 chars per token for English, ~1.5 for CJK.
+        Uses a weighted average of ~3.5 chars/token as a conservative estimate."""
         total = 0
         for m in messages:
-            total += len(m.content or "") // 4
+            text = m.content or ""
+            # Count CJK characters (higher token density)
+            cjk = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+            non_cjk = len(text) - cjk
+            total += non_cjk // 4 + int(cjk / 1.5)
             if m.tool_calls:
                 for tc in m.tool_calls:
-                    total += len(str(tc.arguments)) // 4
+                    args_str = str(tc.arguments)
+                    total += len(args_str) // 4
         return total
 
 

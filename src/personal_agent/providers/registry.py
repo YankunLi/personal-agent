@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from personal_agent.config import ProviderCredentials, Settings
 from personal_agent.exceptions import ConfigError
 from personal_agent.providers.base import Provider
 from personal_agent.providers.openai_compat import OpenAICompatibleProvider
+
+logger = logging.getLogger(__name__)
 
 # Pre-configured provider map: provider_name -> (class, default_base_url, default_model)
 PROVIDER_REGISTRY: dict[str, dict] = {
@@ -90,6 +94,13 @@ def create_provider(
 
     if not base_url:
         base_url = meta.get("base_url")
+
+    if not api_key:
+        logger.warning(
+            "No API key provided for provider '%s'. "
+            "Set it via PA_PROVIDERS__%s__API_KEY or in your config file.",
+            provider_name, provider_name.upper(),
+        )
 
     if meta["class"] == "openai_compat":
         return OpenAICompatibleProvider(

@@ -10,8 +10,7 @@ from typing import Any
 from personal_agent.config import ParallelAgentConfig
 from personal_agent.core.agent import BaseAgent
 from personal_agent.factory import create_sub_agent
-from personal_agent.providers.registry import create_provider, ProviderCredentials
-from personal_agent.types import AgentResult, AgentStep, Message, Role
+from personal_agent.types import AgentResult, AgentStep
 
 logger = logging.getLogger(__name__)
 
@@ -139,46 +138,47 @@ class ParallelJudgeAgent(BaseAgent):
         finally:
             try:
                 await agent.close()
-            except Exception:
-                pass
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as e:
+                logger.warning("Error closing agent for '%s': %s", cfg.name, e)
 
     async def _run_judge(self, task: str, answers: dict[str, str]) -> str:
         """Run the judge to evaluate and select the best answer."""
-        creds = self._providers.get(self._judge_provider_name, ProviderCredentials())
-        judge_provider = create_provider(
-            provider_name=self._judge_provider_name,
-            model=self._judge_model,
-            credentials=creds,
-        )
+        from personal_agent.config import SubAgentConfig
 
+        judge_cfg = SubAgentConfig(
+            pattern="react",
+            provider=self._judge_provider_name,
+            model=self._judge_model,
+            temperature=self._judge_temperature,
+            system_prompt=JUDGE_SYSTEM_PROMPT,
+            description="Parallel judge",
+        )
+        judge_agent = await create_sub_agent(
+            judge_cfg, self._providers,
+            extra_tools=self.tools.list_mcp_tools(),
+        )
         try:
             responses = "\n\n".join(
                 f"### {name}\n{answer}" for name, answer in answers.items()
             )
-            judge_prompt = (
+            judge_task = (
                 f"Original task: {task}\n\n"
                 f"Answers from {len(answers)} agents:\n\n{responses}\n\n"
                 f"Evaluate these answers and provide the best result. "
                 f"If multiple answers are good, synthesize the best parts into one."
             )
 
-            messages = [
-                Message(role=Role.SYSTEM, content=JUDGE_SYSTEM_PROMPT),
-                Message(role=Role.USER, content=judge_prompt),
-            ]
-
-            response = await judge_provider.chat(
-                messages,
-                temperature=self._judge_temperature,
-                max_tokens=8192,
-            )
-            if response.usage:
-                for key, val in response.usage.items():
+            result = await judge_agent.run(judge_task)
+            if result.token_usage:
+                for key, val in result.token_usage.items():
                     self._total_usage[key] = self._total_usage.get(key, 0) + val
-            return response.content
+            return result.answer
         finally:
-            if hasattr(judge_provider, "close"):
-                try:
-                    await judge_provider.close()
-                except Exception:
-                    pass
+            try:
+                await judge_agent.close()
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as e:
+                logger.warning("Error closing judge agent: %s", e)

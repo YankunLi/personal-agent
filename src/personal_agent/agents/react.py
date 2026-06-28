@@ -89,15 +89,14 @@ class ReActAgent(BaseAgent):
                     )
                     await self._fire("on_tool_result", tc.name, result.output, result.error)
 
-                # Add tool results to messages
-                self._add_tool_results_to_messages(state.messages, results)
-
-                # Track consecutive failures to prevent infinite retry loops
-                for tc, result in zip(response.tool_calls, results):
+                    # Track consecutive failures to prevent infinite retry loops
                     if result.is_error:
                         consecutive_failures[tc.name] = consecutive_failures.get(tc.name, 0) + 1
                     else:
                         consecutive_failures.pop(tc.name, None)
+
+                # Add tool results to messages
+                self._add_tool_results_to_messages(state.messages, results)
 
                 # If the same tool failed too many times, inject a hint to break the loop
                 for tool_name, fail_count in list(consecutive_failures.items()):
@@ -118,7 +117,7 @@ class ReActAgent(BaseAgent):
                 state.done = True
                 state.final_answer = response.content
                 state.steps.append(
-                    AgentStep(thought=response.content[:200], action=None, observation=None)
+                    AgentStep(thought=response.content, action=None, observation=None)
                 )
                 await self._fire("on_answer", response.content)
                 logger.info("ReAct complete after %d steps", step_count)

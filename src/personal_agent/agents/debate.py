@@ -11,7 +11,7 @@ from personal_agent.config import DebateRoleConfig, SubAgentConfig
 from personal_agent.core.agent import BaseAgent
 from personal_agent.factory import create_sub_agent
 from personal_agent.providers.registry import ProviderCredentials
-from personal_agent.types import AgentResult, AgentStep, Role
+from personal_agent.types import AgentResult, AgentStep
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +71,6 @@ class DebateAgent(BaseAgent):
         self._max_rounds = max_rounds
         self._providers = providers or {}
         self._role_agents: dict[str, BaseAgent] = {}
-        self._judge_agent: BaseAgent | None = None
 
     async def run(self, task: str, **kwargs: Any) -> AgentResult:
         start_time = time.time()
@@ -158,11 +157,13 @@ class DebateAgent(BaseAgent):
             all_steps.append(AgentStep(thought="Judge synthesis", observation=judge_answer[:1000]))
         finally:
             # Clean up role agents
-            for agent in self._role_agents.values():
+            for name, agent in self._role_agents.items():
                 try:
                     await agent.close()
-                except Exception:
-                    pass
+                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception as e:
+                    logger.warning("Error closing role agent '%s': %s", name, e)
             self._role_agents.clear()
 
         state.done = True
@@ -232,5 +233,7 @@ class DebateAgent(BaseAgent):
         finally:
             try:
                 await judge_agent.close()
-            except Exception:
-                pass
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as e:
+                logger.warning("Error closing judge agent: %s", e)

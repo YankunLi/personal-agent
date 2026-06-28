@@ -6,7 +6,7 @@ import asyncio
 import os
 import tempfile
 
-from personal_agent.tools.base import FunctionTool, Tool, tool
+from personal_agent.tools.base import FunctionTool, Tool
 
 CODE_EXEC_PARAMETERS = {
     "type": "object",

@@ -38,4 +38,4 @@ class WorkingMemory:
         return len(self._data)
 
     def __bool__(self) -> bool:
-        return True  # Always truthy — empty working memory is still valid
+        return bool(self._data)

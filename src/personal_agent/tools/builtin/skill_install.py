@@ -56,4 +56,5 @@ def create_skill_install_tool(skill_manager: Any = None) -> Any:
         name="install_skill",
         description="Install a skill from a git repository URL (e.g., github.com/user/repo).",
         parameters=SKILL_INSTALL_PARAMETERS,
+        mutating=True,
     )(_install_skill_from_url)

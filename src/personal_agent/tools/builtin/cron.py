@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from personal_agent.cron_scheduler import CronScheduler, _next_cron_match

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from personal_agent.context.budget import ContextBudgetManager
@@ -14,6 +15,8 @@ from personal_agent.context.strategies import (
     SlidingWindowStrategy,
 )
 from personal_agent.types import Message
+
+logger = logging.getLogger(__name__)
 
 
 class ContextManager:
@@ -82,6 +85,10 @@ class ContextManager:
 
         if strategy_name == "hybrid":
             if compression_provider is None and provider is None:
+                logger.warning(
+                    "Hybrid strategy selected but no compression provider available. "
+                    "Falling back to sliding_window strategy."
+                )
                 return cls(
                     strategy=SlidingWindowStrategy(max_messages=max_messages),
                     max_tokens=max_tokens,

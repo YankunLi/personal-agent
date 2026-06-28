@@ -6,6 +6,7 @@ high-quality answers through self-improvement.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any
@@ -146,7 +147,6 @@ class ReflectionAgent(BaseAgent):
 
     async def _critique(self, task: str, response: str) -> dict:
         """Critique the generated response."""
-        import json
 
         critique_prompt = (
             f"Original task: {task}\n\n"
@@ -161,6 +161,9 @@ class ReflectionAgent(BaseAgent):
 
         # Call provider directly — critique messages are only 2 messages,
         # so context management (compression, sliding window) is unnecessary.
+        # This intentionally bypasses _call_llm to avoid the overhead of state
+        # management, streaming, and hooks for a simple JSON-structured critique.
+        # Token usage is manually accumulated below.
         result = await self.provider.chat(
             critique_messages,
             temperature=0.3,

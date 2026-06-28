@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from personal_agent.exceptions import ToolExecutionError
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.tools.builtin._workspace_utils import (

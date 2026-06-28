@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
@@ -10,7 +11,7 @@ from personal_agent.config import PipelineStageConfig, SubAgentConfig
 from personal_agent.core.agent import BaseAgent
 from personal_agent.factory import create_sub_agent
 from personal_agent.providers.registry import ProviderCredentials
-from personal_agent.types import AgentResult, AgentStep, Role
+from personal_agent.types import AgentResult, AgentStep
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,8 @@ class PipelineAgent(BaseAgent):
                 if stage_result.token_usage:
                     for key, val in stage_result.token_usage.items():
                         self._total_usage[key] = self._total_usage.get(key, 0) + val
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                raise
             except Exception as e:
                 logger.warning("Pipeline stage %d '%s' failed: %s", i + 1, stage_cfg.name, e)
                 all_steps.append(AgentStep(
@@ -106,6 +109,8 @@ class PipelineAgent(BaseAgent):
             finally:
                 try:
                     await stage_agent.close()
+                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                    raise
                 except Exception as close_err:
                     logger.warning("Error closing pipeline stage %d '%s': %s", i + 1, stage_cfg.name, close_err)
 

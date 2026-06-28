@@ -224,5 +224,10 @@ class AgentKnowledge:
     def _write_file(path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(path.suffix + ".tmp")
-        tmp_path.write_text(content)
-        os.replace(tmp_path, path)
+        try:
+            tmp_path.write_text(content)
+            os.replace(tmp_path, path)
+        except Exception:
+            if tmp_path.exists():
+                tmp_path.unlink()
+            raise

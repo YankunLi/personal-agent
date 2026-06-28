@@ -160,7 +160,7 @@ class BaiduProvider(Provider):
             data = response.json()
 
             if "error_code" in data:
-                raise Exception(
+                raise ProviderError(
                     f"Baidu API error {data['error_code']}: {data.get('error_msg', 'Unknown')}"
                 )
 

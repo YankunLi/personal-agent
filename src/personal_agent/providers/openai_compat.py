@@ -210,7 +210,7 @@ class OpenAICompatibleProvider(Provider):
                         )
                 yield ChatResponse(
                     content="",
-                    tool_calls=tool_calls if tool_calls else None,
+                    tool_calls=tool_calls if tool_calls else [],
                     finish_reason="tool_calls" if tool_call_deltas else "stop",
                     model=stream_model,
                     usage=usage,
