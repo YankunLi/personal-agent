@@ -564,7 +564,6 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         "budget_manager": budget_manager,
         "context_manager": context_manager,
         "skill_manager": skill_manager,
-        "cron_scheduler": cron_scheduler,
         "max_steps": agent_cfg.max_steps,
         "system_prompt": agent_cfg.system_prompt,
         "temperature": agent_cfg.temperature,

@@ -156,4 +156,5 @@ def create_self_upgrade_tool(
             "For what you're good or bad at, use knowledge_section='Capabilities'."
         ),
         parameters=SELF_UPGRADE_PARAMETERS,
+        mutating=True,
     )(bound_fn)

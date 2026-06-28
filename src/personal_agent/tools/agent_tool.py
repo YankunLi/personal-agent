@@ -39,6 +39,7 @@ class AgentTool(Tool):
             name=name,
             description=description,
             parameters=AGENT_TOOL_PARAMETERS,
+            mutating=True,
         )
 
     @property
