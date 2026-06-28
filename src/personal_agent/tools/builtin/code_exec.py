@@ -61,7 +61,7 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
                 tmp_path = f.name
                 try:
                     f.write(code)
-                except Exception:
+                except BaseException:
                     os.unlink(tmp_path)
                     raise
             try:

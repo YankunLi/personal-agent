@@ -99,6 +99,9 @@ class MCPToolSource:
             raise MCPConnectionError(
                 f"Failed to initialize MCP server '{config.name}': {e}"
             ) from e
+        except BaseException:
+            await self._cleanup_context(ctx)
+            raise
 
         try:
             await asyncio.wait_for(
@@ -117,6 +120,10 @@ class MCPToolSource:
             raise MCPConnectionError(
                 f"Failed to initialize MCP server '{config.name}': {e}"
             ) from e
+        except BaseException:
+            await self._cleanup_session(session)
+            await self._cleanup_context(ctx)
+            raise
 
         # Discover and register tools
         try:
@@ -130,6 +137,10 @@ class MCPToolSource:
             raise MCPConnectionError(
                 f"Failed to list tools from MCP server '{config.name}'"
             )
+        except BaseException:
+            await self._cleanup_session(session)
+            await self._cleanup_context(ctx)
+            raise
 
         count = 0
 

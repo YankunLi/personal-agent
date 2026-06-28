@@ -267,10 +267,11 @@ class CronScheduler:
                 job.fired_count += 1
 
                 if self._callback:
-                    try:
-                        await self._callback(job.prompt)
-                    except Exception as e:
-                        logger.error("Cron callback error for job '%s': %s", job.id, e)
+                    # Fire callback as background task so the scheduler loop
+                    # isn't blocked by long-running callbacks.
+                    asyncio.create_task(
+                        self._fire_callback(job.id, job.prompt)
+                    )
 
                 if not job.recurring:
                     to_remove.append(job.id)
@@ -279,6 +280,13 @@ class CronScheduler:
             job = self._jobs.pop(job_id, None)
             if job and job.durable:
                 await self._save_durable()
+
+    async def _fire_callback(self, job_id: str, prompt: str) -> None:
+        """Fire a callback with error handling, safe for background execution."""
+        try:
+            await self._callback(prompt)  # type: ignore[misc]
+        except Exception as e:
+            logger.error("Cron callback error for job '%s': %s", job_id, e)
 
     async def _save_durable(self) -> None:
         """Save durable jobs to the JSON file."""
