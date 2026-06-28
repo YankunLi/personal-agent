@@ -278,6 +278,14 @@ def _parse_paths(raw: list[str] | str | None) -> list[str]:
     return [p.strip() for p in raw if p.strip()]
 
 
+def _validate_name_as_path(name: str) -> None:
+    """Validate that a skill name is safe to use as a path component."""
+    if ".." in name or "/" in name or "\\" in name:
+        raise SkillError(f"Skill name '{name}' contains invalid path characters")
+    if Path(name).name != name:
+        raise SkillError(f"Skill name '{name}' is not a valid path component")
+
+
 def _glob_to_regex(pattern: str) -> str:
     """Convert a glob pattern to a regex, supporting ** for recursive matching."""
     parts = []
@@ -717,6 +725,7 @@ class SkillManager:
         if skill is None:
             raise SkillError(f"Skill '{name}' not registered")
 
+        _validate_name_as_path(name)
         skill_dir = directory / name
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_md = skill_dir / "SKILL.md"
@@ -816,6 +825,7 @@ class SkillManager:
                 skill = self._skills[name]
                 if skill.base_path is None:
                     continue
+                _validate_name_as_path(name)
                 target_skill_dir = target_dir / name
                 if target_skill_dir.exists():
                     logger.warning("Skill '%s' already exists at %s, skipping", name, target_skill_dir)

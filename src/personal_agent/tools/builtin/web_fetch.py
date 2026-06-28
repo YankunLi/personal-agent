@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
+import socket
 from html.parser import HTMLParser
+from urllib.parse import urlparse
 
 import httpx
 
@@ -24,6 +27,18 @@ WEB_FETCH_PARAMETERS = {
 
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_CONTENT_CHARS = 100_000
+# Blocked host patterns: private, loopback, link-local, and multicast addresses
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),       # RFC 1918
+    ipaddress.ip_network("172.16.0.0/12"),    # RFC 1918
+    ipaddress.ip_network("192.168.0.0/16"),   # RFC 1918
+    ipaddress.ip_network("127.0.0.0/8"),      # Loopback
+    ipaddress.ip_network("169.254.0.0/16"),   # Link-local
+    ipaddress.ip_network("224.0.0.0/4"),      # Multicast
+    ipaddress.ip_network("::1/128"),          # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),         # IPv6 unique local
+    ipaddress.ip_network("fe80::/10"),        # IPv6 link-local
+]
 
 # Tags whose content should be silently dropped
 _SKIP_TAGS = {"script", "style", "noscript", "head", "title", "meta"}
@@ -66,6 +81,28 @@ class _TextExtractor(HTMLParser):
         return text.strip()
 
 
+def _validate_url(url: str) -> None:
+    """Validate URL safety: only http/https, no private/internal hosts."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ToolExecutionError(f"URL scheme '{parsed.scheme}' is not allowed")
+    host = parsed.hostname
+    if not host:
+        raise ToolExecutionError(f"URL has no valid hostname: {url}")
+    # Check if host is a literal private IP address
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        # Try DNS resolution; if it fails, let the HTTP request handle it
+        try:
+            addr = ipaddress.ip_address(socket.gethostbyname(host))
+        except (socket.gaierror, OSError, ValueError):
+            return
+    for network in _BLOCKED_NETWORKS:
+        if addr in network:
+            raise ToolExecutionError(f"URL resolves to restricted address: {addr}")
+
+
 def create_web_fetch_tool(
     timeout: float = DEFAULT_TIMEOUT,
     max_content_chars: int = DEFAULT_MAX_CONTENT_CHARS,
@@ -81,6 +118,8 @@ def create_web_fetch_tool(
         # Upgrade HTTP to HTTPS
         if url.startswith("http://"):
             url = "https://" + url[7:]
+
+        _validate_url(url)
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:

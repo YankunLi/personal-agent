@@ -156,6 +156,9 @@ class CronScheduler:
 
     async def start(self, callback: Callable[[str], Awaitable[None]]) -> None:
         """Start the scheduler loop. Loads durable jobs from disk."""
+        if self._running:
+            logger.warning("Scheduler already running, ignoring duplicate start()")
+            return
         self._callback = callback
         self._load_durable()
         self._running = True
@@ -283,11 +286,16 @@ class CronScheduler:
             logger.error("Failed to load durable cron jobs: %s", e)
 
     def _is_expired(self, job: CronJob) -> bool:
-        """Check if a recurring job has exceeded its max age."""
+        """Check if a recurring job has exceeded its max age.
+
+        Uses last_fired time for recurring jobs (so weekly jobs don't expire
+        before their second fire), falling back to created_at.
+        """
         if not job.recurring:
             return False
         try:
-            created = datetime.fromisoformat(job.created_at)
+            ref_time = job.last_fired or job.created_at
+            created = datetime.fromisoformat(ref_time)
             return datetime.now() - created > timedelta(days=DEFAULT_MAX_AGE_DAYS)
         except (ValueError, TypeError):
             return False
