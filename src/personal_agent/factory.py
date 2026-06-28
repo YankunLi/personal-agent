@@ -564,6 +564,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         "budget_manager": budget_manager,
         "context_manager": context_manager,
         "skill_manager": skill_manager,
+        "cron_scheduler": cron_scheduler,
         "max_steps": agent_cfg.max_steps,
         "system_prompt": agent_cfg.system_prompt,
         "temperature": agent_cfg.temperature,
@@ -637,5 +638,12 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         tool_registry.register(create_read_mcp_resource_tool(
             mcp_source=mcp_source, workspace_dir=ws or None,
         ))
+
+    # Start cron scheduler so jobs fire during the agent's lifetime
+    async def _cron_callback(prompt: str) -> None:
+        logger.info("Cron job fired: %s", prompt[:80])
+        agent._pending_cron_prompts.append(prompt)
+
+    await cron_scheduler.start(_cron_callback)
 
     return agent

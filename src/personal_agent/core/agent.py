@@ -48,6 +48,7 @@ class BaseAgent(ABC):
         budget_manager: Any = None,
         context_manager: ContextManager | None = None,
         skill_manager: SkillManager | None = None,
+        cron_scheduler: Any = None,
         max_steps: int = 100,
         system_prompt: str = "",
         temperature: float = 0.7,
@@ -67,6 +68,8 @@ class BaseAgent(ABC):
         self.budget_manager = budget_manager
         self.context_manager = context_manager
         self.skill_manager = skill_manager
+        self._cron_scheduler = cron_scheduler
+        self._pending_cron_prompts: list[str] = []
         self.max_steps = max_steps
         self._base_system_prompt = system_prompt
         self._temperature = temperature
@@ -96,6 +99,21 @@ class BaseAgent(ABC):
 
     async def _call_llm(self, state: AgentState) -> ChatResponse:
         """Prepare context and call the LLM provider. Delegates to streaming when enabled."""
+        # Inject pending cron prompts before the LLM call
+        if self._pending_cron_prompts:
+            prompts = self._pending_cron_prompts
+            self._pending_cron_prompts = []
+            for prompt in prompts:
+                state.messages.append(Message(
+                    role=Role.USER,
+                    content=f"[Cron job triggered] {prompt}",
+                ))
+                if self.short_term:
+                    self.short_term.add(Message(
+                        role=Role.USER,
+                        content=f"[Cron job triggered] {prompt}",
+                    ))
+
         if self._streaming_enabled:
             return await self._call_llm_stream(state)
 
@@ -196,7 +214,38 @@ class BaseAgent(ABC):
 
         Pads results with error entries if the executor returns fewer results
         than expected, preventing silent data loss and broken conversation state.
+
+        When plan_mode is active, mutating tool calls are rejected.
         """
+        # Check plan mode: reject mutating tools when planning
+        plan_mode = self.working.get("plan_mode") if self.working else None
+        if plan_mode:
+            from personal_agent.types import ToolResult as TR
+
+            safe_calls: list[ToolCall] = []
+            results: list[ToolResult] = []
+            for tc in tool_calls:
+                try:
+                    tool = self.tools.get(tc.name)
+                    if tool.spec.mutating:
+                        results.append(TR(
+                            call_id=tc.id,
+                            name=tc.name,
+                            output=(
+                                f"Error: Tool '{tc.name}' is not available in plan mode. "
+                                "Only read-only exploration tools are allowed during planning. "
+                                "Use exit_plan_mode to leave plan mode and implement changes."
+                            ),
+                        ))
+                    else:
+                        safe_calls.append(tc)
+                except Exception:
+                    safe_calls.append(tc)
+            tool_calls = safe_calls
+            if results:
+                results.extend(await self.tool_executor.execute_all(tool_calls))
+                return results
+
         results = await self.tool_executor.execute_all(tool_calls)
         if len(results) != len(tool_calls):
             logger.warning(
@@ -466,6 +515,12 @@ class BaseAgent(ABC):
                 await self._mcp_source.disconnect_all()
             except Exception as e:
                 logger.warning("Error disconnecting MCP: %s", e)
+
+        if self._cron_scheduler:
+            try:
+                await self._cron_scheduler.stop()
+            except Exception as e:
+                logger.warning("Error stopping cron scheduler: %s", e)
 
         if hasattr(self.provider, "close"):
             try:
