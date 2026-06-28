@@ -158,7 +158,7 @@ class ContextBudgetManager:
         if loaded_memories:
             mem_budget = self._allocations.get("loaded_memories", 2000)
             per_mem_budget = max(mem_budget // max(len(loaded_memories), 1), 200)
-            for mem in loaded_memories:
+            for i, mem in enumerate(loaded_memories):
                 mem_text = (
                     f"{SECTION_MEMORY_OPEN}\n"
                     f"### {mem.get('name', 'Memory')}\n"
@@ -166,7 +166,7 @@ class ContextBudgetManager:
                     f"\n{SECTION_MEMORY_CLOSE}"
                 )
                 if estimate_tokens(mem_text) <= per_mem_budget:
-                    messages.insert(1, Message(role=Role.SYSTEM, content=mem_text))
+                    messages.insert(1 + i, Message(role=Role.SYSTEM, content=mem_text))
 
         # 3. Wrap the last user message (task) with attention markers
         if messages:

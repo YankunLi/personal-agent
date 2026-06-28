@@ -84,7 +84,7 @@ class ParallelJudgeAgent(BaseAgent):
 
         for cfg, result in zip(self._agent_configs, results):
             name = cfg.name or cfg.provider
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 logger.error("Agent %s failed: %s", name, result)
                 agent_answers[name] = f"[Error: {result}]"
                 all_steps.append(AgentStep(thought=f"Agent: {name}", observation=f"Error: {result}"))

@@ -229,6 +229,9 @@ class AnthropicProvider(Provider):
                                 "input_tokens": event.usage.input_tokens or 0,
                                 "output_tokens": event.usage.output_tokens or 0,
                             }
+                    elif event.type == "error":
+                        logger.error("Anthropic streaming error: %s", getattr(event, "error", event))
+                        raise_provider_error(getattr(event, "error", event))
 
                 # Always yield final response with usage (content already sent as deltas)
                 if tool_calls:

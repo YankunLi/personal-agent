@@ -185,7 +185,7 @@ class ReflectionAgent(BaseAgent):
             if not isinstance(parsed, dict):
                 logger.warning("Critique parsed as %s instead of dict. Response: %s", type(parsed).__name__, result.content[:200])
                 return {
-                    "overall": "N/A",
+                    "overall": 0.0,
                     "summary": f"Failed to parse critique: unexpected type {type(parsed).__name__}",
                 }
             return parsed

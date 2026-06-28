@@ -125,7 +125,7 @@ class DebateAgent(BaseAgent):
                 new_responses: dict[str, str] = {}
                 round_has_success = False
                 for role, result in zip(self._roles, round_results):
-                    if isinstance(result, Exception):
+                    if isinstance(result, BaseException):
                         logger.error("Role %s failed: %s", role.name, result)
                         new_responses[role.name] = f"[Error: {result}]"
                     else:

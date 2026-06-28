@@ -178,10 +178,11 @@ def create_exit_worktree_tool(
                 cwd=cwd,
             )
             stdout, _ = await proc.communicate()
-            if proc.returncode == 0:
-                repo_root = stdout.decode().strip()
-                expected_parent = (Path(repo_root) / ".claude" / "worktrees").resolve()
-                wt_path.relative_to(expected_parent)
+            if proc.returncode != 0:
+                return "Error: Unable to determine git repository root for path validation"
+            repo_root = stdout.decode().strip()
+            expected_parent = (Path(repo_root) / ".claude" / "worktrees").resolve()
+            wt_path.relative_to(expected_parent)
         except (ValueError, FileNotFoundError):
             return (
                 f"Error: Path traversal detected. Worktree path '{wt_path}' "

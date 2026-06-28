@@ -118,8 +118,6 @@ class MCPToolSource:
                 f"Failed to initialize MCP server '{config.name}': {e}"
             ) from e
 
-        self._sessions.append(session)
-
         # Discover and register tools
         tools_result = await asyncio.wait_for(
             session.list_tools(),
@@ -131,6 +129,8 @@ class MCPToolSource:
             wrapped = MCPToolWrapper(session, mcp_tool)
             self._registry.register(wrapped)
             count += 1
+
+        self._sessions.append(session)
 
         return count
 
