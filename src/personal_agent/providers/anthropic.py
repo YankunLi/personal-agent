@@ -42,6 +42,10 @@ class AnthropicProvider(Provider):
     def context_window(self) -> int:
         return self._context_window
 
+    async def close(self) -> None:
+        """Close the underlying Anthropic client to release connections."""
+        await self._client.close()
+
     def _convert_messages(self, messages: list[Message]) -> tuple[str | None, list[dict]]:
         """Convert internal messages to Anthropic format.
 

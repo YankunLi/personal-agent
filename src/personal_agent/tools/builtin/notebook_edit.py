@@ -127,10 +127,12 @@ def create_notebook_edit_tool(workspace_dir: str | None = None) -> Tool:
                 return f"Error: Cell not found: {cell_id}"
 
             cell = cells[idx]
+            old_source = cell.get("source", "")
             cell["source"] = new_source
             if cell_type:
                 cell["cell_type"] = cell_type
-            if cell.get("cell_type") == "code":
+            # Only reset outputs if the source actually changed
+            if cell.get("cell_type") == "code" and old_source != new_source:
                 cell["outputs"] = []
                 cell["execution_count"] = None
             action = f"Replaced cell at index {idx}"

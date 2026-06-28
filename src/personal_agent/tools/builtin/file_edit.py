@@ -56,6 +56,8 @@ def create_file_edit_tool(workspace_dir: str | None = None) -> Tool:
         except UnicodeDecodeError:
             return f"Error: Cannot edit binary file: {file_path}"
 
+        if not old_string:
+            return "Error: old_string must not be empty"
         if old_string == new_string:
             return "Error: old_string and new_string are identical"
 

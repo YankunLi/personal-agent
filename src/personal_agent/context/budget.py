@@ -32,10 +32,17 @@ SECTION_TASK_CLOSE = "═══════════════════�
 
 
 def estimate_tokens(text: str) -> int:
-    """Estimate token count. ~4 chars per token for English text."""
+    """Estimate token count with CJK-aware heuristic.
+
+    CJK characters typically represent ~1.5 chars per token, while English
+    text averages ~4 chars per token. This provides a rough estimate.
+    """
     if not text:
         return 0
-    return max(1, len(text) // 4)
+    cjk = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+    non_cjk = len(text) - cjk
+    estimated = non_cjk // 4 + int(cjk / 1.5)
+    return max(1, estimated)
 
 
 def estimate_message_tokens(messages: list[Message]) -> int:

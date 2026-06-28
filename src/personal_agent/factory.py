@@ -318,8 +318,18 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     from personal_agent.tools.base import FunctionTool
     from personal_agent.types import ToolSpec
 
+    def _validate_memory_name(name: str) -> str | None:
+        """Validate a memory name. Returns error message or None if valid."""
+        if not name or not name.strip():
+            return "Memory name must not be empty"
+        if len(name) > 200:
+            return "Memory name must be under 200 characters"
+        return None
+
     async def read_memory(name: str) -> str:
         """Read a specific memory file by name. Use this to recall details about the user, project, or past feedback."""
+        if err := _validate_memory_name(name):
+            return f"Error: {err}"
         result = await memory_store.get(name)
         if result is None:
             return f"No memory found with name '{name}'. Available memories: {[e['name'] for e in await memory_store.list_all_async()]}"
@@ -348,6 +358,8 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     async def write_memory(name: str, content: str, memory_type: str = "user",
                           description: str = "") -> str:
         """Create or update a memory file. Use this to remember important information for future sessions."""
+        if err := _validate_memory_name(name):
+            return f"Error: {err}"
         valid_types = ["user", "feedback", "project", "reference"]
         if memory_type not in valid_types:
             return f"Invalid memory type '{memory_type}'. Must be one of: {', '.join(valid_types)}"
@@ -390,6 +402,8 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     # Register forget_memory tool (allows agent to delete memory files)
     async def forget_memory(name: str) -> str:
         """Delete a memory file by name. Use this to remove outdated or incorrect memories."""
+        if err := _validate_memory_name(name):
+            return f"Error: {err}"
         deleted = await memory_store.delete(name)
         if deleted:
             return f"Memory '{name}' deleted successfully."
@@ -469,6 +483,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         working_memory=working,
     ))
     tool_registry.register(create_exit_worktree_tool(
+        project_dir=workspace_dir or None,
         workspace_dir=ws or None,
         working_memory=working,
     ))

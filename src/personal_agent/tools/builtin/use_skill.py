@@ -6,9 +6,12 @@ prompt, and the full prompt is only loaded when the agent invokes the skill.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from personal_agent.tools.base import tool
+
+logger = logging.getLogger(__name__)
 
 USE_SKILL_PARAMETERS = {
     "type": "object",
@@ -51,7 +54,7 @@ def create_use_skill_tool(skill_manager: Any = None) -> Any:
             try:
                 skill_manager.activate(skill)
             except Exception:
-                pass  # Already active or activation failed
+                logger.warning("Failed to activate skill '%s'", skill, exc_info=True)
 
         return (
             f"The following skill has been loaded. "

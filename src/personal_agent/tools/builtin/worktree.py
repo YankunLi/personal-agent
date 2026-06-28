@@ -137,6 +137,7 @@ def create_enter_worktree_tool(
 
 
 def create_exit_worktree_tool(
+    project_dir: str | None = None,
     workspace_dir: str | None = None,
     working_memory: Any = None,
 ) -> Tool:
@@ -163,9 +164,29 @@ def create_exit_worktree_tool(
             if not path:
                 return "Error: 'path' parameter is required for action='remove'."
 
-        wt_path = Path(path).expanduser()
+        wt_path = Path(path).expanduser().resolve()
         if not wt_path.exists():
             return f"Error: Worktree path not found: {path}"
+
+        # Validate the path is within .claude/worktrees/
+        try:
+            cwd = project_dir or str(Path.cwd())
+            proc = await asyncio.create_subprocess_exec(
+                "git", "rev-parse", "--show-toplevel",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
+            )
+            stdout, _ = await proc.communicate()
+            if proc.returncode == 0:
+                repo_root = stdout.decode().strip()
+                expected_parent = (Path(repo_root) / ".claude" / "worktrees").resolve()
+                wt_path.relative_to(expected_parent)
+        except (ValueError, FileNotFoundError):
+            return (
+                f"Error: Path traversal detected. Worktree path '{wt_path}' "
+                f"is outside the expected worktrees directory."
+            )
 
         # Remove the worktree
         try:

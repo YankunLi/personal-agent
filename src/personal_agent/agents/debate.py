@@ -146,11 +146,10 @@ class DebateAgent(BaseAgent):
 
             # If all role agents failed in every round, don't synthesize garbage
             if all_failed:
-                return AgentResult(
-                    answer="All role agents failed to produce responses. Check logs for details.",
-                    steps=all_steps,
-                    token_usage=dict(self._total_usage),
-                )
+                state.done = True
+                state.final_answer = "All role agents failed to produce responses. Check logs for details."
+                state.steps = all_steps
+                return await self._finalize(state, start_time, task=task)
 
             # Judge synthesizes
             judge_answer = await self._run_judge(task, previous_responses)

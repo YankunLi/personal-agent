@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from personal_agent.tools.base import FunctionTool, Tool
+from personal_agent.tools.builtin._workspace_utils import validate_within_workspace
 from personal_agent.types import ToolSpec
 
 LIST_MCP_RESOURCES_PARAMETERS = {
@@ -152,6 +153,7 @@ def create_read_mcp_resource_tool(
                         ext = _guess_extension(mime_type, uri)
                         blob_dir = Path(workspace_dir) if workspace_dir else Path.cwd()
                         blob_path = blob_dir / f".mcp_blob_{_safe_name(uri)}{ext}"
+                        validate_within_workspace(blob_path, str(blob_dir))
                         blob_path.parent.mkdir(parents=True, exist_ok=True)
                         blob_path.write_bytes(base64.b64decode(blob) if isinstance(blob, str) else blob)
                         output_parts.append(f"[Binary content saved to: {blob_path}]")
@@ -202,7 +204,10 @@ def _guess_extension(mime_type: str | None, uri: str) -> str:
 
 
 def _safe_name(uri: str) -> str:
-    """Create a safe filename from a URI."""
+    """Create a safe filename from a URI, stripping path traversal sequences."""
     import re
-    safe = re.sub(r"[^a-zA-Z0-9._-]", "_", uri)
+    # Replace anything that isn't alphanumeric, underscore, or dash
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "_", uri)
+    # Collapse consecutive underscores
+    safe = re.sub(r"_+", "_", safe)
     return safe[:100]

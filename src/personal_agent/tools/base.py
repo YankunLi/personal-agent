@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable
 
 from personal_agent.exceptions import ToolExecutionError
 from personal_agent.types import ToolSpec
+
+logger = logging.getLogger(__name__)
 
 
 class Tool(ABC):
@@ -36,7 +39,8 @@ class Tool(ABC):
         try:
             import jsonschema
         except ImportError:
-            return  # Skip validation if jsonschema not installed
+            logger.warning("jsonschema not installed, skipping argument validation")
+            return
 
         try:
             jsonschema.validate(kwargs, self.spec.parameters)

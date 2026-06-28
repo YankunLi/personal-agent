@@ -96,7 +96,11 @@ class Skill:
         """Resolve a path within the skill's base directory."""
         if self.base_path is None:
             return None
-        p = self.base_path / subdir / filename
+        # Sanitize filename to prevent path traversal
+        safe_name = Path(filename).name
+        if safe_name != filename or ".." in filename:
+            return None
+        p = self.base_path / subdir / safe_name
         return p if p.exists() else None
 
     def read_reference(self, filename: str) -> str | None:
@@ -282,10 +286,14 @@ def _glob_to_regex(pattern: str) -> str:
         c = pattern[i]
         if c == "*" and i + 1 < len(pattern) and pattern[i + 1] == "*":
             # ** matches any number of directories (including zero)
-            parts.append(".*")
             i += 2
             if i < len(pattern) and pattern[i] == "/":
+                # **/ matches zero or more leading directories
+                parts.append("(.*/)?")
                 i += 1
+            else:
+                # ** at end matches everything
+                parts.append(".*")
         elif c == "*":
             parts.append("[^/]*")
             i += 1

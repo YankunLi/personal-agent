@@ -157,12 +157,16 @@ def _python_fallback(
     show_line_numbers: bool | None,
     head_limit: int | None,
     offset: int | None,
+    multiline: bool | None = None,
+    max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
 ) -> str:
     """Pure Python fallback when ripgrep is not available."""
     import fnmatch
 
     try:
         flags = re.IGNORECASE if case_insensitive else 0
+        if multiline:
+            flags |= re.DOTALL
         compiled = re.compile(pattern, flags)
     except re.error as e:
         return f"Error: Invalid regex pattern: {e}"
@@ -224,7 +228,13 @@ def _python_fallback(
 
     if not results:
         return "(no matches)"
-    return "\n".join(results)
+    result = "\n".join(results)
+    if len(result) > max_result_chars:
+        result = result[:max_result_chars] + (
+            f"\n\n[Output truncated: {len(result)} chars total, "
+            f"showing first {max_result_chars}]"
+        )
+    return result
 
 
 def create_grep_tool(
@@ -296,6 +306,7 @@ def create_grep_tool(
                     return _python_fallback(
                         pattern, search_path, glob, output_mode,
                         case_insensitive, show_line_numbers, head_limit, offset,
+                        multiline=multiline, max_result_chars=max_result_chars,
                     )
                 return f"Error: {stderr_text}"
 
@@ -326,6 +337,7 @@ def create_grep_tool(
         return _python_fallback(
             pattern, search_path, glob, output_mode,
             case_insensitive, show_line_numbers, head_limit, offset,
+            multiline=multiline, max_result_chars=max_result_chars,
         )
 
     return FunctionTool(

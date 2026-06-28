@@ -73,6 +73,10 @@ class OpenAICompatibleProvider(Provider):
     def context_window(self) -> int:
         return self._context_window
 
+    async def close(self) -> None:
+        """Close the underlying OpenAI client to release connections."""
+        await self._client.close()
+
     async def chat(
         self,
         messages: list[Message],

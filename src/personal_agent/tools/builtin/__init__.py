@@ -24,6 +24,8 @@ from personal_agent.tools.builtin.plan_mode import (
     create_enter_plan_mode_tool,
     create_exit_plan_mode_tool,
 )
+from personal_agent.tools.builtin.self_upgrade import create_self_upgrade_tool
+from personal_agent.tools.builtin.skill_install import create_skill_install_tool
 from personal_agent.tools.builtin.sleep import create_sleep_tool
 from personal_agent.tools.builtin.task import (
     create_task_create_tool,
@@ -33,6 +35,7 @@ from personal_agent.tools.builtin.task import (
     create_task_update_tool,
 )
 from personal_agent.tools.builtin.todo import create_todo_read_tool, create_todo_tool
+from personal_agent.tools.builtin.use_skill import create_use_skill_tool
 from personal_agent.tools.builtin.web_search import create_web_search_tool, web_search
 from personal_agent.tools.builtin.web_fetch import create_web_fetch_tool
 from personal_agent.tools.builtin.worktree import (
@@ -76,4 +79,7 @@ __all__ = [
     "create_task_update_tool",
     "create_task_stop_tool",
     "create_web_fetch_tool",
+    "create_self_upgrade_tool",
+    "create_skill_install_tool",
+    "create_use_skill_tool",
 ]

@@ -9,10 +9,13 @@ Follows Claude Code's memory design:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 MEMORY_TYPES = ("user", "feedback", "project", "reference")
 FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
@@ -106,6 +109,7 @@ class FileMemoryStore:
                     name = meta.get("name", f.stem)
                     cache[name] = f
                 except Exception:
+                    logger.debug("Failed to parse memory file: %s", f.name, exc_info=True)
                     continue
 
             self._name_to_path = cache
