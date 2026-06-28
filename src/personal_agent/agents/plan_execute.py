@@ -84,23 +84,24 @@ class PlanAndExecuteAgent(BaseAgent):
         state.messages = state.messages[:base_msg_count]
 
         # Phase 2: Execute each step
-        step_results = []
+        step_results: list[dict] = []
         base_step_count = len(state.steps)
         i = 0
-        total_steps = 0
+        llm_calls = 1  # Plan generation already used 1 LLM call
         replan_count = 0
-        while i < len(plan) and total_steps < self.max_steps:
-            total_steps += 1
+        while i < len(plan) and llm_calls < self.max_steps:
             step = plan[i]
             logger.info("Executing step %d/%d: %s", i + 1, len(plan), step.get("description", str(step))[:80])
 
-            step_result = await self._execute_step(state, step)
+            step_result = await self._execute_step(state, step, max_substeps=self._max_substeps)
+            llm_calls += step_result.get("llm_calls", 0)
             step_results.append(step_result)
 
             if step_result.get("error"):
                 logger.warning("Step %d failed: %s", i + 1, step_result["error"])
                 if i < len(plan) - 1 and replan_count < self.MAX_REPLAN_ATTEMPTS:
                     new_plan = await self._replan(state, plan, step_results, step)
+                    llm_calls += 1
                     replan_count += 1
                     state.messages = state.messages[:base_msg_count]  # Prune replan messages
                     if new_plan is plan:
@@ -110,7 +111,9 @@ class PlanAndExecuteAgent(BaseAgent):
                         plan = new_plan
                         self.working.set("plan", plan)
                         i = 0  # Restart from beginning of new plan
-                        step_results = []  # Reset results for new plan
+                        # Preserve results from previously successful steps for synthesis
+                        # Only keep results for steps that succeeded before the failure
+                        step_results = [r for r in step_results if not r.get("error")]
                         del state.steps[base_step_count:]  # Prune steps from old plan
                     continue
                 else:
@@ -120,11 +123,12 @@ class PlanAndExecuteAgent(BaseAgent):
                     )
             i += 1
 
-        if total_steps >= self.max_steps:
-            logger.warning("Plan execution reached max_steps limit (%d)", self.max_steps)
+        if llm_calls >= self.max_steps:
+            logger.warning("Plan execution reached max_steps limit (%d LLM calls)", self.max_steps)
 
         # Phase 3: Synthesis
         final_answer = await self._synthesize(state, plan, step_results)
+        llm_calls += 1
         state.final_answer = final_answer
         state.done = True
 
@@ -163,8 +167,14 @@ class PlanAndExecuteAgent(BaseAgent):
             {"step": 1, "description": "Complete the task directly", "depends_on": []}
         ]
 
-    async def _execute_step(self, state: AgentState, step: dict) -> dict:
-        """Execute a single plan step using a mini ReAct loop."""
+    async def _execute_step(self, state: AgentState, step: dict, max_substeps: int | None = None) -> dict:
+        """Execute a single plan step using a mini ReAct loop.
+
+        Returns a dict with step, description, result, error, and llm_calls keys.
+        """
+        if max_substeps is None:
+            max_substeps = self._max_substeps
+
         step_prompt = (
             f"Execute step {step['step']}: {step['description']}\n\n"
             f"Use tools if needed. After completing this step, describe what you found."
@@ -172,8 +182,10 @@ class PlanAndExecuteAgent(BaseAgent):
         state.messages.append(self._make_message(Role.USER, step_prompt))
 
         consecutive_failures: dict[str, int] = {}
+        substep_count = 0
 
-        for _ in range(self._max_substeps):
+        for _ in range(max_substeps):
+            substep_count += 1
             response = await self._call_llm(state)
             self._add_assistant_message(state.messages, response)
 
@@ -214,6 +226,7 @@ class PlanAndExecuteAgent(BaseAgent):
                     "description": step["description"],
                     "result": response.content,
                     "error": None,
+                    "llm_calls": substep_count,
                 }
 
         return {
@@ -221,6 +234,7 @@ class PlanAndExecuteAgent(BaseAgent):
             "description": step["description"],
             "result": "Step did not complete within sub-steps limit.",
             "error": "max_substeps_exceeded",
+            "llm_calls": substep_count,
         }
 
     async def _replan(

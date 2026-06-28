@@ -191,7 +191,7 @@ class FileMemoryStore:
 
         async with self._lock:
             try:
-                filepath.unlink()
+                await asyncio.to_thread(filepath.unlink)
             except FileNotFoundError:
                 pass
 
@@ -354,6 +354,6 @@ class FileMemoryStore:
         """Delete all memory files and regenerate empty index."""
         async with self._lock:
             for f in self._dir.glob("*.md"):
-                f.unlink()
+                await asyncio.to_thread(f.unlink)
             await asyncio.to_thread(self._write_index_locked, [])
             self._invalidate_cache()

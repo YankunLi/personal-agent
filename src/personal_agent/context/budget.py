@@ -171,7 +171,7 @@ class ContextBudgetManager:
         # 3. Wrap the last user message (task) with attention markers
         if messages:
             last = messages[-1]
-            if last.role == Role.USER:
+            if last.role == Role.USER and SECTION_TASK_OPEN not in (last.content or ""):
                 messages[-1] = replace(last, content=(
                     f"{SECTION_TASK_OPEN}\n"
                     f"{last.content}\n"

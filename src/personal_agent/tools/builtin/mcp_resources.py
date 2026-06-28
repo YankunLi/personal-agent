@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import mimetypes
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.tools.builtin._workspace_utils import validate_within_workspace
@@ -155,7 +158,13 @@ def create_read_mcp_resource_tool(
                         blob_path = blob_dir / f".mcp_blob_{_safe_name(uri)}{ext}"
                         validate_within_workspace(blob_path, str(blob_dir))
                         blob_path.parent.mkdir(parents=True, exist_ok=True)
-                        blob_path.write_bytes(base64.b64decode(blob) if isinstance(blob, str) else blob)
+                        try:
+                            blob_data = base64.b64decode(blob) if isinstance(blob, str) else blob
+                        except (ValueError, TypeError) as e:
+                            logger.warning("Failed to decode base64 blob for '%s': %s", uri, e)
+                            output_parts.append(f"[Binary content (decode failed): {len(blob)} bytes]")
+                            continue
+                        blob_path.write_bytes(blob_data)
                         output_parts.append(f"[Binary content saved to: {blob_path}]")
                     else:
                         output_parts.append(f"[Unknown content type: {mime_type or 'unspecified'}]")

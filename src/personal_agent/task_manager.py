@@ -187,8 +187,15 @@ def block_task(session_id: str, from_task_id: str, to_task_id: str) -> bool:
             update_task(session_id, to_task_id, {"blockedBy": blocked_by})
         except Exception:
             # Rollback to keep the dependency graph consistent
-            blocks.remove(to_task_id)
-            update_task(session_id, from_task_id, {"blocks": blocks})
+            try:
+                blocks.remove(to_task_id)
+                update_task(session_id, from_task_id, {"blocks": blocks})
+            except Exception as rollback_err:
+                logger.error(
+                    "Rollback failed after dependency update error: %s. "
+                    "Dependency graph may be inconsistent between tasks %s and %s.",
+                    rollback_err, from_task_id, to_task_id,
+                )
             raise
 
     return True

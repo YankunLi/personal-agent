@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import re
 import socket
@@ -81,7 +82,7 @@ class _TextExtractor(HTMLParser):
         return text.strip()
 
 
-def _validate_url(url: str) -> None:
+async def _validate_url(url: str) -> None:
     """Validate URL safety: only http/https, no private/internal hosts."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
@@ -93,9 +94,10 @@ def _validate_url(url: str) -> None:
     try:
         addr = ipaddress.ip_address(host)
     except ValueError:
-        # Try DNS resolution; if it fails, let the HTTP request handle it
+        # Try DNS resolution asynchronously; if it fails, let the HTTP request handle it
         try:
-            addr = ipaddress.ip_address(socket.gethostbyname(host))
+            resolved = await asyncio.to_thread(socket.gethostbyname, host)
+            addr = ipaddress.ip_address(resolved)
         except (socket.gaierror, OSError, ValueError):
             return
     for network in _BLOCKED_NETWORKS:
@@ -119,16 +121,38 @@ def create_web_fetch_tool(
         if url.startswith("http://"):
             url = "https://" + url[7:]
 
-        _validate_url(url)
+        await _validate_url(url)
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.get(
-                    url,
-                    headers={"User-Agent": "personal-agent/0.1.0"},
-                    follow_redirects=True,
-                )
-                response.raise_for_status()
+                # Manual redirect following to re-validate each URL in the chain
+                max_redirects = 10
+                current_url = url
+                for _ in range(max_redirects):
+                    response = await client.get(
+                        current_url,
+                        headers={"User-Agent": "personal-agent/0.1.0"},
+                        follow_redirects=False,
+                    )
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        redirect_url = response.headers.get("location", "")
+                        if not redirect_url:
+                            raise ToolExecutionError("Redirect with no Location header")
+                        # Resolve relative URLs
+                        if redirect_url.startswith("http://"):
+                            redirect_url = "https://" + redirect_url[7:]
+                        elif not redirect_url.startswith("https://"):
+                            from urllib.parse import urljoin
+                            redirect_url = urljoin(current_url, redirect_url)
+                            if redirect_url.startswith("http://"):
+                                redirect_url = "https://" + redirect_url[7:]
+                        await _validate_url(redirect_url)
+                        current_url = redirect_url
+                        continue
+                    response.raise_for_status()
+                    break
+                else:
+                    raise ToolExecutionError("Too many redirects")
 
                 content_type = response.headers.get("content-type", "").lower()
 

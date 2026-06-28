@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
-from personal_agent.cron_scheduler import CronScheduler, _next_cron_match
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.types import ToolSpec
 
@@ -52,7 +52,7 @@ CRON_LIST_PARAMETERS = {
 }
 
 
-def create_cron_create_tool(scheduler: CronScheduler) -> Tool:
+def create_cron_create_tool(scheduler: "CronScheduler") -> Tool:
     """Create a CronCreate tool bound to a CronScheduler instance."""
 
     async def _cron_create(
@@ -61,8 +61,10 @@ def create_cron_create_tool(scheduler: CronScheduler) -> Tool:
         recurring: bool = True,
         durable: bool = False,
     ) -> str:
+        from personal_agent.cron_scheduler import _next_cron_match
+
         try:
-            job_id = scheduler.add_job(
+            job_id = await scheduler.add_job(
                 cron=cron, prompt=prompt, recurring=recurring, durable=durable
             )
         except ValueError as e:
@@ -70,7 +72,7 @@ def create_cron_create_tool(scheduler: CronScheduler) -> Tool:
 
         job = scheduler.get_job(job_id)
         if job:
-            next_match = _next_cron_match(job.cron)
+            next_match = await asyncio.to_thread(_next_cron_match, job.cron)
             next_fire = next_match.isoformat() if next_match else "unknown"
         else:
             next_fire = "unknown"
@@ -102,7 +104,7 @@ def create_cron_delete_tool(scheduler: CronScheduler) -> Tool:
     """Create a CronDelete tool bound to a CronScheduler instance."""
 
     async def _cron_delete(id: str) -> str:
-        if scheduler.delete_job(id):
+        if await scheduler.delete_job(id):
             return f"Cron job deleted: {id}"
         return f"Error: Cron job not found: {id}"
 
@@ -122,7 +124,7 @@ def create_cron_list_tool(scheduler: CronScheduler) -> Tool:
     """Create a CronList tool bound to a CronScheduler instance."""
 
     async def _cron_list() -> str:
-        jobs = scheduler.list_jobs()
+        jobs = await scheduler.list_jobs()
         if not jobs:
             return "No scheduled cron jobs."
 

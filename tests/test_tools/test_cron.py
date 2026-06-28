@@ -91,7 +91,7 @@ class TestCronCreate:
         result = await executor.execute(tc)
         assert result.error is None
         assert "Cron job created" in result.output
-        assert len(scheduler.list_jobs()) == 1
+        assert len(await scheduler.list_jobs()) == 1
 
     @pytest.mark.asyncio
     async def test_create_invalid_cron(self, executor, scheduler):
@@ -112,7 +112,7 @@ class TestCronDelete:
 
     @pytest.mark.asyncio
     async def test_delete_job(self, executor, scheduler):
-        job_id = scheduler.add_job("0 9 * * *", "test prompt")
+        job_id = await scheduler.add_job("0 9 * * *", "test prompt")
         tc = ToolCall(
             id="1", name="cron_delete",
             arguments={"id": job_id},
@@ -120,7 +120,7 @@ class TestCronDelete:
         result = await executor.execute(tc)
         assert result.error is None
         assert "deleted" in result.output
-        assert len(scheduler.list_jobs()) == 0
+        assert len(await scheduler.list_jobs()) == 0
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent(self, executor):
@@ -148,8 +148,8 @@ class TestCronList:
 
     @pytest.mark.asyncio
     async def test_list_jobs(self, executor, scheduler):
-        scheduler.add_job("0 9 * * *", "Morning check", recurring=True)
-        scheduler.add_job("30 14 * * *", "Afternoon reminder", recurring=False)
+        await scheduler.add_job("0 9 * * *", "Morning check", recurring=True)
+        await scheduler.add_job("30 14 * * *", "Afternoon reminder", recurring=False)
 
         tc = ToolCall(
             id="1", name="cron_list",
@@ -166,8 +166,9 @@ class TestCronList:
 class TestCronSchedulerMaxJobs:
     """Test max jobs limit."""
 
-    def test_max_jobs(self, scheduler):
+    @pytest.mark.asyncio
+    async def test_max_jobs(self, scheduler):
         for i in range(scheduler.MAX_JOBS):
-            scheduler.add_job(f"0 {i % 24} * * *", f"job {i}")
+            await scheduler.add_job(f"0 {i % 24} * * *", f"job {i}")
         with pytest.raises(ValueError, match="Maximum"):
-            scheduler.add_job("0 0 * * *", "one too many")
+            await scheduler.add_job("0 0 * * *", "one too many")

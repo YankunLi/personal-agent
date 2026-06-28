@@ -35,13 +35,26 @@ def _parse_cron_field(value: str, min_val: int, max_val: int) -> set[int]:
             if base == "*":
                 base_range = range(min_val, max_val + 1)
             else:
-                base_range = range(int(base), max_val + 1)
+                base_val = int(base)
+                if base_val < min_val or base_val > max_val:
+                    raise ValueError(f"Value {base_val} out of range [{min_val}, {max_val}] in '{value}'")
+                base_range = range(base_val, max_val + 1)
             result.update(v for v in base_range if (v - min(base_range)) % step == 0)
         elif "-" in part:
             lo, hi = part.split("-", 1)
-            result.update(range(int(lo), int(hi) + 1))
+            lo_val, hi_val = int(lo), int(hi)
+            if lo_val < min_val or lo_val > max_val:
+                raise ValueError(f"Value {lo_val} out of range [{min_val}, {max_val}] in '{value}'")
+            if hi_val < min_val or hi_val > max_val:
+                raise ValueError(f"Value {hi_val} out of range [{min_val}, {max_val}] in '{value}'")
+            if lo_val > hi_val:
+                raise ValueError(f"Range start {lo_val} > end {hi_val} in '{value}'")
+            result.update(range(lo_val, hi_val + 1))
         else:
-            result.add(int(part))
+            val = int(part)
+            if val < min_val or val > max_val:
+                raise ValueError(f"Value {val} out of range [{min_val}, {max_val}] in '{value}'")
+            result.add(val)
     return result
 
 
@@ -160,7 +173,7 @@ class CronScheduler:
             logger.warning("Scheduler already running, ignoring duplicate start()")
             return
         self._callback = callback
-        self._load_durable()
+        await self._load_durable()
         self._running = True
         self._task = asyncio.create_task(self._loop())
 
@@ -175,39 +188,39 @@ class CronScheduler:
                 pass
             self._task = None
 
-    def add_job(
+    async def add_job(
         self, cron: str, prompt: str, recurring: bool = True, durable: bool = False
     ) -> str:
         """Add a job and return its ID. Raises ValueError on invalid cron."""
         if len(self._jobs) >= self.MAX_JOBS:
             raise ValueError(f"Maximum of {self.MAX_JOBS} jobs reached")
 
-        # Validate cron expression
-        if _next_cron_match(cron) is None:
+        # Validate cron expression (CPU-bound search, run in thread)
+        if await asyncio.to_thread(_next_cron_match, cron) is None:
             raise ValueError(f"Invalid cron expression: '{cron}' — no match in next 2 years")
 
         job = CronJob(cron=cron, prompt=prompt, recurring=recurring, durable=durable)
         self._jobs[job.id] = job
         if durable:
-            self._save_durable()
+            await self._save_durable()
         return job.id
 
-    def delete_job(self, job_id: str) -> bool:
+    async def delete_job(self, job_id: str) -> bool:
         """Delete a job by ID. Returns True if the job existed."""
         job = self._jobs.pop(job_id, None)
         if job is None:
             return False
         if job.durable:
-            self._save_durable()
+            await self._save_durable()
         return True
 
-    def list_jobs(self) -> list[dict[str, Any]]:
+    async def list_jobs(self) -> list[dict[str, Any]]:
         """List all jobs with human-readable schedule info."""
         result = []
         for job in self._jobs.values():
             info = job.to_dict()
-            # Add human-readable next time
-            next_match = _next_cron_match(job.cron)
+            # Add human-readable next time (CPU-bound, run in thread)
+            next_match = await asyncio.to_thread(_next_cron_match, job.cron)
             info["next_fire"] = next_match.isoformat() if next_match else None
             info["type"] = "recurring" if job.recurring else "one-shot"
             result.append(info)
@@ -255,25 +268,26 @@ class CronScheduler:
         for job_id in to_remove:
             job = self._jobs.pop(job_id, None)
             if job and job.durable:
-                self._save_durable()
+                await self._save_durable()
 
-    def _save_durable(self) -> None:
+    async def _save_durable(self) -> None:
         """Save durable jobs to the JSON file."""
         durable_jobs = [j.to_dict() for j in self._jobs.values() if j.durable]
         try:
             self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-            self._storage_path.write_text(
-                json.dumps(durable_jobs, indent=2, ensure_ascii=False)
+            await asyncio.to_thread(
+                self._storage_path.write_text,
+                json.dumps(durable_jobs, indent=2, ensure_ascii=False),
             )
         except OSError as e:
             logger.error("Failed to save durable cron jobs: %s", e)
 
-    def _load_durable(self) -> None:
+    async def _load_durable(self) -> None:
         """Load durable jobs from the JSON file."""
         if not self._storage_path.exists():
             return
         try:
-            data = json.loads(self._storage_path.read_text())
+            data = json.loads(await asyncio.to_thread(self._storage_path.read_text))
             for item in data:
                 job = CronJob.from_dict(item)
                 if self._is_expired(job):
@@ -281,7 +295,7 @@ class CronScheduler:
                     continue
                 self._jobs[job.id] = job
             if self._jobs:
-                self._save_durable()  # Clean up expired jobs
+                await self._save_durable()  # Clean up expired jobs
         except (json.JSONDecodeError, OSError, KeyError) as e:
             logger.error("Failed to load durable cron jobs: %s", e)
 

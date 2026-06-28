@@ -80,6 +80,7 @@ class BaseAgent(ABC):
         self._consolidation_tasks: list[asyncio.Task] = []
         self._consolidation_max_messages = consolidation_max_messages
         self._closed = False
+        self._close_lock = asyncio.Lock()
         self._streaming_enabled = False
         self._cached_system_prompt: str | None = None
         self._cached_self_instruction: str | None = None
@@ -498,9 +499,10 @@ class BaseAgent(ABC):
 
     async def close(self) -> None:
         """Clean up resources: MCP connections, provider clients, sub-agents."""
-        if self._closed:
-            return
-        self._closed = True
+        async with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
 
         # Cancel pending consolidation tasks
         for task in self._consolidation_tasks:

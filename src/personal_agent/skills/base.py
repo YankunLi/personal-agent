@@ -337,6 +337,7 @@ class SkillManager:
         self._active: set[str] = set()
         self._builtin: set[str] = set()
         self._loaded_paths: set[str] = set()  # realpath-based dedup
+        self._install_lock = asyncio.Lock()
 
     # ── Registration ──────────────────────────────────────────────────────────
 
@@ -429,6 +430,11 @@ class SkillManager:
         if name in self._active:
             return
         if name in seen:
+            logger.warning(
+                "Circular dependency detected: skill '%s' is already in the activation chain. "
+                "Skipping to avoid infinite recursion.",
+                name,
+            )
             return
         if name not in self._skills:
             raise SkillError(f"Skill '{name}' not registered. Available: {self.list_names()}")
@@ -776,6 +782,8 @@ class SkillManager:
 
         Returns:
             List of installed skill names.
+
+        This method is concurrency-safe: only one installation runs at a time.
         """
         if not url or not url.strip():
             raise SkillError("Git URL is required")
@@ -810,32 +818,34 @@ class SkillManager:
 
             logger.info("Cloned %s successfully", repo_url)
 
-            # Discover skills from the cloned repo, tracking which are new
-            discover_root = tmp_path / subdir if subdir else tmp_path
-            before = set(self._skills.keys())
-            self.discover_from(discover_root)
-            new_names = set(self._skills.keys()) - before
+            # Discover and install under lock to prevent concurrent modification
+            async with self._install_lock:
+                # Discover skills from the cloned repo, tracking which are new
+                discover_root = tmp_path / subdir if subdir else tmp_path
+                before = set(self._skills.keys())
+                self.discover_from(discover_root)
+                new_names = set(self._skills.keys()) - before
 
-            if not new_names:
-                logger.warning("No new skills found in %s", url)
-                return []
+                if not new_names:
+                    logger.warning("No new skills found in %s", url)
+                    return []
 
-            # Copy each newly discovered skill to the target directory
-            for name in sorted(new_names):
-                skill = self._skills[name]
-                if skill.base_path is None:
-                    continue
-                _validate_name_as_path(name)
-                target_skill_dir = target_dir / name
-                if target_skill_dir.exists():
-                    logger.warning("Skill '%s' already exists at %s, skipping", name, target_skill_dir)
-                    continue
+                # Copy each newly discovered skill to the target directory
+                for name in sorted(new_names):
+                    skill = self._skills[name]
+                    if skill.base_path is None:
+                        continue
+                    _validate_name_as_path(name)
+                    target_skill_dir = target_dir / name
+                    if target_skill_dir.exists():
+                        logger.warning("Skill '%s' already exists at %s, skipping", name, target_skill_dir)
+                        continue
 
-                shutil.copytree(skill.base_path, target_skill_dir)
-                # Update base_path to the new location
-                skill.base_path = target_skill_dir
-                installed.append(name)
-                logger.info("Installed skill '%s' to %s", name, target_skill_dir)
+                    shutil.copytree(skill.base_path, target_skill_dir)
+                    # Update base_path to the new location
+                    skill.base_path = target_skill_dir
+                    installed.append(name)
+                    logger.info("Installed skill '%s' to %s", name, target_skill_dir)
 
         return installed
 

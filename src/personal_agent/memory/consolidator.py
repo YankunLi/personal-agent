@@ -74,6 +74,8 @@ Output a JSON object with 'memories' and 'agent_learnings' arrays:"""
 MAX_MEMORY_CONTENT_LENGTH = 2000
 # Maximum length for memory description in the index
 MAX_MEMORY_DESCRIPTION_LENGTH = 150
+# Maximum length for individual message content in consolidation prompt
+MAX_MESSAGE_CONTENT_LENGTH = 2000
 
 
 class MemoryConsolidator:
@@ -157,7 +159,7 @@ class MemoryConsolidator:
         conversation_parts = []
         for msg in messages[-self._max_messages:]:  # Last N messages
             role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
-            content = msg.content[:2000] if msg.content else ""
+            content = msg.content[:MAX_MESSAGE_CONTENT_LENGTH] if msg.content else ""
             if content.strip():
                 conversation_parts.append(f"[{role.upper()}]: {content}")
         conversation = "\n\n".join(conversation_parts)

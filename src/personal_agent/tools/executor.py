@@ -242,6 +242,8 @@ class ToolExecutor:
                     attempt + 1, max_retries + 1, last_error,
                 )
 
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                raise
             except Exception as e:
                 last_error = str(e)
                 last_error_is_transient = self._is_transient_error(last_error)

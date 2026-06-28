@@ -61,7 +61,7 @@ def create_glob_tool(
         if include_hidden:
             files = list(matches)
         else:
-            files = [m for m in matches if not m.name.startswith(".")]
+            files = [m for m in matches if not any(p.startswith(".") for p in m.parts)]
 
         if not files:
             return "(no matching files)"

@@ -80,11 +80,12 @@ class PipelineAgent(BaseAgent):
                 tools=stage_cfg.tools,
                 description=stage_cfg.name,
             )
-            stage_agent = await create_sub_agent(
-                sub_cfg, providers=self._providers,
-                extra_tools=self.tools.list_mcp_tools(),
-            )
+            stage_agent = None
             try:
+                stage_agent = await create_sub_agent(
+                    sub_cfg, providers=self._providers,
+                    extra_tools=self.tools.list_mcp_tools(),
+                )
                 stage_result = await stage_agent.run(stage_task)
                 current_input = stage_result.answer
 
@@ -107,12 +108,13 @@ class PipelineAgent(BaseAgent):
                 ))
                 current_input = f"[Pipeline stage '{stage_cfg.name}' failed: {e}]"
             finally:
-                try:
-                    await stage_agent.close()
-                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
-                    raise
-                except Exception as close_err:
-                    logger.warning("Error closing pipeline stage %d '%s': %s", i + 1, stage_cfg.name, close_err)
+                if stage_agent is not None:
+                    try:
+                        await stage_agent.close()
+                    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                        raise
+                    except Exception as close_err:
+                        logger.warning("Error closing pipeline stage %d '%s': %s", i + 1, stage_cfg.name, close_err)
 
         state.done = True
         state.final_answer = current_input
