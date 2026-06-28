@@ -167,6 +167,9 @@ async def delete_task(session_id: str, task_id: str) -> bool:
             return True
         except FileNotFoundError:
             return False
+        finally:
+            async with _task_locks_guard:
+                _task_locks.pop(task_id, None)
 
 
 def list_tasks(session_id: str) -> list[dict[str, Any]]:

@@ -840,7 +840,7 @@ class SkillManager:
                     target_skill_dir = target_dir / name
                     if target_skill_dir.exists():
                         logger.warning("Skill '%s' already exists at %s, skipping", name, target_skill_dir)
-                        skill.base_path = None  # Prevent dangling reference to temp dir
+                        del self._skills[name]  # Unregister zombie skill
                         continue
 
                     shutil.copytree(skill.base_path, target_skill_dir)

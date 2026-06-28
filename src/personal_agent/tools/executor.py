@@ -124,7 +124,20 @@ class ToolExecutor:
         return None
 
     def _record_recent_call(self, tool_name: str, arguments: dict[str, Any], result: ToolResult) -> None:
-        """Record a tool call result for duplicate detection."""
+        """Record a tool call result for duplicate detection.
+
+        Only records calls for FunctionTools with inputs_equivalent defined,
+        since those are the only tools that participate in duplicate checking.
+        """
+        from personal_agent.tools.base import FunctionTool
+
+        try:
+            tool = self._registry.get(tool_name)
+        except ToolNotFoundError:
+            return
+        if not isinstance(tool, FunctionTool) or tool.inputs_equivalent is None:
+            return
+
         if tool_name not in self._recent_calls:
             self._recent_calls[tool_name] = []
         recent = self._recent_calls[tool_name]

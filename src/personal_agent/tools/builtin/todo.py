@@ -92,7 +92,7 @@ def create_todo_tool(session_id: str = "default") -> Tool:
         if not todos:
             # Clear only user-managed tasks
             for t in user_tasks:
-                delete_task(session_id, t["id"])
+                await delete_task(session_id, t["id"])
             return "Todo list cleared."
 
         # Update existing tasks by position, create new ones for extras
@@ -118,7 +118,7 @@ def create_todo_tool(session_id: str = "default") -> Tool:
 
         # Delete extra tasks that are no longer in the list
         for t in user_tasks[len(todos):]:
-            delete_task(session_id, t["id"])
+            await delete_task(session_id, t["id"])
 
         return _format_todo_list(todos)
 

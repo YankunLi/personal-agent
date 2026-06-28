@@ -57,6 +57,7 @@ class ContextManager:
         provider=None,
         max_tokens: int = 16384,
         max_messages: int = 200,
+        context_window: int = 128000,
         compression_model: str = "gpt-4o-mini",
         compression_provider=None,
         budget_manager: ContextBudgetManager | None = None,
@@ -104,7 +105,7 @@ class ContextManager:
 
         if strategy_name == "budget":
             if budget_manager is None:
-                budget_manager = ContextBudgetManager(context_window=max_tokens * 4)
+                budget_manager = ContextBudgetManager(context_window=context_window)
             return cls(
                 budget_manager=budget_manager,
                 max_tokens=max_tokens,

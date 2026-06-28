@@ -255,7 +255,7 @@ class BaseAgent(ABC):
                 for r in exec_results:
                     all_results[r.call_id] = r
                 return [all_results.get(tc.id, TR(
-                    call_id=tc.id, error=f"No result for tool '{tc.name}'", output="",
+                    call_id=tc.id, name=tc.name, error=f"No result for tool '{tc.name}'", output="",
                 )) for tc in tool_calls]
 
             tool_calls = safe_calls

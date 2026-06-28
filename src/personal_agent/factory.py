@@ -550,6 +550,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         provider=provider,
         max_tokens=context_cfg.max_tokens,
         max_messages=context_cfg.max_messages,
+        context_window=settings.budget.context_window,
         compression_model=context_cfg.compression_model,
         compression_provider=consolidation_provider,
         budget_manager=budget_manager,
