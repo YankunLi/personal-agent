@@ -60,9 +60,7 @@ def create_list_mcp_resources_tool(mcp_source: Any = None) -> Tool:
         errors: list[str] = []
 
         for session in sessions:
-            session_name = getattr(session, "name", None) or getattr(
-                session, "server_name", None
-            )
+            session_name = getattr(session, "_server_name", None)
             if server is not None and session_name and session_name != server:
                 continue
             try:
@@ -130,10 +128,8 @@ def create_read_mcp_resource_tool(
             return "No connected MCP servers"
 
         for session in sessions:
-            # Filter by server name if session has a name attribute
-            session_name = getattr(session, "name", None) or getattr(
-                session, "server_name", None
-            )
+            # Filter by server name stored during session creation
+            session_name = getattr(session, "_server_name", None)
             if session_name and session_name != server:
                 continue
             try:

@@ -266,21 +266,18 @@ class BaseAgent(ABC):
             )
             from personal_agent.types import ToolResult as TR
 
-            # Pad with error results for missing tool calls
-            if len(results) < len(tool_calls):
-                for tc in tool_calls[len(results):]:
+            # Match results by call_id, pad missing ones with error entries
+            result_map = {r.call_id: r for r in results}
+            results = []
+            for tc in tool_calls:
+                if tc.id in result_map:
+                    results.append(result_map[tc.id])
+                else:
                     results.append(TR(
                         call_id=tc.id,
                         name=tc.name,
                         error="Tool execution was dropped",
                     ))
-            # Truncate extra results (should not happen, but handle gracefully)
-            elif len(results) > len(tool_calls):
-                logger.warning(
-                    "Dropping %d extra tool results",
-                    len(results) - len(tool_calls),
-                )
-                results = results[:len(tool_calls)]
         return results
 
     async def _build_system_prompt(self) -> str:

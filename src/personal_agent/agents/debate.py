@@ -159,8 +159,6 @@ class DebateAgent(BaseAgent):
             for name, agent in self._role_agents.items():
                 try:
                     await agent.close()
-                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit) as e:
-                    logger.warning("Cancellation during close of role agent '%s': %s", name, e)
                 except Exception as e:
                     logger.warning("Error closing role agent '%s': %s", name, e)
             self._role_agents.clear()

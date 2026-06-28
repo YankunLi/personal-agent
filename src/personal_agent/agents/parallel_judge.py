@@ -138,8 +138,6 @@ class ParallelJudgeAgent(BaseAgent):
         finally:
             try:
                 await agent.close()
-            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit) as e:
-                logger.warning("Cancellation during close of agent for '%s': %s", cfg.name, e)
             except Exception as e:
                 logger.warning("Error closing agent for '%s': %s", cfg.name, e)
 

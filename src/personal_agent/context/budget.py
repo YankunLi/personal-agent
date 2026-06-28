@@ -203,10 +203,10 @@ class ContextBudgetManager:
         if not older:
             return messages
 
-        # Estimate tokens for system + recent
-        sys_tokens = estimate_message_tokens(system_msgs)
+        # Estimate tokens for recent messages only (max_tokens is already the
+        # conversation budget, system messages are accounted for separately)
         recent_tokens = estimate_message_tokens(recent)
-        available = max_tokens - sys_tokens - recent_tokens
+        available = max_tokens - recent_tokens
 
         if available < 500:
             # Very tight budget: just keep system + recent, summarize older

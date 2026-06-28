@@ -139,6 +139,8 @@ class MCPToolSource:
             count += 1
 
         self._sessions.append(session)
+        # Store server name for session-level filtering in mcp_resources tools
+        session._server_name = config.name  # type: ignore[attr-defined]
 
         return count
 
