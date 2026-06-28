@@ -6,7 +6,6 @@ import json
 import uuid
 from typing import Any
 
-from personal_agent.exceptions import ToolExecutionError
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.tools.builtin._workspace_utils import (
     resolve_path,

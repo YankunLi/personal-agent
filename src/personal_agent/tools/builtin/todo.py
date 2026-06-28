@@ -84,24 +84,41 @@ def create_todo_tool(session_id: str = "default") -> Tool:
     """
 
     async def _todo_write(todos: list[dict[str, Any]]) -> str:
-        # Clear existing tasks for this session
-        for t in list_tasks(session_id):
-            delete_task(session_id, t["id"])
+        # Sync incoming todos with existing tasks by position
+        existing = list_tasks(session_id)
+        # Filter out internal tasks (managed by task_* tools directly)
+        user_tasks = [t for t in existing if not t.get("metadata", {}).get("_internal")]
 
         if not todos:
+            # Clear only user-managed tasks
+            for t in user_tasks:
+                delete_task(session_id, t["id"])
             return "Todo list cleared."
 
-        # Create tasks from todos
-        for todo in todos:
+        # Update existing tasks by position, create new ones for extras
+        for i, todo in enumerate(todos):
             status = todo.get("status", "pending")
-            task_id = create_task(
-                session_id=session_id,
-                subject=todo.get("content", ""),
-                description=todo.get("content", ""),
-                activeForm=todo.get("activeForm"),
-                status=status,
-            )
-            update_task(session_id, task_id, {"status": status})
+            if i < len(user_tasks):
+                # Update existing task
+                update_task(session_id, user_tasks[i]["id"], {
+                    "subject": todo.get("content", ""),
+                    "description": todo.get("content", ""),
+                    "activeForm": todo.get("activeForm"),
+                    "status": status,
+                })
+            else:
+                # Create new task
+                create_task(
+                    session_id=session_id,
+                    subject=todo.get("content", ""),
+                    description=todo.get("content", ""),
+                    activeForm=todo.get("activeForm"),
+                    status=status,
+                )
+
+        # Delete extra tasks that are no longer in the list
+        for t in user_tasks[len(todos):]:
+            delete_task(session_id, t["id"])
 
         return _format_todo_list(todos)
 

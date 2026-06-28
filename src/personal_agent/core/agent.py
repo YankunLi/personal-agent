@@ -226,12 +226,12 @@ class BaseAgent(ABC):
             from personal_agent.types import ToolResult as TR
 
             safe_calls: list[ToolCall] = []
-            results: list[ToolResult] = []
+            blocked_results: dict[str, ToolResult] = {}
             for tc in tool_calls:
                 try:
                     tool = self.tools.get(tc.name)
                     if tool.spec.mutating and tc.name not in _PLAN_MODE_CONTROL_TOOLS:
-                        results.append(TR(
+                        blocked_results[tc.id] = TR(
                             call_id=tc.id,
                             name=tc.name,
                             output=(
@@ -239,15 +239,21 @@ class BaseAgent(ABC):
                                 "Only read-only exploration tools are allowed during planning. "
                                 "Use exit_plan_mode to leave plan mode and implement changes."
                             ),
-                        ))
+                        )
                     else:
                         safe_calls.append(tc)
                 except Exception:
                     safe_calls.append(tc)
+
+            if blocked_results:
+                exec_results = await self.tool_executor.execute_all(safe_calls)
+                # Merge and sort to match original tool_calls order
+                all_results = blocked_results.copy()
+                for r in exec_results:
+                    all_results[r.call_id] = r
+                return [all_results[tc.id] for tc in tool_calls]
+
             tool_calls = safe_calls
-            if results:
-                results.extend(await self.tool_executor.execute_all(tool_calls))
-                return results
 
         results = await self.tool_executor.execute_all(tool_calls)
         if len(results) != len(tool_calls):

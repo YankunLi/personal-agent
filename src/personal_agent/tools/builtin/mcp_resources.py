@@ -176,7 +176,7 @@ def create_read_mcp_resource_tool(
             description="Reads a specific resource from an MCP server by URI. "
             "Binary content is saved to disk and a file path is returned.",
             parameters=READ_MCP_RESOURCE_PARAMETERS,
-            mutating=False,
+            mutating=True,
             concurrency_safe=True,
         ),
         fn=_read_mcp_resource,

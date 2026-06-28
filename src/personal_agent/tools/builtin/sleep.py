@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 
-from personal_agent.exceptions import ToolExecutionError
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.types import ToolSpec
 

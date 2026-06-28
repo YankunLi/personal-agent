@@ -63,6 +63,8 @@ def create_web_search_tool(
             name="web_search",
             description="Search the web for information. Returns a summary of search results.",
             parameters=WEB_SEARCH_PARAMETERS,
+            mutating=False,
+            concurrency_safe=True,
         ),
         fn=_execute,
     )
