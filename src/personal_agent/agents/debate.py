@@ -107,6 +107,7 @@ class DebateAgent(BaseAgent):
                 )
                 self._role_agents[role.name] = await create_sub_agent(
                     sub_cfg, providers=self._providers, extra_tools=extra_tools,
+                    consolidation_provider=self.consolidation_provider,
                 )
 
             for round_num in range(1, self._max_rounds + 1):
@@ -196,6 +197,9 @@ class DebateAgent(BaseAgent):
             )
 
         result = await agent.run(round_task)
+        # Clear short-term memory between rounds to prevent unbounded
+        # context growth from cumulative conversation history.
+        agent.short_term.clear()
         return result.answer, result.token_usage or {}
 
     async def _run_judge(self, task: str, responses: dict[str, str]) -> str:
@@ -220,6 +224,7 @@ class DebateAgent(BaseAgent):
         judge_agent = await create_sub_agent(
             judge_cfg, providers=self._providers,
             extra_tools=self.tools.list_mcp_tools(),
+            consolidation_provider=self.consolidation_provider,
         )
         try:
             result = await judge_agent.run(judge_task)

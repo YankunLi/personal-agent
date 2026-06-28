@@ -84,6 +84,8 @@ class BaseAgent(ABC):
         self._streaming_enabled = False
         self._cached_system_prompt: str | None = None
         self._cached_self_instruction: str | None = None
+        self._cached_memory_index: str | None = None
+        self._memory_index_valid: bool = False
 
     async def _fire(self, event: str, *args: Any) -> None:
         """Fire a callback event if it's set."""
@@ -319,18 +321,27 @@ class BaseAgent(ABC):
             current_prompt = await self._build_system_prompt()
 
             # Re-read memory index to reflect any changes made during execution
-            # (e.g., via write_memory/forget_memory tools)
+            # (e.g., via write_memory/forget_memory tools). Cached between calls
+            # and invalidated by memory mutation tools.
             if self.memory_store:
-                memory_index = await asyncio.to_thread(self.memory_store.load_index_text)
-                if memory_index and "No memories stored yet" not in memory_index:
+                if not self._memory_index_valid:
+                    memory_index = await asyncio.to_thread(self.memory_store.load_index_text)
+                    self._cached_memory_index = memory_index
+                    self._memory_index_valid = True
+                if self._cached_memory_index and "No memories stored yet" not in self._cached_memory_index:
                     current_prompt += (
                         "\n\n"
                         "══════════ MEMORY INDEX ══════════\n"
-                        f"{memory_index}"
+                        f"{self._cached_memory_index}"
                         "══════════════════════════════════\n"
                     )
 
             state.messages[0].content = current_prompt
+
+    def invalidate_memory_cache(self) -> None:
+        """Invalidate the cached memory index so the next LLM call re-reads from disk."""
+        self._memory_index_valid = False
+        self._cached_memory_index = None
 
     async def _init_state(self, task: str, include_history: bool = True) -> AgentState:
         """Initialize agent state with system prompt, memory index, history, and user task."""

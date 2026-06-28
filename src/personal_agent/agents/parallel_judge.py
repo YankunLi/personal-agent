@@ -131,6 +131,7 @@ class ParallelJudgeAgent(BaseAgent):
         agent = await create_sub_agent(
             sub_cfg, self._providers,
             extra_tools=self.tools.list_mcp_tools(),
+            consolidation_provider=self.consolidation_provider,
         )
         try:
             result = await agent.run(task)
@@ -156,6 +157,7 @@ class ParallelJudgeAgent(BaseAgent):
         judge_agent = await create_sub_agent(
             judge_cfg, self._providers,
             extra_tools=self.tools.list_mcp_tools(),
+            consolidation_provider=self.consolidation_provider,
         )
         try:
             responses = "\n\n".join(

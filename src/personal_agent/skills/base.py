@@ -420,7 +420,7 @@ class SkillManager:
         newly_activated: list[str] = []
         try:
             self._activate_recursive(name, set(), newly_activated)
-        except SkillError:
+        except Exception:
             for activated in newly_activated:
                 self._active.discard(activated)
             raise
@@ -840,6 +840,7 @@ class SkillManager:
                     target_skill_dir = target_dir / name
                     if target_skill_dir.exists():
                         logger.warning("Skill '%s' already exists at %s, skipping", name, target_skill_dir)
+                        skill.base_path = None  # Prevent dangling reference to temp dir
                         continue
 
                     shutil.copytree(skill.base_path, target_skill_dir)

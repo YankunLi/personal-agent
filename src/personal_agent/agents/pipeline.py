@@ -85,6 +85,7 @@ class PipelineAgent(BaseAgent):
                 stage_agent = await create_sub_agent(
                     sub_cfg, providers=self._providers,
                     extra_tools=self.tools.list_mcp_tools(),
+                    consolidation_provider=self.consolidation_provider,
                 )
                 stage_result = await stage_agent.run(stage_task)
                 current_input = stage_result.answer

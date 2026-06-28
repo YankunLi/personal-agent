@@ -100,7 +100,7 @@ def create_todo_tool(session_id: str = "default") -> Tool:
             status = todo.get("status", "pending")
             if i < len(user_tasks):
                 # Update existing task
-                update_task(session_id, user_tasks[i]["id"], {
+                await update_task(session_id, user_tasks[i]["id"], {
                     "subject": todo.get("content", ""),
                     "description": todo.get("content", ""),
                     "activeForm": todo.get("activeForm"),

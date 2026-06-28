@@ -93,7 +93,8 @@ class PlanAndExecuteAgent(BaseAgent):
             step = plan[i]
             logger.info("Executing step %d/%d: %s", i + 1, len(plan), step.get("description", str(step))[:80])
 
-            step_result = await self._execute_step(state, step, max_substeps=self._max_substeps)
+            remaining = self.max_steps - llm_calls
+            step_result = await self._execute_step(state, step, max_substeps=min(self._max_substeps, remaining))
             llm_calls += step_result.get("llm_calls", 0)
             step_results.append(step_result)
 

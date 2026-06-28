@@ -157,6 +157,7 @@ class BaiduProvider(Provider):
                 params={"access_token": token},
                 json=payload,
             )
+            response.raise_for_status()
             data = response.json()
 
             if "error_code" in data:

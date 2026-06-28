@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 TASK_STATUSES = ["pending", "in_progress", "completed"]
 HIGH_WATER_MARK_FILE = ".highwatermark"
 _create_lock = asyncio.Lock()
+# Per-task locks to prevent lost updates from concurrent writes
+_task_locks: dict[str, asyncio.Lock] = {}
+_task_locks_guard = asyncio.Lock()
 
 
 def _get_tasks_dir(session_id: str) -> Path:
@@ -31,6 +34,14 @@ def _ensure_tasks_dir(session_id: str) -> Path:
     d = _get_tasks_dir(session_id)
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+async def _get_task_lock(task_id: str) -> asyncio.Lock:
+    """Get or create a per-task lock for concurrency-safe writes."""
+    async with _task_locks_guard:
+        if task_id not in _task_locks:
+            _task_locks[task_id] = asyncio.Lock()
+        return _task_locks[task_id]
 
 
 def _read_high_water_mark(session_id: str) -> int:
@@ -107,51 +118,55 @@ def get_task(session_id: str, task_id: str) -> dict[str, Any] | None:
         return None
 
 
-def update_task(
+async def update_task(
     session_id: str,
     task_id: str,
     updates: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Update a task with partial fields."""
-    existing = get_task(session_id, task_id)
-    if existing is None:
-        return None
-    existing.update(updates)
-    existing["id"] = task_id  # Ensure id is never overwritten
-    path = _get_task_path(session_id, task_id)
-    path.write_text(json.dumps(existing, indent=2, ensure_ascii=False))
-    return existing
+    """Update a task with partial fields. Concurrency-safe via per-task lock."""
+    lock = await _get_task_lock(task_id)
+    async with lock:
+        existing = get_task(session_id, task_id)
+        if existing is None:
+            return None
+        existing.update(updates)
+        existing["id"] = task_id  # Ensure id is never overwritten
+        path = _get_task_path(session_id, task_id)
+        await asyncio.to_thread(path.write_text, json.dumps(existing, indent=2, ensure_ascii=False))
+        return existing
 
 
-def delete_task(session_id: str, task_id: str) -> bool:
+async def delete_task(session_id: str, task_id: str) -> bool:
     """Delete a task by ID. Updates high water mark to prevent ID reuse."""
-    path = _get_task_path(session_id, task_id)
-    try:
-        os.unlink(path)
+    lock = await _get_task_lock(task_id)
+    async with lock:
+        path = _get_task_path(session_id, task_id)
+        try:
+            await asyncio.to_thread(os.unlink, path)
 
-        # Update high water mark after successful deletion
-        numeric_id = int(task_id)
-        current_mark = _read_high_water_mark(session_id)
-        if numeric_id > current_mark:
-            _write_high_water_mark(session_id, numeric_id)
+            # Update high water mark after successful deletion
+            numeric_id = int(task_id)
+            current_mark = _read_high_water_mark(session_id)
+            if numeric_id > current_mark:
+                _write_high_water_mark(session_id, numeric_id)
 
-        # Remove references from other tasks
-        for task in list_tasks(session_id):
-            changed = False
-            blocks = task.get("blocks", [])
-            blocked_by = task.get("blockedBy", [])
-            if task_id in blocks:
-                blocks.remove(task_id)
-                changed = True
-            if task_id in blocked_by:
-                blocked_by.remove(task_id)
-                changed = True
-            if changed:
-                update_task(session_id, task["id"], {"blocks": blocks, "blockedBy": blocked_by})
+            # Remove references from other tasks
+            for task in list_tasks(session_id):
+                changed = False
+                blocks = task.get("blocks", [])
+                blocked_by = task.get("blockedBy", [])
+                if task_id in blocks:
+                    blocks.remove(task_id)
+                    changed = True
+                if task_id in blocked_by:
+                    blocked_by.remove(task_id)
+                    changed = True
+                if changed:
+                    await update_task(session_id, task["id"], {"blocks": blocks, "blockedBy": blocked_by})
 
-        return True
-    except FileNotFoundError:
-        return False
+            return True
+        except FileNotFoundError:
+            return False
 
 
 def list_tasks(session_id: str) -> list[dict[str, Any]]:
@@ -171,7 +186,7 @@ def list_tasks(session_id: str) -> list[dict[str, Any]]:
     return tasks
 
 
-def block_task(session_id: str, from_task_id: str, to_task_id: str) -> bool:
+async def block_task(session_id: str, from_task_id: str, to_task_id: str) -> bool:
     """Set up a dependency: from_task_id blocks to_task_id."""
     from_task = get_task(session_id, from_task_id)
     to_task = get_task(session_id, to_task_id)
@@ -181,18 +196,18 @@ def block_task(session_id: str, from_task_id: str, to_task_id: str) -> bool:
     if to_task_id not in from_task.get("blocks", []):
         blocks = list(from_task.get("blocks", []))
         blocks.append(to_task_id)
-        update_task(session_id, from_task_id, {"blocks": blocks})
+        await update_task(session_id, from_task_id, {"blocks": blocks})
 
     if from_task_id not in to_task.get("blockedBy", []):
         blocked_by = list(to_task.get("blockedBy", []))
         blocked_by.append(from_task_id)
         try:
-            update_task(session_id, to_task_id, {"blockedBy": blocked_by})
+            await update_task(session_id, to_task_id, {"blockedBy": blocked_by})
         except Exception:
             # Rollback to keep the dependency graph consistent
             try:
                 blocks.remove(to_task_id)
-                update_task(session_id, from_task_id, {"blocks": blocks})
+                await update_task(session_id, from_task_id, {"blocks": blocks})
             except Exception as rollback_err:
                 logger.error(
                     "Rollback failed after dependency update error: %s. "
@@ -204,7 +219,7 @@ def block_task(session_id: str, from_task_id: str, to_task_id: str) -> bool:
     return True
 
 
-def resolve_dependencies(
+async def resolve_dependencies(
     session_id: str,
     task_id: str,
     status: str,
@@ -213,7 +228,7 @@ def resolve_dependencies(
 
     When a task is completed, unblock tasks that depend on it.
     """
-    task = update_task(session_id, task_id, {"status": status})
+    task = await update_task(session_id, task_id, {"status": status})
     if task is None:
         return None
 
@@ -223,8 +238,8 @@ def resolve_dependencies(
             if task_id in other.get("blockedBy", []):
                 blocked_by = other["blockedBy"]
                 blocked_by.remove(task_id)
-                update_task(session_id, other["id"], {"blockedBy": blocked_by})
+                await update_task(session_id, other["id"], {"blockedBy": blocked_by})
         # Clear the completed task's blocks list to keep the dependency graph consistent
-        update_task(session_id, task_id, {"blocks": []})
+        await update_task(session_id, task_id, {"blocks": []})
 
     return task

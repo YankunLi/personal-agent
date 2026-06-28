@@ -64,6 +64,7 @@ async def create_sub_agent(
     skill_manager: Any = None,
     budget_manager: Any = None,
     extra_tools: list[Any] | None = None,
+    consolidation_provider: Any = None,
 ) -> BaseAgent:
     """Create a single sub-agent from SubAgentConfig.
 
@@ -133,6 +134,7 @@ async def create_sub_agent(
         "skill_manager": skill_manager,
         "cron_scheduler": None,  # Sub-agents don't get their own cron scheduler
         "budget_manager": budget_manager,
+        "consolidation_provider": consolidation_provider,
         "max_steps": sub_cfg.max_steps,
         "system_prompt": sub_cfg.system_prompt,
         "temperature": sub_cfg.temperature,
@@ -354,6 +356,11 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         fn=read_memory,
     ))
 
+    # Mutable cell for memory cache invalidation callback.
+    # Memory tools write to disk, so the cached memory index must be invalidated.
+    # This is wired after agent creation.
+    _invalidate_memory_cache = [lambda: None]
+
     # Register write_memory tool (allows agent to create or update memory files)
     async def write_memory(name: str, content: str, memory_type: str = "user",
                           description: str = "") -> str:
@@ -365,6 +372,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
             return f"Invalid memory type '{memory_type}'. Must be one of: {', '.join(valid_types)}"
         await memory_store.add(name, content, memory_type=memory_type,
                                description=description or name)
+        _invalidate_memory_cache[0]()
         return f"Memory '{name}' saved successfully (type: {memory_type})."
 
     tool_registry.register(FunctionTool(
@@ -406,6 +414,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
             return f"Error: {err}"
         deleted = await memory_store.delete(name)
         if deleted:
+            _invalidate_memory_cache[0]()
             return f"Memory '{name}' deleted successfully."
         available = [e["name"] for e in await memory_store.list_all_async()]
         return f"No memory found with name '{name}'. Available memories: {available}"
@@ -645,6 +654,10 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         from personal_agent.agents.react import ReActAgent
 
         agent = ReActAgent(**agent_kwargs)
+
+    # Wire memory cache invalidation so the memory index is re-read
+    # after write_memory/forget_memory tools modify the store.
+    _invalidate_memory_cache[0] = agent.invalidate_memory_cache
 
     # Connect MCP servers if configured (store reference for cleanup)
     if mcp_cfg.servers:

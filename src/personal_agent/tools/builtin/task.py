@@ -288,7 +288,7 @@ def create_task_update_tool(session_id: str = "default") -> Tool:
         # Handle status changes (including delete)
         if status is not None:
             if status == "deleted":
-                delete_task(session_id, taskId)
+                await delete_task(session_id, taskId)
                 return json.dumps({
                     "success": True,
                     "taskId": taskId,
@@ -296,7 +296,7 @@ def create_task_update_tool(session_id: str = "default") -> Tool:
                     "statusChange": {"from": existing.get("status"), "to": "deleted"},
                 })
             else:
-                resolve_dependencies(session_id, taskId, status)
+                await resolve_dependencies(session_id, taskId, status)
                 updated_fields.append("status")
                 updates["status"] = status
 
@@ -325,17 +325,17 @@ def create_task_update_tool(session_id: str = "default") -> Tool:
             updated_fields.append("metadata")
 
         if updates:
-            update_task(session_id, taskId, updates)
+            await update_task(session_id, taskId, updates)
 
         # Handle dependency additions
         if addBlocks:
             for blocked_id in addBlocks:
-                block_task(session_id, taskId, blocked_id)
+                await block_task(session_id, taskId, blocked_id)
             updated_fields.append("addBlocks")
 
         if addBlockedBy:
             for blocker_id in addBlockedBy:
-                block_task(session_id, blocker_id, taskId)
+                await block_task(session_id, blocker_id, taskId)
             updated_fields.append("addBlockedBy")
 
         return json.dumps({
@@ -405,8 +405,8 @@ def create_task_stop_tool(session_id: str = "default") -> Tool:
                 "error": f"Task is not running (status: {task.get('status')})",
             })
 
-        resolve_dependencies(session_id, tid, "completed")
-        update_task(session_id, tid, {"status": "completed"})
+        await resolve_dependencies(session_id, tid, "completed")
+        await update_task(session_id, tid, {"status": "completed"})
         return json.dumps({
             "success": True,
             "task_id": tid,

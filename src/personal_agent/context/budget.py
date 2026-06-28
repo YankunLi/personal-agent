@@ -139,7 +139,7 @@ class ContextBudgetManager:
         Returns:
             Message list with budget applied and sections formatted.
         """
-        if not self._allocations:
+        if not self._allocations or loaded_memories is not None:
             system_prompt = ""
             for m in messages:
                 if m.role == Role.SYSTEM:

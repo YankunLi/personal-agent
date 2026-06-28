@@ -314,20 +314,25 @@ class CronScheduler:
                 self._jobs[job.id] = job
             if self._jobs:
                 await self._save_durable()  # Clean up expired jobs
+            elif data:
+                # All loaded jobs were expired — write empty file to clean up
+                await self._save_durable()
         except (json.JSONDecodeError, OSError, KeyError) as e:
             logger.error("Failed to load durable cron jobs: %s", e)
 
     def _is_expired(self, job: CronJob) -> bool:
-        """Check if a recurring job has exceeded its max age.
+        """Check if a job has exceeded its max age.
 
-        Uses last_fired time for recurring jobs (so weekly jobs don't expire
-        before their second fire), falling back to created_at.
+        For recurring jobs: uses last_fired time (so weekly jobs don't expire
+        before their second fire), falling back to created_at. Max age 7 days.
+
+        For non-recurring jobs: uses created_at. Max age 365 days (grace period
+        for one-shot jobs that may have a distant cron match).
         """
-        if not job.recurring:
-            return False
         try:
             ref_time = job.last_fired or job.created_at
             created = datetime.fromisoformat(ref_time)
-            return datetime.now() - created > timedelta(days=DEFAULT_MAX_AGE_DAYS)
+            max_age_days = DEFAULT_MAX_AGE_DAYS if job.recurring else 365
+            return datetime.now() - created > timedelta(days=max_age_days)
         except (ValueError, TypeError):
             return False
