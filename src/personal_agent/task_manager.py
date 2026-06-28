@@ -124,13 +124,13 @@ def delete_task(session_id: str, task_id: str) -> bool:
     """Delete a task by ID. Updates high water mark to prevent ID reuse."""
     path = _get_task_path(session_id, task_id)
     try:
-        # Update high water mark before deleting
+        os.unlink(path)
+
+        # Update high water mark after successful deletion
         numeric_id = int(task_id)
         current_mark = _read_high_water_mark(session_id)
         if numeric_id > current_mark:
             _write_high_water_mark(session_id, numeric_id)
-
-        os.unlink(path)
 
         # Remove references from other tasks
         for task in list_tasks(session_id):

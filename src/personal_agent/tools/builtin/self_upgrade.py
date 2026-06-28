@@ -79,9 +79,13 @@ def create_self_upgrade_tool(
         results = []
 
         if action == "clear":
-            if _working_memory:
+            if memory_type in ("working", "both") and _working_memory:
                 _working_memory.clear()
-            return "Working memory cleared."
+                results.append("Working memory cleared.")
+            if memory_type in ("long_term", "both") and _long_term_memory:
+                _long_term_memory.clear()
+                results.append("Long-term memory cleared.")
+            return "\n".join(results) if results else "No memory cleared."
 
         if action == "delete":
             if memory_type in ("working", "both"):

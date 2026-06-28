@@ -55,8 +55,12 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
         stdout, stderr, code_ = "", "", -1
         if language == "python":
             with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-                f.write(code)
                 tmp_path = f.name
+                try:
+                    f.write(code)
+                except Exception:
+                    os.unlink(tmp_path)
+                    raise
             try:
                 stdout, stderr, code_ = await _run_command(
                     ["python3", "-I", tmp_path], timeout=timeout,
