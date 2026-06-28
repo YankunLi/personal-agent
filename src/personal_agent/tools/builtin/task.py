@@ -403,6 +403,7 @@ def create_task_stop_tool(session_id: str = "default") -> Tool:
                 "error": f"Task is not running (status: {task.get('status')})",
             })
 
+        resolve_dependencies(session_id, tid, "completed")
         update_task(session_id, tid, {"status": "completed"})
         return json.dumps({
             "success": True,
