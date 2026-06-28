@@ -580,7 +580,7 @@ class SkillManager:
             if not skill.paths:
                 continue
             if _match_paths(file_paths, skill.paths):
-                self._active.add(name)
+                self.activate(name)
                 activated.append(name)
                 logger.info("Activated conditional skill '%s' (matched paths)", name)
         return activated
@@ -783,13 +783,16 @@ class SkillManager:
 
             # Clone the repo
             logger.info("Cloning %s (ref=%s)...", repo_url, clone_ref)
-            proc = await asyncio.create_subprocess_exec(
-                "git", "clone", "--depth", "1", "--branch", clone_ref,
-                "--filter=blob:none", "--single-branch",
-                repo_url, str(tmp_path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "git", "clone", "--depth", "1", "--branch", clone_ref,
+                    "--filter=blob:none", "--single-branch",
+                    repo_url, str(tmp_path),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+            except FileNotFoundError:
+                raise SkillError("Git is not installed. Please install git to use skill installation from repositories.")
             stdout, stderr = await proc.communicate()
 
             if proc.returncode != 0:

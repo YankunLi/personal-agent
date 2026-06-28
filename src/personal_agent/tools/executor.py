@@ -333,6 +333,8 @@ class ToolExecutor:
                 if isinstance(result, ToolResult):
                     results.append(result)
                 elif isinstance(result, BaseException):
+                    if results:
+                        logger.warning("Discarding %d partial results due to exception: %s", len(results), result)
                     raise result
                 else:
                     results.append(

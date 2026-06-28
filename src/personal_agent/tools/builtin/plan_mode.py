@@ -47,6 +47,8 @@ def create_enter_plan_mode_tool(working_memory: Any) -> Tool:
     """
 
     async def _enter_plan_mode() -> str:
+        if working_memory is None:
+            return "Error: working memory not available"
         working_memory.set("plan_mode", True)
         return (
             "Plan mode activated. You are now in read-only planning mode. "
@@ -78,6 +80,8 @@ def create_exit_plan_mode_tool(working_memory: Any) -> Tool:
     async def _exit_plan_mode(
         allowedPrompts: list[dict[str, str]] | None = None,
     ) -> str:
+        if working_memory is None:
+            return "Error: working memory not available"
         working_memory.set("plan_mode", False)
 
         if allowedPrompts:

@@ -99,7 +99,10 @@ def create_ask_user_tool(
             else:
                 import asyncio
                 print(prompt)
-                answer = (await asyncio.to_thread(input, "> ")).strip()
+                try:
+                    answer = (await asyncio.to_thread(input, "> ")).strip()
+                except EOFError:
+                    return "Error: No interactive input available (stdin is not a terminal)"
 
             results.append({
                 "question": question_text,

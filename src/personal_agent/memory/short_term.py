@@ -70,7 +70,10 @@ class ShortTermMemory:
                 role = Role.USER
             tool_calls = None
             if m.get("tool_calls"):
-                tool_calls = [ToolCall(**tc) for tc in m["tool_calls"] if tc is not None]
+                try:
+                    tool_calls = [ToolCall(**tc) for tc in m["tool_calls"] if tc is not None]
+                except (TypeError, KeyError):
+                    tool_calls = None
             mem._messages.append(Message(
                 role=role,
                 content=m["content"],

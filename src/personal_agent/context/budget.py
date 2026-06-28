@@ -179,7 +179,10 @@ class ContextBudgetManager:
                 ))
 
         # 4. Compress conversation if over budget
-        conv_tokens = estimate_message_tokens(messages)
+        # Exclude system messages from the token count since conv_budget is
+        # allocated only for conversation (user + assistant) messages.
+        non_system = [m for m in messages if m.role != Role.SYSTEM]
+        conv_tokens = estimate_message_tokens(non_system)
         if conv_tokens > conv_budget:
             messages = self.compress(messages, conv_budget)
 

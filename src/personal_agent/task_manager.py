@@ -176,14 +176,20 @@ def block_task(session_id: str, from_task_id: str, to_task_id: str) -> bool:
         return False
 
     if to_task_id not in from_task.get("blocks", []):
-        blocks = from_task.get("blocks", [])
+        blocks = list(from_task.get("blocks", []))
         blocks.append(to_task_id)
         update_task(session_id, from_task_id, {"blocks": blocks})
 
     if from_task_id not in to_task.get("blockedBy", []):
-        blocked_by = to_task.get("blockedBy", [])
+        blocked_by = list(to_task.get("blockedBy", []))
         blocked_by.append(from_task_id)
-        update_task(session_id, to_task_id, {"blockedBy": blocked_by})
+        try:
+            update_task(session_id, to_task_id, {"blockedBy": blocked_by})
+        except Exception:
+            # Rollback to keep the dependency graph consistent
+            blocks.remove(to_task_id)
+            update_task(session_id, from_task_id, {"blocks": blocks})
+            raise
 
     return True
 
