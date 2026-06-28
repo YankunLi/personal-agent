@@ -744,6 +744,7 @@ class SkillManager:
 
         Handles both directory-based skills (name/) and single-file skills (name.md, etc.).
         """
+        _validate_name_as_path(name)
         # Try directory-based skill first
         skill_dir = directory / name
         if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():

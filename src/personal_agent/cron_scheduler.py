@@ -34,6 +34,16 @@ def _parse_cron_field(value: str, min_val: int, max_val: int) -> set[int]:
                 raise ValueError(f"Step value cannot be zero: '{part}'")
             if base == "*":
                 base_range = range(min_val, max_val + 1)
+            elif "-" in base:
+                lo, hi = base.split("-", 1)
+                lo_val, hi_val = int(lo), int(hi)
+                if lo_val < min_val or lo_val > max_val:
+                    raise ValueError(f"Value {lo_val} out of range [{min_val}, {max_val}] in '{value}'")
+                if hi_val < min_val or hi_val > max_val:
+                    raise ValueError(f"Value {hi_val} out of range [{min_val}, {max_val}] in '{value}'")
+                if lo_val > hi_val:
+                    raise ValueError(f"Range start {lo_val} > end {hi_val} in '{value}'")
+                base_range = range(lo_val, hi_val + 1)
             else:
                 base_val = int(base)
                 if base_val < min_val or base_val > max_val:

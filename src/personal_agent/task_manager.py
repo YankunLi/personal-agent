@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 TASK_STATUSES = ["pending", "in_progress", "completed"]
 HIGH_WATER_MARK_FILE = ".highwatermark"
+_create_lock = asyncio.Lock()
 
 
 def _get_tasks_dir(session_id: str) -> Path:
@@ -64,7 +66,7 @@ def _find_highest_task_id(session_id: str) -> int:
     return max(from_files, _read_high_water_mark(session_id))
 
 
-def create_task(
+async def create_task(
     session_id: str,
     subject: str,
     description: str,
@@ -74,24 +76,25 @@ def create_task(
     metadata: dict[str, Any] | None = None,
 ) -> str:
     """Create a new task and return its ID."""
-    _ensure_tasks_dir(session_id)
-    highest = _find_highest_task_id(session_id)
-    task_id = str(highest + 1)
+    async with _create_lock:
+        _ensure_tasks_dir(session_id)
+        highest = _find_highest_task_id(session_id)
+        task_id = str(highest + 1)
 
-    task: dict[str, Any] = {
-        "id": task_id,
-        "subject": subject,
-        "description": description,
-        "activeForm": activeForm,
-        "owner": owner,
-        "status": status,
-        "blocks": [],
-        "blockedBy": [],
-        "metadata": metadata or {},
-    }
+        task: dict[str, Any] = {
+            "id": task_id,
+            "subject": subject,
+            "description": description,
+            "activeForm": activeForm,
+            "owner": owner,
+            "status": status,
+            "blocks": [],
+            "blockedBy": [],
+            "metadata": metadata or {},
+        }
 
-    path = _get_task_path(session_id, task_id)
-    path.write_text(json.dumps(task, indent=2, ensure_ascii=False))
+        path = _get_task_path(session_id, task_id)
+        path.write_text(json.dumps(task, indent=2, ensure_ascii=False))
     return task_id
 
 
@@ -221,5 +224,7 @@ def resolve_dependencies(
                 blocked_by = other["blockedBy"]
                 blocked_by.remove(task_id)
                 update_task(session_id, other["id"], {"blockedBy": blocked_by})
+        # Clear the completed task's blocks list to keep the dependency graph consistent
+        update_task(session_id, task_id, {"blocks": []})
 
     return task

@@ -93,16 +93,26 @@ async def _validate_url(url: str) -> None:
     # Check if host is a literal private IP address
     try:
         addr = ipaddress.ip_address(host)
+        for network in _BLOCKED_NETWORKS:
+            if addr in network:
+                raise ToolExecutionError(f"URL resolves to restricted address: {addr}")
+        return
     except ValueError:
-        # Try DNS resolution asynchronously; if it fails, let the HTTP request handle it
-        try:
-            resolved = await asyncio.to_thread(socket.gethostbyname, host)
-            addr = ipaddress.ip_address(resolved)
-        except (socket.gaierror, OSError, ValueError):
-            return
-    for network in _BLOCKED_NETWORKS:
-        if addr in network:
-            raise ToolExecutionError(f"URL resolves to restricted address: {addr}")
+        pass
+
+    # Try DNS resolution asynchronously; if it fails, let the HTTP request handle it
+    try:
+        infos = await asyncio.to_thread(
+            socket.getaddrinfo, host, None,
+            family=socket.AF_UNSPEC, type=socket.SOCK_STREAM,
+        )
+        for info in infos:
+            addr = ipaddress.ip_address(info[4][0])
+            for network in _BLOCKED_NETWORKS:
+                if addr in network:
+                    raise ToolExecutionError(f"URL resolves to restricted address: {addr}")
+    except (socket.gaierror, OSError, ValueError):
+        return
 
 
 def create_web_fetch_tool(

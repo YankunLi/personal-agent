@@ -131,7 +131,7 @@ def create_task_create_tool(session_id: str = "default") -> Tool:
         activeForm: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> str:
-        task_id = create_task(
+        task_id = await create_task(
             session_id=session_id,
             subject=subject,
             description=description,

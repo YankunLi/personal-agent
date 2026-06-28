@@ -126,6 +126,7 @@ class MCPToolSource:
             )
         except Exception:
             await self._cleanup_session(session)
+            await self._cleanup_context(ctx)
             raise MCPConnectionError(
                 f"Failed to list tools from MCP server '{config.name}'"
             )

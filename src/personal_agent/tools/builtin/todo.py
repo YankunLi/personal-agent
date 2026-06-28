@@ -108,7 +108,7 @@ def create_todo_tool(session_id: str = "default") -> Tool:
                 })
             else:
                 # Create new task
-                create_task(
+                await create_task(
                     session_id=session_id,
                     subject=todo.get("content", ""),
                     description=todo.get("content", ""),
