@@ -150,10 +150,16 @@ def create_self_upgrade_tool(
         description=(
             "Update your own instructions, memory, or self-knowledge. Use this to remember "
             "important information across sessions. "
-            "For communication style preferences, use knowledge_section='Style'. "
-            "For concrete rules discovered through experience, use knowledge_section='Rules'. "
-            "For project-specific insights, use knowledge_section='Project Insights'. "
-            "For what you're good or bad at, use knowledge_section='Capabilities'."
+            "**Memory tiers:** "
+            "'working' = session-only scratchpad (dies on exit), "
+            "'long_term' = persistent semantic memory (survives across sessions), "
+            "'agent_knowledge' = structured AGENT.md file (user-editable). "
+            "**When to use:** "
+            "Use 'working' for temporary task state. "
+            "Use 'long_term' for facts about the user/project that should persist. "
+            "Use 'agent_knowledge' for communication preferences (section='Style'), "
+            "concrete rules (section='Rules'), capabilities (section='Capabilities'), "
+            "or project insights (section='Project Insights')."
         ),
         parameters=SELF_UPGRADE_PARAMETERS,
         mutating=True,

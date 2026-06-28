@@ -136,7 +136,9 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
         FunctionTool(
             spec=ToolSpec(
                 name="write_file",
-                description="Write content to a file at the given path. Creates parent directories if needed.",
+                description="Write content to a file at the given path. Creates parent directories if needed. "
+                "Use this tool to create new files or completely overwrite existing files. "
+                "For targeted edits to existing files, use file_edit instead.",
                 parameters=WRITE_FILE_PARAMETERS,
                 mutating=True,
             ),

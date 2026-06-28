@@ -86,6 +86,8 @@ def create_file_edit_tool(workspace_dir: str | None = None) -> Tool:
         spec=ToolSpec(
             name="file_edit",
             description="Performs exact string replacements in an existing file. "
+            "Use this tool for targeted surgical edits to existing files. "
+            "To create a new file or replace an entire file's contents, use write_file instead. "
             "When editing text, ensure you preserve the exact indentation (tabs/spaces) as it appears before. "
             "The edit will FAIL if old_string is not unique in the file. "
             "Either provide a larger string with more surrounding context to make it unique.",

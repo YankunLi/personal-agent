@@ -431,8 +431,11 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     # Register ask_user tool (agent can ask user questions during execution)
     tool_registry.register(create_ask_user_tool())
 
-    # Register todo_write tool (agent can manage its own todo list)
-    tool_registry.register(create_todo_tool(working_memory=working))
+    # Register todo tools (agent can manage its own todo list)
+    from personal_agent.tools.builtin.todo import create_todo_read_tool, create_todo_tool
+
+    tool_registry.register(create_todo_tool())
+    tool_registry.register(create_todo_read_tool())
 
     # Register task tools (agent can manage structured task list with dependencies)
     tool_registry.register(create_task_create_tool())
@@ -463,8 +466,12 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     tool_registry.register(create_enter_worktree_tool(
         project_dir=workspace_dir or None,
         workspace_dir=ws or None,
+        working_memory=working,
     ))
-    tool_registry.register(create_exit_worktree_tool(workspace_dir=ws or None))
+    tool_registry.register(create_exit_worktree_tool(
+        workspace_dir=ws or None,
+        working_memory=working,
+    ))
 
     # Register LSP tool
     tool_registry.register(create_lsp_tool(workspace_dir=ws or None))

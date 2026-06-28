@@ -41,7 +41,7 @@ LSP_PARAMETERS = {
             "description": "The character offset (1-based, as shown in editors)",
         },
     },
-    "required": ["operation", "filePath", "line", "character"],
+    "required": ["operation", "filePath"],
 }
 
 
@@ -64,10 +64,15 @@ def create_lsp_tool(workspace_dir: str | None = None) -> Tool:
     async def _lsp(
         operation: str,
         filePath: str,
-        line: int,
-        character: int,
+        line: int = 0,
+        character: int = 0,
     ) -> str:
         from pathlib import Path
+
+        # Operations that require position
+        _POSITION_OPS = {"goToDefinition", "findReferences", "hover"}
+        if operation in _POSITION_OPS and (line == 0 or character == 0):
+            return f"Error: {operation} requires line and character parameters"
 
         p = resolve_path(filePath, workspace_dir)
         validate_within_workspace(p, workspace_dir)
@@ -97,12 +102,11 @@ def create_lsp_tool(workspace_dir: str | None = None) -> Tool:
             "- hover: Get hover information (documentation, type info) for a symbol\n"
             "- documentSymbol: Get all symbols (functions, classes, variables) in a document\n"
             "- workspaceSymbol: Search for symbols across the entire workspace\n\n"
-            "All operations require:\n"
-            "- filePath: The file to operate on\n"
-            "- line: The line number (1-based, as shown in editors)\n"
-            "- character: The character offset (1-based, as shown in editors)\n\n"
-            "Note: LSP servers must be configured for the file type. "
-            "Python files use Jedi for analysis.",
+            "All operations require filePath. "
+            "goToDefinition, findReferences, and hover additionally require line and character "
+            "(1-based, as shown in editors). "
+            "documentSymbol and workspaceSymbol do not need position parameters.\n\n"
+            "Note: Python files use Jedi for analysis.",
             parameters=LSP_PARAMETERS,
             mutating=False,
             concurrency_safe=True,

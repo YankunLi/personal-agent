@@ -1,4 +1,9 @@
-"""Task tools — TaskCreate, TaskGet, TaskList, TaskUpdate, TaskStop."""
+"""Task tools — TaskCreate, TaskGet, TaskList, TaskUpdate, TaskStop.
+
+Parameter names use camelCase (taskId, activeForm, addBlocks, addBlockedBy) to
+match Claude Code conventions, since these tools are modeled after Claude Code's
+task management system.
+"""
 
 from __future__ import annotations
 

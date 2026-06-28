@@ -48,10 +48,12 @@ EXIT_WORKTREE_PARAMETERS = {
 def create_enter_worktree_tool(
     project_dir: str | None = None,
     workspace_dir: str | None = None,
+    working_memory: Any = None,
 ) -> Tool:
     """Create an EnterWorktree tool.
 
     Uses git worktree to create an isolated working directory.
+    Stores the worktree path in working_memory so the agent can track state.
     """
 
     async def _enter_worktree(name: str | None = None) -> str:
@@ -110,6 +112,11 @@ def create_enter_worktree_tool(
         except Exception as e:
             return f"Error: Failed to create worktree: {e}"
 
+        # Track current worktree state
+        if working_memory is not None:
+            working_memory.set("worktree_path", str(wt_path))
+            working_memory.set("worktree_branch", wt_name)
+
         return (
             f"Worktree created: {wt_path}\n"
             f"Branch: {wt_name}\n"
@@ -132,10 +139,11 @@ def create_enter_worktree_tool(
 
 def create_exit_worktree_tool(
     workspace_dir: str | None = None,
+    working_memory: Any = None,
 ) -> Tool:
     """Create an ExitWorktree tool.
 
-    Removes or keeps a git worktree and restores the original working directory.
+    Removes or keeps a git worktree and clears the tracked state.
     """
 
     async def _exit_worktree(
@@ -144,10 +152,17 @@ def create_exit_worktree_tool(
         discard_changes: bool = False,
     ) -> str:
         if action == "keep":
+            if working_memory is not None:
+                working_memory.delete("worktree_path")
+                working_memory.delete("worktree_branch")
             return "Worktree kept on disk. Branch preserved."
 
         if not path:
-            return "Error: 'path' parameter is required for action='remove'."
+            # Fall back to tracked worktree path
+            if working_memory is not None:
+                path = working_memory.get("worktree_path")
+            if not path:
+                return "Error: 'path' parameter is required for action='remove'."
 
         wt_path = Path(path).expanduser()
         if not wt_path.exists():
@@ -174,6 +189,12 @@ def create_exit_worktree_tool(
                         "Use discard_changes=true to force removal."
                     )
                 return f"Error: Failed to remove worktree: {err}"
+
+            # Clear tracked state
+            if working_memory is not None:
+                working_memory.delete("worktree_path")
+                working_memory.delete("worktree_branch")
+
             return f"Worktree removed: {path}"
         except FileNotFoundError:
             return "Error: git is not available"

@@ -32,7 +32,7 @@ from personal_agent.tools.builtin.task import (
     create_task_stop_tool,
     create_task_update_tool,
 )
-from personal_agent.tools.builtin.todo import create_todo_tool
+from personal_agent.tools.builtin.todo import create_todo_read_tool, create_todo_tool
 from personal_agent.tools.builtin.web_search import create_web_search_tool, web_search
 from personal_agent.tools.builtin.web_fetch import create_web_fetch_tool
 from personal_agent.tools.builtin.worktree import (
@@ -57,6 +57,7 @@ __all__ = [
     "create_glob_tool",
     "create_ask_user_tool",
     "create_todo_tool",
+    "create_todo_read_tool",
     "create_cron_create_tool",
     "create_cron_delete_tool",
     "create_cron_list_tool",

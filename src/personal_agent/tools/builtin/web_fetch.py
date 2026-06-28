@@ -77,7 +77,7 @@ def create_web_fetch_tool(
         max_content_chars: Maximum characters to return (truncated with notice).
     """
 
-    async def _execute(url: str, prompt: str) -> str:
+    async def _execute(url: str) -> str:
         # Upgrade HTTP to HTTPS
         if url.startswith("http://"):
             url = "https://" + url[7:]
@@ -124,8 +124,7 @@ def create_web_fetch_tool(
             description=(
                 "Fetches content from a specified URL and processes it into markdown. "
                 "Useful for reading documentation, articles, or any web page content. "
-                "HTTP URLs are automatically upgraded to HTTPS. "
-                "The prompt parameter describes what you want to extract from the page."
+                "HTTP URLs are automatically upgraded to HTTPS."
             ),
             parameters=WEB_FETCH_PARAMETERS,
             mutating=False,

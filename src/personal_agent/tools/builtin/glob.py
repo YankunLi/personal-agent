@@ -22,6 +22,10 @@ GLOB_PARAMETERS = {
             "type": "string",
             "description": "The directory to search in. If not specified, the current working directory will be used.",
         },
+        "include_hidden": {
+            "type": "boolean",
+            "description": "Include hidden files and directories (names starting with '.'). Default: false.",
+        },
     },
     "required": ["pattern"],
 }
@@ -35,7 +39,7 @@ def create_glob_tool(
 ) -> Tool:
     """Create a Glob tool with optional workspace directory restriction."""
 
-    async def _glob(pattern: str, path: str | None = None) -> str:
+    async def _glob(pattern: str, path: str | None = None, include_hidden: bool = False) -> str:
         # Resolve the search directory
         if path:
             search_dir = resolve_path(path, workspace_dir)
@@ -53,8 +57,11 @@ def create_glob_tool(
             return f"Error: Not a directory: {path or search_dir}"
 
         matches = sorted(search_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
-        # Filter out directories and hidden files
-        files = [m for m in matches if not m.name.startswith(".")]
+        # Filter hidden files unless explicitly requested
+        if include_hidden:
+            files = list(matches)
+        else:
+            files = [m for m in matches if not m.name.startswith(".")]
 
         if not files:
             return "(no matching files)"

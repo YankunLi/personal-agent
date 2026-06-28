@@ -40,7 +40,7 @@ NOTEBOOK_EDIT_PARAMETERS = {
             "description": "The type of edit to make (replace, insert, delete). Defaults to replace.",
         },
     },
-    "required": ["notebook_path", "new_source"],
+    "required": ["notebook_path"],
 }
 
 
@@ -63,7 +63,7 @@ def create_notebook_edit_tool(workspace_dir: str | None = None) -> Tool:
 
     async def _notebook_edit(
         notebook_path: str,
-        new_source: str,
+        new_source: str = "",
         cell_id: str | None = None,
         cell_type: str | None = None,
         edit_mode: str = "replace",
@@ -75,6 +75,9 @@ def create_notebook_edit_tool(workspace_dir: str | None = None) -> Tool:
             return f"Error: Notebook file not found: {notebook_path}"
         if p.suffix != ".ipynb":
             return f"Error: Not a .ipynb file: {notebook_path}"
+
+        if edit_mode in ("replace", "insert") and not new_source:
+            return f"Error: new_source is required for edit_mode={edit_mode}"
 
         try:
             content = p.read_text(encoding="utf-8")

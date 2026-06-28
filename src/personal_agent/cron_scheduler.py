@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 # Default max age for recurring tasks (7 days)
 DEFAULT_MAX_AGE_DAYS = 7
 
-# Check interval for the scheduler loop
-CHECK_INTERVAL_SECONDS = 15
+# Default check interval for the scheduler loop in seconds
+DEFAULT_CHECK_INTERVAL = 15.0
 
 
 def _parse_cron_field(value: str, min_val: int, max_val: int) -> set[int]:
@@ -142,7 +142,7 @@ class CronScheduler:
 
     MAX_JOBS = 50
 
-    def __init__(self, storage_path: Path | None = None):
+    def __init__(self, storage_path: Path | None = None, check_interval: float = DEFAULT_CHECK_INTERVAL):
         self._jobs: dict[str, CronJob] = {}
         self._storage_path = storage_path or Path(
             "~/.personal-agent/scheduled_tasks.json"
@@ -150,6 +150,7 @@ class CronScheduler:
         self._running = False
         self._task: asyncio.Task | None = None
         self._callback: Callable[[str], Awaitable[None]] | None = None
+        self._check_interval = check_interval
 
     # ── public API ──────────────────────────────────────────────────────
 
@@ -216,7 +217,7 @@ class CronScheduler:
     # ── internal ────────────────────────────────────────────────────────
 
     async def _loop(self) -> None:
-        """Main scheduler loop. Checks for jobs to fire every ~15 seconds."""
+        """Main scheduler loop. Checks for jobs to fire on the configured interval."""
         # Track which minute we last checked to avoid double-firing
         last_minute = None
 
@@ -228,7 +229,7 @@ class CronScheduler:
                 last_minute = current_minute
                 await self._check_and_fire(now)
 
-            await asyncio.sleep(CHECK_INTERVAL_SECONDS)
+            await asyncio.sleep(self._check_interval)
 
     async def _check_and_fire(self, now: datetime) -> None:
         """Check all jobs and fire those that match the current time."""

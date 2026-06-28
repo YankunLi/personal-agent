@@ -101,7 +101,7 @@ async def test_http_upgrade(executor):
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
             id="1", name="web_fetch",
-            arguments={"url": "http://example.com/page", "prompt": "Extract content"},
+            arguments={"url": "http://example.com/page"},
         )
         result = await executor.execute(tc)
         assert result.error is None
@@ -126,7 +126,7 @@ async def test_html_extraction(executor):
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
             id="1", name="web_fetch",
-            arguments={"url": "https://example.com/article", "prompt": "Extract content"},
+            arguments={"url": "https://example.com/article"},
         )
         result = await executor.execute(tc)
         assert result.error is None
@@ -149,7 +149,7 @@ async def test_plain_text(executor):
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
             id="1", name="web_fetch",
-            arguments={"url": "https://example.com/data.txt", "prompt": "Read it"},
+            arguments={"url": "https://example.com/data.txt"},
         )
         result = await executor.execute(tc)
         assert result.error is None
@@ -170,7 +170,7 @@ async def test_json_content(executor):
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
             id="1", name="web_fetch",
-            arguments={"url": "https://api.example.com/data", "prompt": "Get data"},
+            arguments={"url": "https://api.example.com/data"},
         )
         result = await executor.execute(tc)
         assert result.error is None
@@ -197,7 +197,7 @@ async def test_truncation():
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
             id="1", name="web_fetch",
-            arguments={"url": "https://example.com/long", "prompt": "Extract"},
+            arguments={"url": "https://example.com/long"},
         )
         result = await exec_small.execute(tc)
         assert result.error is None
@@ -219,7 +219,7 @@ async def test_unsupported_content_type(executor):
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
             id="1", name="web_fetch",
-            arguments={"url": "https://example.com/image.png", "prompt": "Extract"},
+            arguments={"url": "https://example.com/image.png"},
         )
         result = await executor.execute(tc)
         assert result.error is None
@@ -240,7 +240,7 @@ async def test_http_error(executor):
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
             id="1", name="web_fetch",
-            arguments={"url": "https://example.com/not-found", "prompt": "Extract"},
+            arguments={"url": "https://example.com/not-found"},
         )
         result = await executor.execute(tc)
         assert "HTTP 404" in (result.error or "")
@@ -260,7 +260,7 @@ async def test_follows_redirects(executor):
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
             id="1", name="web_fetch",
-            arguments={"url": "https://example.com/redirect", "prompt": "Extract"},
+            arguments={"url": "https://example.com/redirect"},
         )
         result = await executor.execute(tc)
         assert result.error is None

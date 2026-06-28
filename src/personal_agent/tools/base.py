@@ -11,7 +11,16 @@ from personal_agent.types import ToolSpec
 
 
 class Tool(ABC):
-    """Abstract base for all tools."""
+    """Abstract base for all tools.
+
+    Error handling convention:
+    - Return error strings (e.g. \"Error: File not found\") for operational errors
+      that are expected outcomes of valid tool usage (missing files, invalid input,
+      empty results). The executor treats these as normal tool outputs.
+    - Raise ToolExecutionError for infrastructure/system errors that indicate
+      the tool itself is broken (network failures, auth errors, security violations).
+      The executor treats these as permanent failures and will not retry.
+    """
 
     @property
     @abstractmethod

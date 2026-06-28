@@ -1,10 +1,15 @@
-"""TodoWrite tool — manage a session todo list."""
+"""Todo tools — TodoWrite and TodoRead backed by the task manager."""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
+from personal_agent.task_manager import (
+    create_task,
+    delete_task,
+    list_tasks,
+    update_task,
+)
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.types import ToolSpec
 
@@ -37,49 +42,68 @@ TODO_PARAMETERS = {
     "required": ["todos"],
 }
 
+TODO_READ_PARAMETERS = {
+    "type": "object",
+    "properties": {},
+}
 
-def create_todo_tool(working_memory: Any | None = None) -> Tool:
-    """Create a TodoWrite tool backed by WorkingMemory.
 
-    Args:
-        working_memory: WorkingMemory instance for persisting todos.
-            If None, todos are stored in a local list (not persisted).
+def _format_todo_list(items: list[dict[str, Any]]) -> str:
+    """Format a list of task/todo dicts into a todo display string."""
+    if not items:
+        return "No todos found. Use todo_write to create one."
+
+    lines = ["## Todo List", ""]
+    status_order = {"in_progress": 0, "pending": 1, "completed": 2}
+    sorted_items = sorted(items, key=lambda t: status_order.get(t.get("status", "pending"), 99))
+
+    for item in sorted_items:
+        status = item.get("status", "pending")
+        content = item.get("content") or item.get("subject", "")
+        active = item.get("activeForm", "")
+
+        if status == "in_progress":
+            prefix = "[>]"
+        elif status == "completed":
+            prefix = "[x]"
+        else:
+            prefix = "[ ]"
+
+        display = active or content
+        lines.append(f"  {prefix} {display}")
+
+    lines.append(f"\n  {len(items)} tasks total")
+    return "\n".join(lines)
+
+
+def create_todo_tool(session_id: str = "default") -> Tool:
+    """Create a TodoWrite tool backed by the task manager.
+
+    Uses the same file-based persistence as the task_* tools,
+    so todo_write and task_* tools share the same task data.
     """
 
-    _fallback: list[dict[str, Any]] = []
-
     async def _todo_write(todos: list[dict[str, Any]]) -> str:
-        if working_memory is not None:
-            working_memory.set("todo_list", todos)
-        else:
-            _fallback.clear()
-            _fallback.extend(todos)
+        # Clear existing tasks for this session
+        for t in list_tasks(session_id):
+            delete_task(session_id, t["id"])
 
         if not todos:
             return "Todo list cleared."
 
-        # Build formatted output
-        lines = ["## Todo List", ""]
-        status_order = {"in_progress": 0, "pending": 1, "completed": 2}
-        sorted_todos = sorted(todos, key=lambda t: status_order.get(t.get("status", "pending"), 99))
-
-        for todo in sorted_todos:
+        # Create tasks from todos
+        for todo in todos:
             status = todo.get("status", "pending")
-            content = todo.get("content", "")
-            active = todo.get("activeForm", "")
+            task_id = create_task(
+                session_id=session_id,
+                subject=todo.get("content", ""),
+                description=todo.get("content", ""),
+                activeForm=todo.get("activeForm"),
+                status=status,
+            )
+            update_task(session_id, task_id, {"status": status})
 
-            if status == "in_progress":
-                prefix = "[>]"
-            elif status == "completed":
-                prefix = "[x]"
-            else:
-                prefix = "[ ]"
-
-            display = active or content
-            lines.append(f"  {prefix} {display}")
-
-        lines.append(f"\n  {len(todos)} tasks total")
-        return "\n".join(lines)
+        return _format_todo_list(todos)
 
     return FunctionTool(
         spec=ToolSpec(
@@ -107,4 +131,30 @@ def create_todo_tool(working_memory: Any | None = None) -> Tool:
             concurrency_safe=False,
         ),
         fn=_todo_write,
+    )
+
+
+def create_todo_read_tool(session_id: str = "default") -> Tool:
+    """Create a TodoRead tool that reads the current todo list.
+
+    Reads from the same task manager backend as todo_write and task_* tools.
+    """
+
+    async def _todo_read() -> str:
+        tasks = list_tasks(session_id)
+        # Filter out internal tasks
+        visible = [t for t in tasks if not t.get("metadata", {}).get("_internal")]
+        return _format_todo_list(visible)
+
+    return FunctionTool(
+        spec=ToolSpec(
+            name="todo_read",
+            description="Use this tool to read the current todo list. "
+            "Returns all todos with their status indicators ([ ] pending, [>] in_progress, [x] completed). "
+            "Use this to check what tasks remain before creating new todos.",
+            parameters=TODO_READ_PARAMETERS,
+            mutating=False,
+            concurrency_safe=True,
+        ),
+        fn=_todo_read,
     )
