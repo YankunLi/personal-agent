@@ -138,6 +138,8 @@ class ToolExecutor:
     @staticmethod
     def _is_transient_error(error: str) -> bool:
         """Check if an error message indicates a transient (retryable) failure."""
+        if not error:
+            return False
         for pattern in TRANSIENT_ERROR_PATTERNS:
             if pattern.search(error):
                 return True

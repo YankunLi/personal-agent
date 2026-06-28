@@ -121,12 +121,12 @@ class BaseAgent(ABC):
         await self._rebuild_system_message(state)
 
         messages = state.messages
+        # Accumulate full conversation before pruning for memory consolidation
+        captured_ids = {id(m) for m in state.full_messages}
+        for m in messages:
+            if id(m) not in captured_ids:
+                state.full_messages.append(m)
         if self.context_manager:
-            # Accumulate full conversation before pruning for memory consolidation
-            captured_ids = {id(m) for m in state.full_messages}
-            for m in messages:
-                if id(m) not in captured_ids:
-                    state.full_messages.append(m)
             messages = await self.context_manager.prepare(messages)
             state.messages = messages
 
@@ -155,12 +155,12 @@ class BaseAgent(ABC):
         await self._rebuild_system_message(state)
 
         messages = state.messages
+        # Accumulate full conversation before pruning for memory consolidation
+        captured_ids = {id(m) for m in state.full_messages}
+        for m in messages:
+            if id(m) not in captured_ids:
+                state.full_messages.append(m)
         if self.context_manager:
-            # Accumulate full conversation before pruning for memory consolidation
-            captured_ids = {id(m) for m in state.full_messages}
-            for m in messages:
-                if id(m) not in captured_ids:
-                    state.full_messages.append(m)
             messages = await self.context_manager.prepare(messages)
             state.messages = messages
 

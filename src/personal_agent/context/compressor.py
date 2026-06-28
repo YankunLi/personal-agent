@@ -50,7 +50,7 @@ class LLMCompressor(ContextCompressor):
                 max_tokens=1000,
                 temperature=0.3,
             )
-            return response.content
+            return response.content or ""
         except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
             raise
         except Exception as e:

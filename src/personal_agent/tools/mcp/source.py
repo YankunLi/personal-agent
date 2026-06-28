@@ -119,10 +119,17 @@ class MCPToolSource:
             ) from e
 
         # Discover and register tools
-        tools_result = await asyncio.wait_for(
-            session.list_tools(),
-            timeout=config.timeout,
-        )
+        try:
+            tools_result = await asyncio.wait_for(
+                session.list_tools(),
+                timeout=config.timeout,
+            )
+        except Exception:
+            await self._cleanup_session(session)
+            raise MCPConnectionError(
+                f"Failed to list tools from MCP server '{config.name}'"
+            )
+
         count = 0
 
         for mcp_tool in tools_result.tools:
