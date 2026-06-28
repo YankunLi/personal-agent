@@ -217,6 +217,9 @@ class BaseAgent(ABC):
 
         When plan_mode is active, mutating tool calls are rejected.
         """
+        # Plan mode control tools that must always be callable
+        _PLAN_MODE_CONTROL_TOOLS = {"enter_plan_mode", "exit_plan_mode"}
+
         # Check plan mode: reject mutating tools when planning
         plan_mode = self.working.get("plan_mode") if self.working else None
         if plan_mode:
@@ -227,7 +230,7 @@ class BaseAgent(ABC):
             for tc in tool_calls:
                 try:
                     tool = self.tools.get(tc.name)
-                    if tool.spec.mutating:
+                    if tool.spec.mutating and tc.name not in _PLAN_MODE_CONTROL_TOOLS:
                         results.append(TR(
                             call_id=tc.id,
                             name=tc.name,

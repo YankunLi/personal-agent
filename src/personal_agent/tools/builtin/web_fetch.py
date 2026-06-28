@@ -18,12 +18,8 @@ WEB_FETCH_PARAMETERS = {
             "type": "string",
             "description": "The URL to fetch content from. HTTP URLs are automatically upgraded to HTTPS.",
         },
-        "prompt": {
-            "type": "string",
-            "description": "The prompt describing what information to extract from the page.",
-        },
     },
-    "required": ["url", "prompt"],
+    "required": ["url"],
 }
 
 DEFAULT_TIMEOUT = 30.0

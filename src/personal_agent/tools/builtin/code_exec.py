@@ -88,6 +88,7 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
             name="code_exec",
             description="Execute Python (isolated mode) or Bash (safe mode) code in a subprocess. Returns stdout, stderr, and exit code.",
             parameters=CODE_EXEC_PARAMETERS,
+            mutating=True,
         ),
         fn=_execute,
     )

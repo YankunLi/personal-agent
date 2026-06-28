@@ -377,15 +377,12 @@ def create_task_update_tool(session_id: str = "default") -> Tool:
 def create_task_stop_tool(session_id: str = "default") -> Tool:
     """Create a TaskStop tool."""
 
-    async def _task_stop(
-        task_id: str | None = None,
-        shell_id: str | None = None,
-    ) -> str:
+    async def _task_stop(task_id: str = "", shell_id: str = "") -> str:
         tid = task_id or shell_id
         if not tid:
             return json.dumps({
                 "success": False,
-                "error": "Either task_id or shell_id must be provided",
+                "error": "task_id must be provided",
             })
 
         task = get_task(session_id, tid)
