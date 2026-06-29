@@ -382,6 +382,8 @@ class FeishuChannel(Channel):
 
     async def _run_agent(self, agent: Any, session: Any, text: str, message_id: str) -> None:
         """Run the agent and send the reply. Called under per-user lock."""
+        # Refresh the timestamp to prevent eviction during long-running agent.run()
+        self._conn_agent_times[session.user_id] = time.time()
         try:
             result = await agent.run(text)
             reply = result.answer[:self.MAX_REPLY_LENGTH]
