@@ -274,6 +274,7 @@ class CronScheduler:
         """Check all jobs and fire those that match the current time."""
         to_fire: list[tuple[str, str]] = []  # (job_id, prompt)
         to_remove = []
+        has_durable_fired = False
 
         async with self._jobs_lock:
             for job in list(self._jobs.values()):
@@ -283,6 +284,9 @@ class CronScheduler:
                     job.fired_count += 1
 
                     to_fire.append((job.id, job.prompt))
+
+                    if job.durable:
+                        has_durable_fired = True
 
                     if not job.recurring:
                         to_remove.append(job.id)
@@ -299,7 +303,10 @@ class CronScheduler:
                 self._pending_callbacks.add(task)
                 task.add_done_callback(self._pending_callbacks.discard)
 
-        if to_remove:
+        # Persist durable state: removed jobs must be cleaned up, and
+        # recurring durable jobs need last_fired persisted to avoid
+        # premature expiry on restart.
+        if to_remove or has_durable_fired:
             await self._save_durable()
 
     async def _fire_callback(self, job_id: str, prompt: str) -> None:
@@ -311,16 +318,22 @@ class CronScheduler:
 
     async def _save_durable(self) -> None:
         """Save durable jobs to the JSON file. Acquires _jobs_lock to serialize saves."""
+        import tempfile
+
         async with self._jobs_lock:
             durable_jobs = [j.to_dict() for j in self._jobs.values() if j.durable]
         try:
             self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp_path = self._storage_path.with_suffix(".tmp")
+            # Use a unique temp file to prevent concurrent saves from clobbering each other
+            fd, tmp_path = await asyncio.to_thread(
+                tempfile.mkstemp, dir=str(self._storage_path.parent), suffix=".tmp"
+            )
+            await asyncio.to_thread(os.close, fd)
             await asyncio.to_thread(
-                tmp_path.write_text,
+                Path(tmp_path).write_text,
                 json.dumps(durable_jobs, indent=2, ensure_ascii=False),
             )
-            await asyncio.to_thread(os.replace, str(tmp_path), str(self._storage_path))
+            await asyncio.to_thread(os.replace, tmp_path, str(self._storage_path))
         except OSError as e:
             logger.error("Failed to save durable cron jobs: %s", e)
 
