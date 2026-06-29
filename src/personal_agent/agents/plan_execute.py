@@ -110,6 +110,12 @@ class PlanAndExecuteAgent(BaseAgent):
                         step_results.pop()  # Remove the failed step's result
                         i += 1
                     else:
+                        if not new_plan:
+                            # LLM returned an empty plan — fall back to skipping the failed step
+                            logger.warning("Replan returned empty plan, skipping failed step")
+                            step_results.pop()
+                            i += 1
+                            continue
                         plan = new_plan
                         self.working.set("plan", plan)
                         i = 0  # Restart from beginning of new plan

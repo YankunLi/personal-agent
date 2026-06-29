@@ -303,6 +303,10 @@ class ToolExecutor:
                         f"[Fallback from '{tool_call.name}' to '{fallback_name}']\n{output}"
                     ),
                 )
+            except asyncio.TimeoutError as e:
+                last_error = (
+                    f"{last_error}; fallback '{fallback_name}' timed out: {e}"
+                )
             except Exception as e:
                 last_error = (
                     f"{last_error}; fallback '{fallback_name}' also failed: {e}"
