@@ -82,6 +82,7 @@ GREP_PARAMETERS = {
 
 DEFAULT_HEAD_LIMIT = 250
 DEFAULT_MAX_RESULT_CHARS = 100_000
+DEFAULT_MAX_FILE_BYTES = 5_000_000  # Skip files larger than 5MB in Python fallback
 
 
 def _build_rg_args(
@@ -163,6 +164,10 @@ def _python_fallback(
     """Pure Python fallback when ripgrep is not available."""
     import fnmatch
 
+    # Default to content mode, matching ripgrep's default behavior
+    if output_mode is None:
+        output_mode = "content"
+
     try:
         flags = re.IGNORECASE if case_insensitive else 0
         if multiline:
@@ -199,6 +204,9 @@ def _python_fallback(
             if os.path.islink(fpath):
                 continue
             try:
+                # Skip large files to prevent memory exhaustion
+                if os.path.getsize(fpath) > DEFAULT_MAX_FILE_BYTES:
+                    continue
                 with open(fpath, "r", encoding="utf-8") as f:
                     lines = f.readlines()
             except (UnicodeDecodeError, OSError):
@@ -300,7 +308,10 @@ def create_grep_tool(
                 return f"Error: Search timed out after {timeout}s"
             except BaseException:
                 proc.kill()
-                await proc.wait()
+                try:
+                    await asyncio.shield(proc.wait())
+                except BaseException:
+                    pass
                 raise
 
             if proc.returncode == 1:
