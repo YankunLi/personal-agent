@@ -156,7 +156,7 @@ async def create_sub_agent(
         else:
             from personal_agent.agents.react import ReActAgent
             return ReActAgent(**agent_kwargs)
-    except Exception:
+    except BaseException:
         try:
             await provider.close()
         except Exception:
@@ -701,8 +701,11 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
 
     try:
         await cron_scheduler.start(_cron_callback)
-    except Exception:
-        await agent.close()
+    except BaseException:
+        try:
+            await agent.close()
+        except Exception as close_err:
+            logger.warning("Error closing agent after cron start failure: %s", close_err)
         raise
 
     return agent
