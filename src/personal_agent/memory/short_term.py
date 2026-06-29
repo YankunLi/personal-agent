@@ -52,6 +52,7 @@ class ShortTermMemory:
                         }
                         for tc in m.tool_calls
                     ] if m.tool_calls else None,
+                    "metadata": m.metadata if m.metadata else None,
                 }
                 for m in self._messages
             ],
@@ -79,6 +80,7 @@ class ShortTermMemory:
                 content=m["content"],
                 tool_call_id=m.get("tool_call_id"),
                 tool_calls=tool_calls,
+                metadata=m.get("metadata") or {},
             ))
         return mem
 
