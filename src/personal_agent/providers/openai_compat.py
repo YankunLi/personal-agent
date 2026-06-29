@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import AsyncIterator
 
 from openai import AsyncOpenAI
@@ -11,6 +12,8 @@ from personal_agent.providers._errors import raise_provider_error
 from personal_agent.providers.base import ChatResponse, Provider
 from personal_agent.exceptions import ProviderError
 from personal_agent.types import Message, Role, ToolCall, ToolSpec
+
+logger = logging.getLogger(__name__)
 
 
 def _to_openai_messages(messages: list[Message]) -> list[dict]:
@@ -109,6 +112,10 @@ class OpenAICompatibleProvider(Provider):
                     try:
                         args = json.loads(tc.function.arguments)
                     except json.JSONDecodeError:
+                        logger.warning(
+                            "Failed to parse tool call arguments for '%s': %s",
+                            tc.function.name, tc.function.arguments[:200],
+                        )
                         args = {}
                     tool_calls.append(
                         ToolCall(id=tc.id, name=tc.function.name, arguments=args)
