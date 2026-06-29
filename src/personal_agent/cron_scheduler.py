@@ -339,13 +339,20 @@ class CronScheduler:
         For recurring jobs: uses last_fired time (so weekly jobs don't expire
         before their second fire), falling back to created_at. Max age 7 days.
 
-        For non-recurring jobs: uses created_at. Max age 365 days (grace period
-        for one-shot jobs that may have a distant cron match).
+        For non-recurring jobs: only expires if already fired (last_fired is set).
+        Otherwise keeps the job indefinitely since it may have a distant future
+        cron match. Once fired, expires after 365 days.
         """
         try:
-            ref_time = job.last_fired or job.created_at
-            created = datetime.fromisoformat(ref_time)
-            max_age_days = DEFAULT_MAX_AGE_DAYS if job.recurring else 365
-            return datetime.now() - created > timedelta(days=max_age_days)
+            if job.recurring:
+                ref_time = job.last_fired or job.created_at
+                created = datetime.fromisoformat(ref_time)
+                return datetime.now() - created > timedelta(days=DEFAULT_MAX_AGE_DAYS)
+            else:
+                # Non-recurring: only expire if it has fired
+                if not job.last_fired:
+                    return False
+                created = datetime.fromisoformat(job.last_fired)
+                return datetime.now() - created > timedelta(days=365)
         except (ValueError, TypeError):
             return False
