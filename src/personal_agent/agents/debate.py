@@ -239,7 +239,5 @@ class DebateAgent(BaseAgent):
         finally:
             try:
                 await judge_agent.close()
-            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
-                raise
             except Exception as e:
                 logger.warning("Error closing judge agent: %s", e)
