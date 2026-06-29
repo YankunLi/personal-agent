@@ -208,7 +208,7 @@ class MemoryConsolidator:
                     except json.JSONDecodeError:
                         continue
 
-        if not parsed:
+        if parsed is None:
             logger.warning("Failed to parse consolidation response: %s", content[:200])
             return None
 
