@@ -116,7 +116,7 @@ class TestCaching:
 
         tc = ToolCall(id="1", name="my_tool", arguments={"x": "a"})
         await executor.execute(tc)
-        executor.clear_cache()
+        await executor.clear_cache()
         r2 = await executor.execute(tc)
 
         assert r2.output == "result-2"  # cache was cleared, so function called again

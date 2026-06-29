@@ -305,7 +305,7 @@ class FeishuChannel(Channel):
         async with self._user_locks_lock:
             if user_id not in self._user_locks:
                 self._user_locks[user_id] = asyncio.Lock()
-        user_lock = self._user_locks[user_id]
+            user_lock = self._user_locks[user_id]
 
         async with user_lock:
             # Create channel message and route to session (under lock to avoid races)

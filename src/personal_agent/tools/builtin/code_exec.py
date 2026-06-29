@@ -69,6 +69,7 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
                         pass
                     unlinked = True
                     raise
+            os.chmod(tmp_path, 0o400)
             try:
                 stdout, stderr, code_ = await _run_command(
                     ["python3", "-I", tmp_path], timeout=timeout,

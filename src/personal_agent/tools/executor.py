@@ -80,6 +80,9 @@ class ToolExecutor:
         # Recent calls per tool for duplicate detection: {tool_name: [(args, result), ...]}
         self._recent_calls: dict[str, list[tuple[dict[str, Any], ToolResult]]] = {}
 
+        # Lock for _cache and _recent_calls (accessed from parallel execute() calls)
+        self._cache_lock = asyncio.Lock()
+
     # ── cache ──────────────────────────────────────────────────────────
 
     @staticmethod
@@ -97,10 +100,11 @@ class ToolExecutor:
         key = self._make_cache_key(tool_name, arguments)
         self._cache[key] = result
 
-    def clear_cache(self) -> None:
+    async def clear_cache(self) -> None:
         """Clear the per-run result cache and recent calls. Called between agent runs."""
-        self._cache.clear()
-        self._recent_calls.clear()
+        async with self._cache_lock:
+            self._cache.clear()
+            self._recent_calls.clear()
 
     def _check_recent_duplicate(self, tool_name: str, arguments: dict[str, Any]) -> ToolResult | None:
         """Check if arguments are equivalent to a recent call for the same tool.
@@ -195,28 +199,29 @@ class ToolExecutor:
 
     async def execute(self, tool_call: ToolCall) -> ToolResult:
         """Execute a single tool call with caching, validation, timeout, retry, and fallback."""
-        # Check for duplicate/redundant calls (inputsEquivalent)
-        dup = self._check_recent_duplicate(tool_call.name, tool_call.arguments)
-        if dup is not None:
-            logger.debug(
-                "Duplicate tool call detected: %s(%s), returning cached result",
-                tool_call.name, tool_call.arguments,
-            )
-            return ToolResult(
-                call_id=tool_call.id,
-                name=tool_call.name,
-                output=f"[Duplicate call detected — returning previous result]\n{dup.output}",
-            )
+        # Check for duplicate/redundant calls (inputsEquivalent) under lock
+        async with self._cache_lock:
+            dup = self._check_recent_duplicate(tool_call.name, tool_call.arguments)
+            if dup is not None:
+                logger.debug(
+                    "Duplicate tool call detected: %s(%s), returning cached result",
+                    tool_call.name, tool_call.arguments,
+                )
+                return ToolResult(
+                    call_id=tool_call.id,
+                    name=tool_call.name,
+                    output=f"[Duplicate call detected — returning previous result]\n{dup.output}",
+                )
 
-        # Check cache for non-mutating tools
-        try:
-            tool = self._registry.get(tool_call.name)
-            if not tool.spec.mutating:
-                cached = self._get_cached(tool_call.name, tool_call.arguments)
-                if cached is not None:
-                    return cached
-        except ToolNotFoundError:
-            pass  # Will be handled in the execution attempt below
+            # Check cache for non-mutating tools
+            try:
+                tool = self._registry.get(tool_call.name)
+                if not tool.spec.mutating:
+                    cached = self._get_cached(tool_call.name, tool_call.arguments)
+                    if cached is not None:
+                        return cached
+            except ToolNotFoundError:
+                pass  # Will be handled in the execution attempt below
 
         max_retries = self._get_retry_count(tool_call.name)
         last_error: str | None = None
@@ -234,11 +239,11 @@ class ToolExecutor:
                     name=tool_call.name,
                     output=self._truncate_output(output),
                 )
-                # Cache non-mutating results
-                if not tool.spec.mutating:
-                    self._set_cache(tool_call.name, tool_call.arguments, result)
-                # Record for duplicate detection
-                self._record_recent_call(tool_call.name, tool_call.arguments, result)
+                # Cache non-mutating results and record for duplicate detection under lock
+                async with self._cache_lock:
+                    if not tool.spec.mutating:
+                        self._set_cache(tool_call.name, tool_call.arguments, result)
+                    self._record_recent_call(tool_call.name, tool_call.arguments, result)
                 return result
 
             except ToolNotFoundError:

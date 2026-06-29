@@ -288,13 +288,14 @@ class WebSocketChannel(Channel):
 
         session = session_mgr.create(name)
         self._conn_sessions[conn_id] = session
-        # Reset agent for new session
-        if conn_id in self._conn_agents:
-            try:
-                await self._conn_agents[conn_id].close()
-            except Exception:
-                pass
-            del self._conn_agents[conn_id]
+        # Reset agent for new session (under lock to prevent races with _get_or_create_agent)
+        async with self._agent_lock:
+            if conn_id in self._conn_agents:
+                try:
+                    await self._conn_agents[conn_id].close()
+                except Exception:
+                    pass
+                del self._conn_agents[conn_id]
         await self._send(websocket, {
             "type": "session_info",
             "id": session.id,
