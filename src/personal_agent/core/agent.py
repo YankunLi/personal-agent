@@ -17,7 +17,7 @@ from personal_agent.providers.base import ChatResponse, Provider
 from personal_agent.skills import SkillManager
 from personal_agent.tools.executor import ToolExecutor
 from personal_agent.tools.registry import ToolRegistry
-from personal_agent.exceptions import AgentError, PersonalAgentError
+from personal_agent.exceptions import AgentError, PersonalAgentError, ToolNotFoundError
 from personal_agent.types import (
     AgentCallbacks,
     AgentResult,
@@ -248,8 +248,16 @@ class BaseAgent(ABC):
                         )
                     else:
                         safe_calls.append(tc)
-                except Exception:
-                    safe_calls.append(tc)
+                except ToolNotFoundError:
+                    blocked_results[tc.id] = TR(
+                        call_id=tc.id,
+                        name=tc.name,
+                        output=(
+                            f"Error: Tool '{tc.name}' is not available in plan mode. "
+                            "Only read-only exploration tools are allowed during planning. "
+                            "Use exit_plan_mode to leave plan mode and implement changes."
+                        ),
+                    )
 
             if blocked_results:
                 exec_results = await self.tool_executor.execute_all(safe_calls)

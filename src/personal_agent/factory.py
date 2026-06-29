@@ -706,6 +706,10 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         await cron_scheduler.start(_cron_callback)
     except BaseException:
         try:
+            await cron_scheduler.stop()
+        except Exception as stop_err:
+            logger.warning("Error stopping cron scheduler after start failure: %s", stop_err)
+        try:
             await agent.close()
         except Exception as close_err:
             logger.warning("Error closing agent after cron start failure: %s", close_err)
