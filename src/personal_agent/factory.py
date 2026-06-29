@@ -699,6 +699,10 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         logger.info("Cron job fired: %s", prompt[:80])
         agent._pending_cron_prompts.append(prompt)
 
-    await cron_scheduler.start(_cron_callback)
+    try:
+        await cron_scheduler.start(_cron_callback)
+    except Exception:
+        await agent.close()
+        raise
 
     return agent
