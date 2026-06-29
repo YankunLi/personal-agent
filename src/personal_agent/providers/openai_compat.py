@@ -217,6 +217,8 @@ class OpenAICompatibleProvider(Provider):
                 if tool_call_deltas:
                     for idx in sorted(tool_call_deltas.keys()):
                         entry = tool_call_deltas[idx]
+                        if not entry["name"]:
+                            continue
                         try:
                             args = json.loads(entry["arguments_json"])
                         except json.JSONDecodeError:

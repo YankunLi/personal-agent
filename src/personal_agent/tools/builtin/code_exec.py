@@ -63,7 +63,10 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
                 try:
                     f.write(code)
                 except BaseException:
-                    os.unlink(tmp_path)
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
                     unlinked = True
                     raise
             try:
