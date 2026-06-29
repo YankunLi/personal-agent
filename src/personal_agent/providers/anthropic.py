@@ -241,7 +241,7 @@ class AnthropicProvider(Provider):
                             ToolCall(id=tc["id"], name=tc["name"], arguments=tc["arguments"])
                             for tc in tool_calls
                         ],
-                        finish_reason="tool_calls",
+                        finish_reason=stop_reason,
                         model=self._model,
                         usage=stream_usage,
                     )
