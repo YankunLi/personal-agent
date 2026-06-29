@@ -478,8 +478,9 @@ class BaseAgent(ABC):
                         conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
                 # Prune completed tasks before adding new ones
                 self._consolidation_tasks = [t for t in self._consolidation_tasks if not t.done()]
-                # Cap concurrent consolidations to prevent resource exhaustion
-                if len(self._consolidation_tasks) < 3:
+                # Skip consolidation if agent is being closed to avoid using
+                # a provider that has already been shut down
+                if not self._closed and len(self._consolidation_tasks) < 3:
                     cons_task = asyncio.create_task(
                         self._run_consolidation(
                             consolidator, conversation, existing, self.agent_knowledge
@@ -521,6 +522,7 @@ class BaseAgent(ABC):
         async with self._close_lock:
             if self._closed:
                 return
+            self._closed = True
 
         # Cancel pending consolidation tasks
         for task in self._consolidation_tasks:
@@ -565,8 +567,6 @@ class BaseAgent(ABC):
                     await self.consolidation_provider.close()
                 except Exception as e:
                     logger.warning("Error closing consolidation provider: %s", e)
-
-        self._closed = True
 
     async def __aenter__(self) -> BaseAgent:
         return self
