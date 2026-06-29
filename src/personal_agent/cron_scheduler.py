@@ -176,6 +176,7 @@ class CronScheduler:
         self._callback: Callable[[str], Awaitable[None]] | None = None
         self._check_interval = check_interval
         self._pending_callbacks: set[asyncio.Task] = set()
+        self._jobs_lock = asyncio.Lock()
 
     # ── public API ──────────────────────────────────────────────────────
 
@@ -211,15 +212,15 @@ class CronScheduler:
         self, cron: str, prompt: str, recurring: bool = True, durable: bool = False
     ) -> str:
         """Add a job and return its ID. Raises ValueError on invalid cron."""
-        if len(self._jobs) >= self.MAX_JOBS:
-            raise ValueError(f"Maximum of {self.MAX_JOBS} jobs reached")
-
-        # Validate cron expression (CPU-bound search, run in thread)
+        # Validate cron expression (CPU-bound search, run in thread outside lock)
         if await asyncio.to_thread(_next_cron_match, cron) is None:
             raise ValueError(f"Invalid cron expression: '{cron}' — no match in next 2 years")
 
-        job = CronJob(cron=cron, prompt=prompt, recurring=recurring, durable=durable)
-        self._jobs[job.id] = job
+        async with self._jobs_lock:
+            if len(self._jobs) >= self.MAX_JOBS:
+                raise ValueError(f"Maximum of {self.MAX_JOBS} jobs reached")
+            job = CronJob(cron=cron, prompt=prompt, recurring=recurring, durable=durable)
+            self._jobs[job.id] = job
         if durable:
             await self._save_durable()
         return job.id
