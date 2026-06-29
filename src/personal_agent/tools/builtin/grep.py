@@ -338,7 +338,10 @@ def create_grep_tool(
                 stderr_text = stderr.decode("utf-8", errors="replace").strip()
                 # Fall back to Python if rg itself is not available (not if the
                 # search path is missing — in that case report the error).
-                if "rg" in stderr_text.lower() and ("not found" in stderr_text.lower() or "no such file" in stderr_text.lower()):
+                # "command not found" is the standard shell error when a binary
+                # isn't on PATH; "No such file" from rg means the search path
+                # is invalid and should be reported as an error.
+                if "command not found" in stderr_text.lower():
                     return _python_fallback(
                         pattern, search_path, glob, output_mode,
                         case_insensitive, show_line_numbers, head_limit, offset,

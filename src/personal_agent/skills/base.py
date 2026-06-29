@@ -811,7 +811,7 @@ class SkillManager:
                 proc = await asyncio.create_subprocess_exec(
                     "git", "clone", "--depth", "1", "--branch", clone_ref,
                     "--filter=blob:none", "--single-branch",
-                    repo_url, str(tmp_path),
+                    "--", repo_url, str(tmp_path),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
