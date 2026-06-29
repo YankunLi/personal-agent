@@ -168,7 +168,10 @@ class FileMemoryStore:
             if filepath is None or not filepath.exists():
                 return None
 
-        text = await asyncio.to_thread(filepath.read_text)
+        try:
+            text = await asyncio.to_thread(filepath.read_text)
+        except FileNotFoundError:
+            return None
         return _parse_frontmatter(text)
 
     async def get_by_type(self, memory_type: str) -> list[dict[str, Any]]:
