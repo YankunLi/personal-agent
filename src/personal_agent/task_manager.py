@@ -128,6 +128,8 @@ async def update_task(
     async with lock:
         existing = get_task(session_id, task_id)
         if existing is None:
+            async with _task_locks_guard:
+                _task_locks.pop(task_id, None)
             return None
         existing.update(updates)
         existing["id"] = task_id  # Ensure id is never overwritten
