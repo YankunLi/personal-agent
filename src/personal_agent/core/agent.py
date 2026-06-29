@@ -551,6 +551,13 @@ class BaseAgent(ABC):
             except Exception as e:
                 logger.warning("Error closing provider: %s", e)
 
+        if self.consolidation_provider is not None and self.consolidation_provider is not self.provider:
+            if hasattr(self.consolidation_provider, "close"):
+                try:
+                    await self.consolidation_provider.close()
+                except Exception as e:
+                    logger.warning("Error closing consolidation provider: %s", e)
+
     async def __aenter__(self) -> BaseAgent:
         return self
 
