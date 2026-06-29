@@ -59,7 +59,6 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
         if language == "python":
             with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
                 tmp_path = f.name
-                unlinked = False
                 try:
                     f.write(code)
                 except BaseException:
@@ -67,7 +66,6 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
                         os.unlink(tmp_path)
                     except OSError:
                         pass
-                    unlinked = True
                     raise
             try:
                 os.chmod(tmp_path, 0o400)
@@ -75,8 +73,10 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
                     ["python3", "-I", tmp_path], timeout=timeout,
                 )
             finally:
-                if not unlinked:
+                try:
                     os.unlink(tmp_path)
+                except OSError:
+                    pass
         elif language == "bash":
             stdout, stderr, code_ = await _run_command(
                 ["bash", "-e", "-u", "-o", "pipefail", "-c", code], timeout=timeout,

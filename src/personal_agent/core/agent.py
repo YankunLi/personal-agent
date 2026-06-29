@@ -125,15 +125,17 @@ class BaseAgent(ABC):
 
         messages = state.messages
         # Accumulate full conversation before pruning for memory consolidation.
-        # Use content-based dedup because context_manager.prepare() may return
-        # new Message objects whose id() differs from the originals already in
-        # full_messages, which would otherwise produce duplicates.
-        captured = {(m.role, m.content or "") for m in state.full_messages}
+        # Use content-based dedup against recent messages because
+        # context_manager.prepare() may return new Message objects whose
+        # id() differs from the originals already in full_messages, which
+        # would otherwise produce duplicates. Only check the last 20
+        # messages to allow genuinely repeated content (e.g., "continue").
+        recent_keys = {(m.role, m.content or "") for m in state.full_messages[-20:]}
         for m in messages:
             key = (m.role, m.content or "")
-            if key not in captured:
+            if key not in recent_keys:
                 state.full_messages.append(m)
-                captured.add(key)
+                recent_keys.add(key)
         if self.context_manager:
             messages = await self.context_manager.prepare(messages)
             state.messages = messages
@@ -164,15 +166,17 @@ class BaseAgent(ABC):
 
         messages = state.messages
         # Accumulate full conversation before pruning for memory consolidation.
-        # Use content-based dedup because context_manager.prepare() may return
-        # new Message objects whose id() differs from the originals already in
-        # full_messages, which would otherwise produce duplicates.
-        captured = {(m.role, m.content or "") for m in state.full_messages}
+        # Use content-based dedup against recent messages because
+        # context_manager.prepare() may return new Message objects whose
+        # id() differs from the originals already in full_messages, which
+        # would otherwise produce duplicates. Only check the last 20
+        # messages to allow genuinely repeated content (e.g., "continue").
+        recent_keys = {(m.role, m.content or "") for m in state.full_messages[-20:]}
         for m in messages:
             key = (m.role, m.content or "")
-            if key not in captured:
+            if key not in recent_keys:
                 state.full_messages.append(m)
-                captured.add(key)
+                recent_keys.add(key)
         if self.context_manager:
             messages = await self.context_manager.prepare(messages)
             state.messages = messages

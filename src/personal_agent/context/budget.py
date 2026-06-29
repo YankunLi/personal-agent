@@ -247,8 +247,13 @@ class ContextBudgetManager:
         if sample_size == 0:
             return ""
         # Sample first and last messages for better coverage
-        half = sample_size // 2
-        sampled = messages[:half] + messages[-half:] if sample_size > 2 else messages[:sample_size]
+        if sample_size == 1:
+            sampled = messages[:1]
+        elif sample_size > 2:
+            half = sample_size // 2
+            sampled = messages[:half] + messages[-half:]
+        else:
+            sampled = messages[:sample_size]
         for msg in sampled:
             role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
             content = (msg.content or "")[:200]
