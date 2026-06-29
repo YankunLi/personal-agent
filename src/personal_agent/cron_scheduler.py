@@ -175,6 +175,7 @@ class CronScheduler:
         self._task: asyncio.Task | None = None
         self._callback: Callable[[str], Awaitable[None]] | None = None
         self._check_interval = check_interval
+        self._pending_callbacks: set[asyncio.Task] = set()
 
     # ── public API ──────────────────────────────────────────────────────
 
@@ -189,7 +190,7 @@ class CronScheduler:
         self._task = asyncio.create_task(self._loop())
 
     async def stop(self) -> None:
-        """Stop the scheduler loop."""
+        """Stop the scheduler loop and cancel pending callbacks."""
         self._running = False
         if self._task:
             self._task.cancel()
@@ -198,6 +199,13 @@ class CronScheduler:
             except asyncio.CancelledError:
                 pass
             self._task = None
+
+        # Cancel all in-flight callback tasks
+        for cb_task in list(self._pending_callbacks):
+            cb_task.cancel()
+        if self._pending_callbacks:
+            await asyncio.gather(*self._pending_callbacks, return_exceptions=True)
+            self._pending_callbacks.clear()
 
     async def add_job(
         self, cron: str, prompt: str, recurring: bool = True, durable: bool = False
@@ -270,9 +278,11 @@ class CronScheduler:
                 if self._callback:
                     # Fire callback as background task so the scheduler loop
                     # isn't blocked by long-running callbacks.
-                    asyncio.create_task(
+                    task = asyncio.create_task(
                         self._fire_callback(job.id, job.prompt)
                     )
+                    self._pending_callbacks.add(task)
+                    task.add_done_callback(self._pending_callbacks.discard)
 
                 if not job.recurring:
                     to_remove.append(job.id)
