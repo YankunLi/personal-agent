@@ -357,7 +357,13 @@ class ToolExecutor:
                 if isinstance(result, ToolResult):
                     results.append(result)
                 elif isinstance(result, BaseException):
-                    raise result
+                    results.append(
+                        ToolResult(
+                            call_id=concurrent[i].id,
+                            name=concurrent[i].name,
+                            error=str(result),
+                        )
+                    )
                 else:
                     results.append(
                         ToolResult(

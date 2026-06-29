@@ -148,7 +148,7 @@ async def delete_task(session_id: str, task_id: str) -> bool:
             numeric_id = int(task_id)
             current_mark = _read_high_water_mark(session_id)
             if numeric_id > current_mark:
-                _write_high_water_mark(session_id, numeric_id)
+                await asyncio.to_thread(_write_high_water_mark, session_id, numeric_id)
 
             # Remove references from other tasks
             for task in list_tasks(session_id):

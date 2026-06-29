@@ -78,8 +78,8 @@ def create_provider(
     if credentials:
         api_key = credentials.api_key or api_key
         base_url = credentials.api_base or base_url
-        timeout = credentials.timeout or timeout
-        max_retries = credentials.max_retries or max_retries
+        timeout = credentials.timeout if credentials.timeout is not None else timeout
+        max_retries = credentials.max_retries if credentials.max_retries is not None else max_retries
 
     if provider_name not in PROVIDER_REGISTRY:
         raise ConfigError(
