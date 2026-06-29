@@ -5,6 +5,7 @@ from __future__ import annotations
 from personal_agent.exceptions import ToolExecutionError
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.tools.builtin._workspace_utils import (
+    atomic_write,
     resolve_path,
     validate_within_workspace,
 )
@@ -76,7 +77,7 @@ def create_file_edit_tool(workspace_dir: str | None = None) -> Tool:
             )
 
         new_content = content.replace(old_string, new_string)
-        p.write_text(new_content, encoding="utf-8")
+        atomic_write(p, new_content)
 
         if replace_all and count > 1:
             return f"File edited: {file_path} ({count} occurrences replaced)"

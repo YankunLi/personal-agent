@@ -84,7 +84,8 @@ def create_todo_tool(session_id: str = "default") -> Tool:
     """
 
     async def _todo_write(todos: list[dict[str, Any]]) -> str:
-        # Sync incoming todos with existing tasks by position
+        # Sync incoming todos with existing tasks by content matching
+        # (not position-based, which corrupts task identity when items are reordered/removed)
         existing = list_tasks(session_id)
         # Filter out internal tasks (managed by task_* tools directly)
         user_tasks = [t for t in existing if not t.get("metadata", {}).get("_internal")]
@@ -95,30 +96,40 @@ def create_todo_tool(session_id: str = "default") -> Tool:
                 await delete_task(session_id, t["id"])
             return "Todo list cleared."
 
-        # Update existing tasks by position, create new ones for extras
-        for i, todo in enumerate(todos):
+        # Match incoming todos to existing tasks by content, preserving stable task IDs
+        matched_task_ids: set[str] = set()
+        for todo in todos:
+            content = todo.get("content", "")
             status = todo.get("status", "pending")
-            if i < len(user_tasks):
-                # Update existing task
-                await update_task(session_id, user_tasks[i]["id"], {
-                    "subject": todo.get("content", ""),
-                    "description": todo.get("content", ""),
+            # Find existing task with matching subject (content)
+            matched = None
+            for t in user_tasks:
+                if t["id"] not in matched_task_ids and t.get("subject") == content:
+                    matched = t
+                    break
+            if matched is not None:
+                # Update existing task (preserving its stable ID)
+                await update_task(session_id, matched["id"], {
+                    "subject": content,
+                    "description": content,
                     "activeForm": todo.get("activeForm"),
                     "status": status,
                 })
+                matched_task_ids.add(matched["id"])
             else:
                 # Create new task
                 await create_task(
                     session_id=session_id,
-                    subject=todo.get("content", ""),
-                    description=todo.get("content", ""),
+                    subject=content,
+                    description=content,
                     activeForm=todo.get("activeForm"),
                     status=status,
                 )
 
-        # Delete extra tasks that are no longer in the list
-        for t in user_tasks[len(todos):]:
-            await delete_task(session_id, t["id"])
+        # Delete tasks that no longer appear in the incoming list
+        for t in user_tasks:
+            if t["id"] not in matched_task_ids:
+                await delete_task(session_id, t["id"])
 
         return _format_todo_list(todos)
 

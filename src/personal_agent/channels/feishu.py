@@ -239,6 +239,13 @@ class FeishuChannel(Channel):
         event_type = header.get("event_type", "") if header else ""
         event = body.get("event", {})
 
+        # Verify token for event callbacks
+        if self._verification_token:
+            event_token = header.get("token", "") if header else body.get("token", "")
+            if event_token != self._verification_token:
+                logger.warning("Feishu event rejected: invalid token")
+                return web.json_response({"code": 1, "msg": "Invalid token"}, status=403)
+
         if event_type == "im.message.receive_v1":
             # Process in background, respond immediately to Feishu
             task = asyncio.create_task(self._process_message(event))
@@ -388,7 +395,10 @@ class FeishuChannel(Channel):
             logger.exception("Feishu message processing failed: %s", e)
             if self._api:
                 try:
-                    await self._api.reply_text(message_id, f"Error: {str(e)[:500]}")
+                    await self._api.reply_text(
+                        message_id,
+                        "Sorry, an internal error occurred while processing your request. Please try again.",
+                    )
                 except Exception:
                     pass
         finally:

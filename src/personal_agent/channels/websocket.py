@@ -243,7 +243,10 @@ class WebSocketChannel(Channel):
                 })
             except Exception as e:
                 logger.exception("Task execution failed for conn %d", conn_id)
-                await self._send(websocket, {"type": "error", "text": str(e)})
+                await self._send(websocket, {
+                    "type": "error",
+                    "text": "An internal error occurred while processing your request.",
+                })
             finally:
                 # Persist session state even on error
                 async with resolved.memory_lock:

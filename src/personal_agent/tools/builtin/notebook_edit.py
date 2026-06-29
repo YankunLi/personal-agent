@@ -7,6 +7,7 @@ import uuid
 
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.tools.builtin._workspace_utils import (
+    atomic_write,
     resolve_path,
     validate_within_workspace,
 )
@@ -139,10 +140,7 @@ def create_notebook_edit_tool(workspace_dir: str | None = None) -> Tool:
 
         # Write back
         nb["cells"] = cells
-        p.write_text(
-            json.dumps(nb, indent=1, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        atomic_write(p, json.dumps(nb, indent=1, ensure_ascii=False) + "\n")
         return f"Notebook edited: {notebook_path} ({action})"
 
     return FunctionTool(

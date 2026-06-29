@@ -159,7 +159,7 @@ def _create_callback_handler(redirect_uri: str, timeout: float = 300.0) -> Calla
             raise TimeoutError(f"OAuth authorization timed out after {timeout}s")
         finally:
             server.shutdown()
-            thread.join(timeout=5)
+            await asyncio.to_thread(thread.join, timeout=5)
 
     return callback_handler
 

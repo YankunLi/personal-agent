@@ -6,6 +6,7 @@ from typing import Any
 
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.tools.builtin._workspace_utils import (
+    atomic_write,
     resolve_path,
     validate_within_workspace,
 )
@@ -97,7 +98,7 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
         if sm is not None:
             sm.activate_for_paths([str(p)])
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
+        atomic_write(p, content)
         return f"File written: {path} ({len(content)} bytes)"
 
     async def _list_dir(path: str) -> str:
