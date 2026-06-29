@@ -198,11 +198,13 @@ class DebateAgent(BaseAgent):
                 task=task, other_responses=other_text
             )
 
-        result = await agent.run(round_task)
-        # Clear short-term memory between rounds to prevent unbounded
-        # context growth from cumulative conversation history.
-        agent.short_term.clear()
-        return result.answer, result.token_usage or {}
+        try:
+            result = await agent.run(round_task)
+            return result.answer, result.token_usage or {}
+        finally:
+            # Clear short-term memory between rounds to prevent unbounded
+            # context growth from cumulative conversation history.
+            agent.short_term.clear()
 
     async def _run_judge(self, task: str, responses: dict[str, str]) -> str:
         """Run the judge agent to synthesize debate responses."""
