@@ -249,6 +249,9 @@ class FeishuChannel(Channel):
                 return web.json_response({"code": 1, "msg": "Invalid token"}, status=403)
 
         if event_type == "im.message.receive_v1":
+            # Don't process messages if the server is shutting down
+            if self._stop_event.is_set():
+                return web.json_response({"code": 0, "msg": "Server shutting down"})
             # Process in background, respond immediately to Feishu
             task = asyncio.create_task(self._process_message(event))
             self._pending_tasks.add(task)

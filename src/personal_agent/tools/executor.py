@@ -366,6 +366,8 @@ class ToolExecutor:
                 if isinstance(result, ToolResult):
                     results.append(result)
                 elif isinstance(result, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
+                    # gather(return_exceptions=True) already waited for all tasks,
+                    # so no orphaned tasks remain. Re-raise to propagate cancellation.
                     raise result
                 elif isinstance(result, BaseException):
                     results.append(

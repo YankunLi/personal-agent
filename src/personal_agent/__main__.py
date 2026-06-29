@@ -278,7 +278,10 @@ def _detect_project_info(workdir: Path) -> dict[str, str]:
     pkg_json = workdir / "package.json"
     if pkg_json.exists():
         with open(pkg_json) as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError:
+                return {"name": workdir.name, "description": ""}
         name = data.get("name", "")
         desc = data.get("description", "")
         if name:

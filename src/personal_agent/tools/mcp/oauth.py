@@ -22,6 +22,7 @@ from mcp.client.auth.oauth2 import OAuthClientProvider
 from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
 
 from personal_agent.config import MCPOAuthConfig, MCPServerConfig
+from personal_agent.tools.builtin._workspace_utils import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class FileTokenStorage:
         self._filepath.parent.mkdir(parents=True, exist_ok=True)
         # Ensure directory has restrictive permissions (owner only)
         os.chmod(self._filepath.parent, 0o700)
-        self._filepath.write_text(json.dumps(data, indent=2))
+        atomic_write(self._filepath, json.dumps(data, indent=2))
         # Ensure token file is readable only by the owner
         os.chmod(self._filepath, 0o600)
 

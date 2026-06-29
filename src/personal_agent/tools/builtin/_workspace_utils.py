@@ -13,7 +13,7 @@ def resolve_path(path: str, workspace_dir: str | None = None) -> Path:
     """Resolve a path. Relative paths are resolved against workspace_dir."""
     p = Path(path).expanduser()
     if not p.is_absolute() and workspace_dir:
-        p = Path(workspace_dir) / p
+        p = Path(workspace_dir).expanduser() / p
     return p.resolve()
 
 

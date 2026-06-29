@@ -65,7 +65,12 @@ def create_enter_worktree_tool(
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return "Error: git rev-parse timed out after 30s"
             if proc.returncode != 0:
                 return f"Error: Not in a git repository: {stderr.decode().strip()}"
             repo_root = stdout.decode().strip()
@@ -105,7 +110,12 @@ def create_enter_worktree_tool(
                 stderr=asyncio.subprocess.PIPE,
                 cwd=repo_root,
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                return "Error: git worktree add timed out after 60s"
             if proc.returncode != 0:
                 return f"Error: Failed to create worktree: {stderr.decode().strip()}"
         except Exception as e:

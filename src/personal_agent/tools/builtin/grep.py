@@ -144,6 +144,7 @@ def _build_rg_args(
 
     # Path
     if path:
+        args.append("--")
         args.append(path)
 
     return args

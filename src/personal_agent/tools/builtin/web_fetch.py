@@ -105,17 +105,22 @@ async def _validate_url(url: str) -> None:
     except ValueError:
         pass
 
-    # Try DNS resolution asynchronously; if it fails, let the HTTP request handle it
+    # Try DNS resolution with timeout; reject if it fails
     try:
-        infos = await asyncio.to_thread(
-            socket.getaddrinfo, host, None,
-            family=socket.AF_UNSPEC, type=socket.SOCK_STREAM,
+        infos = await asyncio.wait_for(
+            asyncio.to_thread(
+                socket.getaddrinfo, host, None,
+                family=socket.AF_UNSPEC, type=socket.SOCK_STREAM,
+            ),
+            timeout=10.0,
         )
         for info in infos:
             addr = ipaddress.ip_address(info[4][0])
             for network in _BLOCKED_NETWORKS:
                 if addr in network:
                     raise ToolExecutionError(f"URL resolves to restricted address: {addr}")
+    except asyncio.TimeoutError:
+        raise ToolExecutionError(f"DNS resolution timed out for host '{host}'")
     except socket.gaierror as e:
         raise ToolExecutionError(f"DNS resolution failed for host '{host}': {e}") from e
     except (OSError, ValueError) as e:

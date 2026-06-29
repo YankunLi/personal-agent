@@ -295,14 +295,18 @@ class CronScheduler:
             for job_id in to_remove:
                 self._jobs.pop(job_id, None)
 
-        # Fire callbacks outside the lock to avoid blocking job management
-        for job_id, prompt in to_fire:
-            if self._callback:
-                task = asyncio.create_task(
-                    self._fire_callback(job_id, prompt)
-                )
-                self._pending_callbacks.add(task)
-                task.add_done_callback(self._pending_callbacks.discard)
+        # Fire callbacks outside the lock to avoid blocking job management.
+        # Only fire if still running — stop() sets _running=False and then
+        # cancels _pending_callbacks, so checking here prevents a race
+        # where callbacks are added after stop() has already cleaned up.
+        if self._running:
+            for job_id, prompt in to_fire:
+                if self._callback:
+                    task = asyncio.create_task(
+                        self._fire_callback(job_id, prompt)
+                    )
+                    self._pending_callbacks.add(task)
+                    task.add_done_callback(self._pending_callbacks.discard)
 
         # Persist durable state: removed jobs must be cleaned up, and
         # recurring durable jobs need last_fired persisted to avoid

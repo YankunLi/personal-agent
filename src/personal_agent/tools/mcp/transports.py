@@ -73,7 +73,7 @@ class SSETransport(MCPTransport):
         kwargs: dict[str, Any] = {"url": config.url}
         if config.headers:
             kwargs["headers"] = config.headers
-        if config.auth_token:
+        if config.auth_token and auth is None:
             kwargs["headers"] = {
                 **(kwargs.get("headers", {})),
                 "Authorization": f"Bearer {config.auth_token}",

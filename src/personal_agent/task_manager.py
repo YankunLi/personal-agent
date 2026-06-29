@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from personal_agent.tools.builtin._workspace_utils import atomic_write
+
 logger = logging.getLogger(__name__)
 
 TASK_STATUSES = ["pending", "in_progress", "completed"]
@@ -30,7 +32,10 @@ def _get_tasks_dir(session_id: str) -> Path:
 
 def _get_task_path(session_id: str, task_id: str) -> Path:
     """Get the file path for a specific task."""
-    return _get_tasks_dir(session_id) / f"{task_id}.json"
+    safe_tid = task_id.replace(os.sep, "_").replace("..", "_").lstrip("/")
+    if not safe_tid:
+        safe_tid = "0"
+    return _get_tasks_dir(session_id) / f"{safe_tid}.json"
 
 
 def _ensure_tasks_dir(session_id: str) -> Path:
@@ -109,7 +114,7 @@ async def create_task(
         }
 
         path = _get_task_path(session_id, task_id)
-        await asyncio.to_thread(path.write_text, json.dumps(task, indent=2, ensure_ascii=False))
+        await asyncio.to_thread(atomic_write, path, json.dumps(task, indent=2, ensure_ascii=False))
     return task_id
 
 
@@ -138,7 +143,7 @@ async def update_task(
         existing.update(updates)
         existing["id"] = task_id  # Ensure id is never overwritten
         path = _get_task_path(session_id, task_id)
-        await asyncio.to_thread(path.write_text, json.dumps(existing, indent=2, ensure_ascii=False))
+        await asyncio.to_thread(atomic_write, path, json.dumps(existing, indent=2, ensure_ascii=False))
         return existing
 
 
