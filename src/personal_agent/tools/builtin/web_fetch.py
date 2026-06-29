@@ -34,9 +34,11 @@ _BLOCKED_NETWORKS = [
     ipaddress.ip_network("172.16.0.0/12"),    # RFC 1918
     ipaddress.ip_network("192.168.0.0/16"),   # RFC 1918
     ipaddress.ip_network("127.0.0.0/8"),      # Loopback
+    ipaddress.ip_network("0.0.0.0/32"),       # Localhost (Linux)
     ipaddress.ip_network("169.254.0.0/16"),   # Link-local
     ipaddress.ip_network("224.0.0.0/4"),      # Multicast
     ipaddress.ip_network("::1/128"),          # IPv6 loopback
+    ipaddress.ip_network("::ffff:0:0/96"),    # IPv4-mapped IPv6
     ipaddress.ip_network("fc00::/7"),         # IPv6 unique local
     ipaddress.ip_network("fe80::/10"),        # IPv6 link-local
 ]
