@@ -197,13 +197,15 @@ class BaseAgent(ABC):
 
                 if chunk.usage:
                     for key, val in chunk.usage.items():
-                        call_usage[key] = call_usage.get(key, 0) + val
-                        self._total_usage[key] = self._total_usage.get(key, 0) + val
+                        call_usage[key] = val  # Final chunk has cumulative total
         except PersonalAgentError:
             raise
         except Exception as e:
             logger.exception("LLM streaming call failed: %s", e)
             raise AgentError(f"LLM streaming call failed: {e}") from e
+
+        for key, val in call_usage.items():
+            self._total_usage[key] = self._total_usage.get(key, 0) + val
 
         return ChatResponse(
             content=accumulated_content,
