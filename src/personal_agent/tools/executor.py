@@ -356,6 +356,8 @@ class ToolExecutor:
             for i, result in enumerate(parallel_results):
                 if isinstance(result, ToolResult):
                     results.append(result)
+                elif isinstance(result, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
+                    raise result
                 elif isinstance(result, BaseException):
                     results.append(
                         ToolResult(
