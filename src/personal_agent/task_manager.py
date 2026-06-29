@@ -196,8 +196,8 @@ async def block_task(session_id: str, from_task_id: str, to_task_id: str) -> boo
     if not from_task or not to_task:
         return False
 
-    if to_task_id not in from_task.get("blocks", []):
-        blocks = list(from_task.get("blocks", []))
+    blocks = list(from_task.get("blocks", []))
+    if to_task_id not in blocks:
         blocks.append(to_task_id)
         await update_task(session_id, from_task_id, {"blocks": blocks})
 
