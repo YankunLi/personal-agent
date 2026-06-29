@@ -317,25 +317,28 @@ class CronScheduler:
             logger.error("Cron callback error for job '%s': %s", job_id, e)
 
     async def _save_durable(self) -> None:
-        """Save durable jobs to the JSON file. Acquires _jobs_lock to serialize saves."""
+        """Save durable jobs to the JSON file.
+
+        Holds _jobs_lock for the entire read-write cycle to prevent
+        a stale snapshot from overwriting a more recent one on disk.
+        """
         import tempfile
 
         async with self._jobs_lock:
             durable_jobs = [j.to_dict() for j in self._jobs.values() if j.durable]
-        try:
-            self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-            # Use a unique temp file to prevent concurrent saves from clobbering each other
-            fd, tmp_path = await asyncio.to_thread(
-                tempfile.mkstemp, dir=str(self._storage_path.parent), suffix=".tmp"
-            )
-            await asyncio.to_thread(os.close, fd)
-            await asyncio.to_thread(
-                Path(tmp_path).write_text,
-                json.dumps(durable_jobs, indent=2, ensure_ascii=False),
-            )
-            await asyncio.to_thread(os.replace, tmp_path, str(self._storage_path))
-        except OSError as e:
-            logger.error("Failed to save durable cron jobs: %s", e)
+            try:
+                self._storage_path.parent.mkdir(parents=True, exist_ok=True)
+                fd, tmp_path = await asyncio.to_thread(
+                    tempfile.mkstemp, dir=str(self._storage_path.parent), suffix=".tmp"
+                )
+                await asyncio.to_thread(os.close, fd)
+                await asyncio.to_thread(
+                    Path(tmp_path).write_text,
+                    json.dumps(durable_jobs, indent=2, ensure_ascii=False),
+                )
+                await asyncio.to_thread(os.replace, tmp_path, str(self._storage_path))
+            except OSError as e:
+                logger.error("Failed to save durable cron jobs: %s", e)
 
     async def _load_durable(self) -> None:
         """Load durable jobs from the JSON file."""
