@@ -192,7 +192,7 @@ class BaseAgent(ABC):
                         accumulated_tool_calls = [t for t in accumulated_tool_calls if t.id != tc.id]
                         accumulated_tool_calls.append(tc)
 
-                if chunk.finish_reason != "stop":
+                if chunk.finish_reason is not None and chunk.finish_reason != "stop":
                     last_finish_reason = chunk.finish_reason
 
                 if chunk.usage:

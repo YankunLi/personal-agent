@@ -127,9 +127,15 @@ class PlanAndExecuteAgent(BaseAgent):
         if llm_calls >= self.max_steps:
             logger.warning("Plan execution reached max_steps limit (%d LLM calls)", self.max_steps)
 
-        # Phase 3: Synthesis
-        final_answer = await self._synthesize(state, plan, step_results)
-        llm_calls += 1
+        # Phase 3: Synthesis (only if budget remains)
+        if llm_calls < self.max_steps:
+            final_answer = await self._synthesize(state, plan, step_results)
+            llm_calls += 1
+        else:
+            logger.warning(
+                "Skipping synthesis: max_steps reached (%d LLM calls)", self.max_steps
+            )
+            final_answer = "Plan execution reached the step limit. Partial results: " + json.dumps(step_results)
         state.final_answer = final_answer
         state.done = True
 

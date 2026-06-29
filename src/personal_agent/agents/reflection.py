@@ -78,7 +78,7 @@ class ReflectionAgent(BaseAgent):
             **kwargs,
         )
         self._critique_threshold = critique_threshold
-        self._max_iterations = max_iterations
+        self._max_iterations = max(1, max_iterations)
         self._min_score = min_score
 
     async def run(self, task: str, **kwargs: Any) -> AgentResult:

@@ -119,8 +119,15 @@ class ToolExecutor:
 
         recent = self._recent_calls.get(tool_name, [])
         for prev_args, prev_result in recent:
-            if tool.inputs_equivalent(arguments, prev_args):
-                return prev_result
+            try:
+                if tool.inputs_equivalent(arguments, prev_args):
+                    return prev_result
+            except Exception:
+                logger.warning(
+                    "inputs_equivalent callback failed for tool '%s'",
+                    tool_name, exc_info=True,
+                )
+                return None
         return None
 
     def _record_recent_call(self, tool_name: str, arguments: dict[str, Any], result: ToolResult) -> None:

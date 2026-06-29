@@ -201,7 +201,7 @@ class AnthropicProvider(Provider):
                             model=self._model,
                         )
                     elif event.type == "content_block_start":
-                        if event.content_block.type == "tool_use":
+                        if event.content_block is not None and event.content_block.type == "tool_use":
                             current_tool = {
                                 "id": event.content_block.id,
                                 "name": event.content_block.name,

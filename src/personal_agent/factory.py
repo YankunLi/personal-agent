@@ -120,6 +120,10 @@ async def create_sub_agent(
         for t in extra_tools:
             tool_registry.register(t)
 
+    # Wire skill_manager into file ops for conditional skill activation
+    if skill_manager is not None:
+        _file_ops_sm_cell[0] = skill_manager
+
     # Create agent kwargs
     agent_kwargs = {
         "provider": provider,
@@ -142,15 +146,22 @@ async def create_sub_agent(
     }
 
     # Create the appropriate agent
-    if sub_cfg.pattern == "plan_execute":
-        from personal_agent.agents.plan_execute import PlanAndExecuteAgent
-        return PlanAndExecuteAgent(**agent_kwargs)
-    elif sub_cfg.pattern == "reflection":
-        from personal_agent.agents.reflection import ReflectionAgent
-        return ReflectionAgent(**agent_kwargs)
-    else:
-        from personal_agent.agents.react import ReActAgent
-        return ReActAgent(**agent_kwargs)
+    try:
+        if sub_cfg.pattern == "plan_execute":
+            from personal_agent.agents.plan_execute import PlanAndExecuteAgent
+            return PlanAndExecuteAgent(**agent_kwargs)
+        elif sub_cfg.pattern == "reflection":
+            from personal_agent.agents.reflection import ReflectionAgent
+            return ReflectionAgent(**agent_kwargs)
+        else:
+            from personal_agent.agents.react import ReActAgent
+            return ReActAgent(**agent_kwargs)
+    except Exception:
+        try:
+            await provider.close()
+        except Exception:
+            pass
+        raise
 
 
 async def create_agent(settings: Settings | None = None, task: str = "", user_id: str = "", **overrides) -> BaseAgent:
@@ -559,7 +570,6 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     # Register sub-agents as tools (AgentTool)
     from personal_agent.tools.agent_tool import AgentTool
     for name, sub_cfg in settings.sub_agents.items():
-        sub_agent = None
         try:
             sub_agent = await create_sub_agent(
                 sub_cfg, settings.providers, workspace_dir,
@@ -575,11 +585,6 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
             tool_registry.register(agent_tool)
         except Exception:
             logger.exception("Failed to create sub-agent '%s'", name)
-            if sub_agent is not None:
-                try:
-                    await sub_agent.close()
-                except Exception:
-                    pass
             raise
 
     # Common agent kwargs
@@ -666,7 +671,11 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
             registry=tool_registry,
             server_configs=mcp_cfg.servers,
         )
-        await mcp_source.connect_all()
+        try:
+            await mcp_source.connect_all()
+        except Exception:
+            await mcp_source.disconnect_all()
+            raise
         agent._mcp_source = mcp_source
 
         # Register MCP resource tools (after mcp_source is connected)

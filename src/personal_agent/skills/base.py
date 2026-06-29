@@ -211,8 +211,11 @@ class Skill:
     @classmethod
     def from_dict(cls, data: dict) -> Skill:
         """Deserialize from a dict (e.g. loaded from JSON/YAML)."""
+        name = data.get("name")
+        if not name:
+            raise SkillError("Skill definition is missing required 'name' field")
         return cls(
-            name=data["name"],
+            name=name,
             description=data.get("description", ""),
             prompt=data.get("prompt", ""),
             when_to_use=data.get("when_to_use", ""),
@@ -822,7 +825,19 @@ class SkillManager:
             # Discover and install under lock to prevent concurrent modification
             async with self._install_lock:
                 # Discover skills from the cloned repo, tracking which are new
-                discover_root = tmp_path / subdir if subdir else tmp_path
+                if subdir:
+                    # Prevent path traversal: reject .. components and verify resolved path
+                    if ".." in Path(subdir).parts:
+                        raise SkillError(
+                            f"Invalid subdirectory path '{subdir}': path traversal not allowed"
+                        )
+                    discover_root = (tmp_path / subdir).resolve()
+                    if not str(discover_root).startswith(str(tmp_path.resolve())):
+                        raise SkillError(
+                            f"Invalid subdirectory path '{subdir}': resolves outside repository"
+                        )
+                else:
+                    discover_root = tmp_path
                 before = set(self._skills.keys())
                 self.discover_from(discover_root)
                 new_names = set(self._skills.keys()) - before
