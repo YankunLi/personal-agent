@@ -295,6 +295,10 @@ def create_grep_tool(
                 proc.kill()
                 await proc.wait()
                 return f"Error: Search timed out after {timeout}s"
+            except BaseException:
+                proc.kill()
+                await proc.wait()
+                raise
 
             if proc.returncode == 1:
                 # rg returns 1 for "no matches"
