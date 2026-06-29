@@ -237,8 +237,10 @@ class CronScheduler:
 
     async def list_jobs(self) -> list[dict[str, Any]]:
         """List all jobs with human-readable schedule info."""
+        async with self._jobs_lock:
+            jobs_snapshot = list(self._jobs.values())
         result = []
-        for job in self._jobs.values():
+        for job in jobs_snapshot:
             info = job.to_dict()
             # Add human-readable next time (CPU-bound, run in thread)
             next_match = await asyncio.to_thread(_next_cron_match, job.cron)

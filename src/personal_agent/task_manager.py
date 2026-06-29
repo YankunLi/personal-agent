@@ -93,7 +93,7 @@ async def create_task(
     """Create a new task and return its ID."""
     async with _create_lock:
         _ensure_tasks_dir(session_id)
-        highest = _find_highest_task_id(session_id)
+        highest = await asyncio.to_thread(_find_highest_task_id, session_id)
         task_id = str(highest + 1)
 
         task: dict[str, Any] = {
@@ -109,7 +109,7 @@ async def create_task(
         }
 
         path = _get_task_path(session_id, task_id)
-        path.write_text(json.dumps(task, indent=2, ensure_ascii=False))
+        await asyncio.to_thread(path.write_text, json.dumps(task, indent=2, ensure_ascii=False))
     return task_id
 
 

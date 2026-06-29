@@ -513,7 +513,6 @@ class BaseAgent(ABC):
         async with self._close_lock:
             if self._closed:
                 return
-            self._closed = True
 
         # Cancel pending consolidation tasks
         for task in self._consolidation_tasks:
@@ -558,6 +557,8 @@ class BaseAgent(ABC):
                     await self.consolidation_provider.close()
                 except Exception as e:
                     logger.warning("Error closing consolidation provider: %s", e)
+
+        self._closed = True
 
     async def __aenter__(self) -> BaseAgent:
         return self
