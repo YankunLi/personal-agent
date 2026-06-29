@@ -295,12 +295,9 @@ def create_task_update_tool(session_id: str = "default") -> Tool:
                     "updatedFields": ["status"],
                     "statusChange": {"from": existing.get("status"), "to": "deleted"},
                 })
-            else:
-                await resolve_dependencies(session_id, taskId, status)
-                updated_fields.append("status")
-                updates["status"] = status
 
-        # Build updates dict for non-status fields
+        # Build updates dict for non-status fields first (before status change,
+        # so these are persisted even if resolve_dependencies fails)
         if subject is not None and subject != existing.get("subject"):
             updates["subject"] = subject
             updated_fields.append("subject")
@@ -326,6 +323,11 @@ def create_task_update_tool(session_id: str = "default") -> Tool:
 
         if updates:
             await update_task(session_id, taskId, updates)
+
+        # Handle status change after other updates are persisted
+        if status is not None and status != "deleted":
+            await resolve_dependencies(session_id, taskId, status)
+            updated_fields.append("status")
 
         # Handle dependency additions
         if addBlocks:
