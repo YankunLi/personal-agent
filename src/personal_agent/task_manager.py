@@ -149,27 +149,27 @@ async def delete_task(session_id: str, task_id: str) -> bool:
             current_mark = _read_high_water_mark(session_id)
             if numeric_id > current_mark:
                 await asyncio.to_thread(_write_high_water_mark, session_id, numeric_id)
-
-            # Remove references from other tasks
-            for task in list_tasks(session_id):
-                changed = False
-                blocks = task.get("blocks", [])
-                blocked_by = task.get("blockedBy", [])
-                if task_id in blocks:
-                    blocks.remove(task_id)
-                    changed = True
-                if task_id in blocked_by:
-                    blocked_by.remove(task_id)
-                    changed = True
-                if changed:
-                    await update_task(session_id, task["id"], {"blocks": blocks, "blockedBy": blocked_by})
-
-            return True
         except FileNotFoundError:
             return False
         finally:
             async with _task_locks_guard:
                 _task_locks.pop(task_id, None)
+
+    # Remove references from other tasks (outside lock to avoid deadlock)
+    for task in list_tasks(session_id):
+        changed = False
+        blocks = task.get("blocks", [])
+        blocked_by = task.get("blockedBy", [])
+        if task_id in blocks:
+            blocks.remove(task_id)
+            changed = True
+        if task_id in blocked_by:
+            blocked_by.remove(task_id)
+            changed = True
+        if changed:
+            await update_task(session_id, task["id"], {"blocks": blocks, "blockedBy": blocked_by})
+
+    return True
 
 
 def list_tasks(session_id: str) -> list[dict[str, Any]]:
