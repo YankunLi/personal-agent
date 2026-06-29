@@ -27,7 +27,7 @@ C_CYAN = "\033[36m"
 C_WHITE = "\033[37m"
 
 
-async def run_agent(task: str, config_path: str | None = None, workdir: Path | None = None) -> None:
+async def run_agent(task: str, config_path: str | None = None, workdir: Path | None = None, overrides: dict | None = None) -> None:
     """Run a one-shot agent task, optionally with project session context."""
     from personal_agent.project import PA_FILE, find_project_root, load_project
     from personal_agent.session import SessionManager
@@ -81,7 +81,7 @@ async def run_agent(task: str, config_path: str | None = None, workdir: Path | N
     print(f"{C_CYAN}{task}{C_RESET}")
     print(f"{C_DIM}{'─' * 60}{C_RESET}")
 
-    agent = await create_agent(settings, task=task)
+    agent = await create_agent(settings, task=task, **(overrides or {}))
 
     # Restore session memory into agent if available
     current = session_mgr.current
@@ -183,7 +183,7 @@ def main():
             feishu=args.feishu, feishu_port=args.feishu_port, feishu_path=args.feishu_path,
         ))
     elif args.task:
-        asyncio.run(run_agent(args.task, args.config, workdir))
+        asyncio.run(run_agent(args.task, args.config, workdir, overrides))
     else:
         parser.print_help()
 
