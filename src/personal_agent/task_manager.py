@@ -64,6 +64,17 @@ def _write_high_water_mark(session_id: str, value: int) -> None:
     path.write_text(str(value))
 
 
+def _update_high_water_mark(session_id: str, numeric_id: int) -> None:
+    """Read the high water mark and update it if numeric_id is higher.
+
+    Designed to be called via asyncio.to_thread() so the read-check-write
+    happens atomically within a single thread call, avoiding TOCTOU races.
+    """
+    current = _read_high_water_mark(session_id)
+    if numeric_id > current:
+        _write_high_water_mark(session_id, numeric_id)
+
+
 def _find_highest_task_id(session_id: str) -> int:
     """Find the highest task ID from existing files and high water mark."""
     from_files = 0
@@ -151,10 +162,11 @@ async def delete_task(session_id: str, task_id: str) -> bool:
             await asyncio.to_thread(os.unlink, path)
 
             # Update high water mark after successful deletion
+            # Read and write in the same thread call to avoid TOCTOU race
             numeric_id = int(task_id)
-            current_mark = _read_high_water_mark(session_id)
-            if numeric_id > current_mark:
-                await asyncio.to_thread(_write_high_water_mark, session_id, numeric_id)
+            await asyncio.to_thread(
+                _update_high_water_mark, session_id, numeric_id
+            )
         except FileNotFoundError:
             return False
         finally:
