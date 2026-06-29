@@ -569,6 +569,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
 
     # Register sub-agents as tools (AgentTool)
     from personal_agent.tools.agent_tool import AgentTool
+    created_sub_agents: list[BaseAgent] = []
     for name, sub_cfg in settings.sub_agents.items():
         try:
             sub_agent = await create_sub_agent(
@@ -580,11 +581,17 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
                 skill_manager=skill_manager,
                 budget_manager=budget_manager,
             )
+            created_sub_agents.append(sub_agent)
             description = sub_cfg.description or f"Delegate a task to the '{name}' specialist agent."
             agent_tool = AgentTool(agent=sub_agent, name=name, description=description)
             tool_registry.register(agent_tool)
         except Exception:
             logger.exception("Failed to create sub-agent '%s'", name)
+            for created in created_sub_agents:
+                try:
+                    await created.close()
+                except Exception as close_err:
+                    logger.warning("Error closing sub-agent during cleanup: %s", close_err)
             raise
 
     # Common agent kwargs
