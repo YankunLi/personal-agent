@@ -89,13 +89,14 @@ class BaiduProvider(Provider):
                     "client_secret": self._secret_key,
                 },
             )
-            response.raise_for_status()
             data = response.json()
 
             if "error" in data:
                 raise_provider_error(
                     Exception(f"Baidu auth failed: {data.get('error_description', data.get('error'))}")
                 )
+
+            response.raise_for_status()
 
             self._access_token = data["access_token"]
             self._token_expiry = time.time() + data.get("expires_in", 2592000)
