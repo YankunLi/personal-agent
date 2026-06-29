@@ -128,9 +128,9 @@ class BaseAgent(ABC):
         # Use content-based dedup because context_manager.prepare() may return
         # new Message objects whose id() differs from the originals already in
         # full_messages, which would otherwise produce duplicates.
-        captured = {(m.role, (m.content or "")[:200]) for m in state.full_messages}
+        captured = {(m.role, m.content or "") for m in state.full_messages}
         for m in messages:
-            key = (m.role, (m.content or "")[:200])
+            key = (m.role, m.content or "")
             if key not in captured:
                 state.full_messages.append(m)
                 captured.add(key)
@@ -167,9 +167,9 @@ class BaseAgent(ABC):
         # Use content-based dedup because context_manager.prepare() may return
         # new Message objects whose id() differs from the originals already in
         # full_messages, which would otherwise produce duplicates.
-        captured = {(m.role, (m.content or "")[:200]) for m in state.full_messages}
+        captured = {(m.role, m.content or "") for m in state.full_messages}
         for m in messages:
-            key = (m.role, (m.content or "")[:200])
+            key = (m.role, m.content or "")
             if key not in captured:
                 state.full_messages.append(m)
                 captured.add(key)

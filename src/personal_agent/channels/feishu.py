@@ -339,9 +339,10 @@ class FeishuChannel(Channel):
 
     async def _get_or_create_agent(self, user_id: str) -> Any:
         """Get or create an agent for a Feishu user."""
-        if user_id in self._conn_agents:
+        agent = self._conn_agents.get(user_id)
+        if agent is not None:
             self._conn_agent_times[user_id] = time.time()
-            return self._conn_agents[user_id]
+            return agent
 
         async with self._agent_lock:
             # Double-check: another task may have created the agent while we waited

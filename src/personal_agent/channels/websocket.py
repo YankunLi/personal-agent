@@ -258,8 +258,9 @@ class WebSocketChannel(Channel):
 
     async def _get_or_create_agent(self, conn_id: int) -> Any:
         """Get or create an agent for a WebSocket connection."""
-        if conn_id in self._conn_agents:
-            return self._conn_agents[conn_id]
+        agent = self._conn_agents.get(conn_id)
+        if agent is not None:
+            return agent
 
         async with self._agent_lock:
             # Double-check: another task may have created the agent while we waited

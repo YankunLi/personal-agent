@@ -161,7 +161,7 @@ async def create_sub_agent(
     except BaseException:
         try:
             await provider.close()
-        except Exception:
+        except BaseException:
             pass
         raise
 
@@ -594,7 +594,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
             for created in created_sub_agents:
                 try:
                     await created.close()
-                except Exception as close_err:
+                except BaseException as close_err:
                     logger.warning("Error closing sub-agent during cleanup: %s", close_err)
             raise
 

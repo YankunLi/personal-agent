@@ -532,9 +532,12 @@ class SkillManager:
         if not self._skills:
             return ""
 
+        # Snapshot to avoid dict-changed-during-iteration if install_from_git
+        # modifies _skills concurrently.
+        skills_snapshot = dict(self._skills)
         lines = ["## Available Skills", ""]
-        for name in sorted(self._skills.keys()):
-            skill = self._skills[name]
+        for name in sorted(skills_snapshot.keys()):
+            skill = skills_snapshot[name]
             desc = skill.description
             if skill.when_to_use:
                 desc += f" (Use when: {skill.when_to_use})"

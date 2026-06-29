@@ -333,11 +333,18 @@ class CronScheduler:
                     tempfile.mkstemp, dir=str(self._storage_path.parent), suffix=".tmp"
                 )
                 await asyncio.to_thread(os.close, fd)
-                await asyncio.to_thread(
-                    Path(tmp_path).write_text,
-                    json.dumps(durable_jobs, indent=2, ensure_ascii=False),
-                )
-                await asyncio.to_thread(os.replace, tmp_path, str(self._storage_path))
+                try:
+                    await asyncio.to_thread(
+                        Path(tmp_path).write_text,
+                        json.dumps(durable_jobs, indent=2, ensure_ascii=False),
+                    )
+                    await asyncio.to_thread(os.replace, tmp_path, str(self._storage_path))
+                except BaseException:
+                    try:
+                        await asyncio.to_thread(os.unlink, tmp_path)
+                    except OSError:
+                        pass
+                    raise
             except OSError as e:
                 logger.error("Failed to save durable cron jobs: %s", e)
 
