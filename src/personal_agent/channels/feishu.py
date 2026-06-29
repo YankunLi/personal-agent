@@ -157,6 +157,8 @@ class FeishuChannel(Channel):
 
     async def start(self) -> None:
         """Start the Feishu webhook HTTP server."""
+        self._stop_event.clear()
+
         if not self._app_id or not self._app_secret:
             logger.warning(
                 "FeishuChannel started but app_id or app_secret not configured. "

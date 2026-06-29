@@ -70,7 +70,7 @@ def create_cron_create_tool(scheduler: "CronScheduler") -> Tool:
         except ValueError as e:
             return f"Error: {e}"
 
-        job = scheduler.get_job(job_id)
+        job = await scheduler.get_job(job_id)
         if job:
             next_match = await asyncio.to_thread(_next_cron_match, job.cron)
             next_fire = next_match.isoformat() if next_match else "unknown"

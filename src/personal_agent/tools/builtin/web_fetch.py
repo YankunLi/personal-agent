@@ -156,12 +156,12 @@ def create_web_fetch_tool(
                         if not redirect_url:
                             raise ToolExecutionError("Redirect with no Location header")
                         # Resolve relative URLs
-                        if redirect_url.startswith("http://"):
+                        if redirect_url.lower().startswith("http://"):
                             redirect_url = "https://" + redirect_url[7:]
-                        elif not redirect_url.startswith("https://"):
+                        elif not redirect_url.lower().startswith("https://"):
                             from urllib.parse import urljoin
                             redirect_url = urljoin(current_url, redirect_url)
-                            if redirect_url.startswith("http://"):
+                            if redirect_url.lower().startswith("http://"):
                                 redirect_url = "https://" + redirect_url[7:]
                         await _validate_url(redirect_url)
                         current_url = redirect_url

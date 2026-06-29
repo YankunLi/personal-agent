@@ -229,7 +229,6 @@ def _python_fallback(
                             end = min(len(lines), i - 1 + ctx_after + 1)
                             for ctx_i in range(start, end):
                                 ln = ctx_i + 1
-                                prefix = f"{fpath}-{ln}- " if show_line_numbers is not False else f"{fpath}- "
                                 marker = ":" if ln == i else "-"
                                 prefix = f"{fpath}{marker}{ln}- " if show_line_numbers is not False else f"{fpath}{marker} "
                                 results.append(f"{prefix}{lines[ctx_i].rstrip()}")

@@ -488,20 +488,21 @@ class BaseAgent(ABC):
                         conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
                 # Prune completed tasks before adding new ones
                 self._consolidation_tasks = [t for t in self._consolidation_tasks if not t.done()]
-                # Skip consolidation if agent is being closed to avoid using
-                # a provider that has already been shut down
-                if not self._closed and len(self._consolidation_tasks) < 3:
-                    cons_task = asyncio.create_task(
-                        self._run_consolidation(
-                            consolidator, conversation, existing, self.agent_knowledge
+                # Hold _close_lock around the _closed check and task creation
+                # to prevent a TOCTOU race with close().
+                async with self._close_lock:
+                    if not self._closed and len(self._consolidation_tasks) < 3:
+                        cons_task = asyncio.create_task(
+                            self._run_consolidation(
+                                consolidator, conversation, existing, self.agent_knowledge
+                            )
                         )
-                    )
-                    self._consolidation_tasks.append(cons_task)
-                else:
-                    logger.debug(
-                        "Skipping consolidation: %d tasks already in progress",
-                        len(self._consolidation_tasks),
-                    )
+                        self._consolidation_tasks.append(cons_task)
+                    else:
+                        logger.debug(
+                            "Skipping consolidation: %d tasks already in progress",
+                            len(self._consolidation_tasks),
+                        )
             except (OSError, json.JSONDecodeError, ValueError) as e:
                 logger.warning("Memory consolidation failed: %s", e)
 

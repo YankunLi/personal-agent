@@ -249,9 +249,10 @@ class CronScheduler:
             result.append(info)
         return result
 
-    def get_job(self, job_id: str) -> CronJob | None:
+    async def get_job(self, job_id: str) -> CronJob | None:
         """Get a job by ID."""
-        return self._jobs.get(job_id)
+        async with self._jobs_lock:
+            return self._jobs.get(job_id)
 
     # ── internal ────────────────────────────────────────────────────────
 
