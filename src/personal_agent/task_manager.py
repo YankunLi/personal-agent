@@ -167,7 +167,13 @@ async def delete_task(session_id: str, task_id: str) -> bool:
             blocked_by.remove(task_id)
             changed = True
         if changed:
-            await update_task(session_id, task["id"], {"blocks": blocks, "blockedBy": blocked_by})
+            try:
+                await update_task(session_id, task["id"], {"blocks": blocks, "blockedBy": blocked_by})
+            except Exception:
+                logger.warning(
+                    "Failed to clean up references to deleted task '%s' from task '%s'",
+                    task_id, task["id"], exc_info=True,
+                )
 
     return True
 
