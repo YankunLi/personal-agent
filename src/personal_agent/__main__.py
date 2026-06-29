@@ -198,6 +198,10 @@ def _build_overrides(args) -> dict:
         overrides["model"] = args.model
     if args.api_key:
         overrides["api_key"] = args.api_key
+        logger.warning(
+            "API key provided via --api-key is visible in process listings (ps aux). "
+            "Prefer setting the PA_PROVIDERS__<NAME>__API_KEY environment variable instead."
+        )
     return overrides
 
 
