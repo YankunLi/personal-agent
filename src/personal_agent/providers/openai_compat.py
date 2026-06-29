@@ -157,6 +157,7 @@ class OpenAICompatibleProvider(Provider):
                 tool_call_deltas: dict[int, dict] = {}  # index -> {id, name, arguments_json}
                 stream_model = ""
                 usage: dict[str, int] = {}
+                last_finish_reason = "stop"
 
                 async for chunk in stream:
                     if not chunk.choices:
@@ -164,6 +165,10 @@ class OpenAICompatibleProvider(Provider):
                     delta = chunk.choices[0].delta
                     if chunk.model:
                         stream_model = chunk.model
+
+                    # Capture actual finish_reason from the API (e.g. "length", "content_filter")
+                    if chunk.choices[0].finish_reason:
+                        last_finish_reason = chunk.choices[0].finish_reason
 
                     if delta.content:
                         accumulated_content += delta.content
@@ -215,7 +220,7 @@ class OpenAICompatibleProvider(Provider):
                 yield ChatResponse(
                     content="",
                     tool_calls=tool_calls if tool_calls else [],
-                    finish_reason="tool_calls" if tool_call_deltas else "stop",
+                    finish_reason="tool_calls" if tool_call_deltas else last_finish_reason,
                     model=stream_model,
                     usage=usage,
                 )
