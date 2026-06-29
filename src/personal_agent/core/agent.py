@@ -70,6 +70,7 @@ class BaseAgent(ABC):
         self.skill_manager = skill_manager
         self._cron_scheduler = cron_scheduler
         self._pending_cron_prompts: list[str] = []
+        self._cron_prompts_lock = asyncio.Lock()
         self.max_steps = max_steps
         self._base_system_prompt = system_prompt
         self._temperature = temperature
@@ -103,19 +104,19 @@ class BaseAgent(ABC):
     async def _call_llm(self, state: AgentState) -> ChatResponse:
         """Prepare context and call the LLM provider. Delegates to streaming when enabled."""
         # Inject pending cron prompts before the LLM call
-        if self._pending_cron_prompts:
+        async with self._cron_prompts_lock:
             prompts = self._pending_cron_prompts
             self._pending_cron_prompts = []
-            for prompt in prompts:
-                state.messages.append(Message(
+        for prompt in prompts:
+            state.messages.append(Message(
+                role=Role.USER,
+                content=f"[Cron job triggered] {prompt}",
+            ))
+            if self.short_term:
+                self.short_term.add(Message(
                     role=Role.USER,
                     content=f"[Cron job triggered] {prompt}",
                 ))
-                if self.short_term:
-                    self.short_term.add(Message(
-                        role=Role.USER,
-                        content=f"[Cron job triggered] {prompt}",
-                    ))
 
         if self._streaming_enabled:
             return await self._call_llm_stream(state)

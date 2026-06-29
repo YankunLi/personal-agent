@@ -697,7 +697,8 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     # Start cron scheduler so jobs fire during the agent's lifetime
     async def _cron_callback(prompt: str) -> None:
         logger.info("Cron job fired: %s", prompt[:80])
-        agent._pending_cron_prompts.append(prompt)
+        async with agent._cron_prompts_lock:
+            agent._pending_cron_prompts.append(prompt)
 
     try:
         await cron_scheduler.start(_cron_callback)
