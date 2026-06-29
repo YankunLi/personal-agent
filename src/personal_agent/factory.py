@@ -112,6 +112,8 @@ async def create_sub_agent(
             tool_registry.register(create_code_exec_tool())
         elif tool_name in file_ops_map:
             tool_registry.register(file_ops_map[tool_name])
+        else:
+            logger.warning("Unknown tool '%s' in sub-agent config, skipping", tool_name)
 
     tool_executor = ToolExecutor(registry=tool_registry)
 
@@ -282,7 +284,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     # When user_id is provided, scope memory to that user for multi-user isolation
     if user_id:
         import os
-        safe_id = user_id.replace(os.sep, "_").replace("..", "_")
+        safe_id = user_id.replace(os.sep, "_").replace("..", "_").strip(".")
         if not safe_id.strip():
             safe_id = "default"
         store_dir = str(Path(memory_cfg.memory_dir).expanduser() / "users" / safe_id)
@@ -587,7 +589,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
             description = sub_cfg.description or f"Delegate a task to the '{name}' specialist agent."
             agent_tool = AgentTool(agent=sub_agent, name=name, description=description)
             tool_registry.register(agent_tool)
-        except Exception:
+        except BaseException:
             logger.exception("Failed to create sub-agent '%s'", name)
             for created in created_sub_agents:
                 try:
@@ -682,7 +684,7 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         )
         try:
             await mcp_source.connect_all()
-        except Exception:
+        except BaseException:
             try:
                 await mcp_source.disconnect_all()
             except Exception as cleanup_err:
