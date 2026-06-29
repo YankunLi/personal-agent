@@ -21,7 +21,11 @@ _task_locks_guard = asyncio.Lock()
 
 def _get_tasks_dir(session_id: str) -> Path:
     """Get the tasks directory for a session."""
-    return Path("~/.personal-agent/tasks").expanduser() / session_id
+    # Sanitize session_id to prevent path traversal
+    safe_id = session_id.replace(os.sep, "_").replace("..", "_").lstrip("/")
+    if not safe_id:
+        safe_id = "default"
+    return Path("~/.personal-agent/tasks").expanduser() / safe_id
 
 
 def _get_task_path(session_id: str, task_id: str) -> Path:

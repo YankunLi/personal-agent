@@ -195,6 +195,9 @@ def _python_fallback(
                 continue
 
             fpath = os.path.join(root, fname)
+            # Skip symlinks to prevent workspace traversal
+            if os.path.islink(fpath):
+                continue
             try:
                 with open(fpath, "r", encoding="utf-8") as f:
                     lines = f.readlines()

@@ -283,6 +283,8 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     if user_id:
         import os
         safe_id = user_id.replace(os.sep, "_").replace("..", "_")
+        if not safe_id.strip():
+            safe_id = "default"
         store_dir = str(Path(memory_cfg.memory_dir).expanduser() / "users" / safe_id)
     else:
         store_dir = memory_cfg.memory_dir
