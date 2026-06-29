@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -11,6 +12,9 @@ from personal_agent.tools.builtin.web_fetch import _TextExtractor, create_web_fe
 from personal_agent.tools.executor import ToolExecutor
 from personal_agent.tools.registry import ToolRegistry
 from personal_agent.types import ToolCall
+
+# Mock DNS result: example.com resolves to a public IP
+_MOCK_DNS_RESULT = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 0))]
 
 
 def _make_response(
@@ -31,10 +35,12 @@ def _make_response(
 
 @pytest.fixture
 def executor():
+    """Create a web_fetch tool executor with DNS resolution mocked."""
     tool = create_web_fetch_tool(timeout=10.0, max_content_chars=100_000)
     registry = ToolRegistry()
     registry.register(tool)
-    return ToolExecutor(registry=registry)
+    with patch("socket.getaddrinfo", return_value=_MOCK_DNS_RESULT):
+        yield ToolExecutor(registry=registry)
 
 
 class TestTextExtractor:
@@ -194,7 +200,8 @@ async def test_truncation():
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("httpx.AsyncClient", return_value=mock_client):
+    with patch("socket.getaddrinfo", return_value=_MOCK_DNS_RESULT), \
+         patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
             id="1", name="web_fetch",
             arguments={"url": "https://example.com/long"},

@@ -107,6 +107,7 @@ class PlanAndExecuteAgent(BaseAgent):
                     state.messages = state.messages[:base_msg_count]  # Prune replan messages
                     if new_plan is plan:
                         # Replan returned the same plan (fallback) — skip the failed step
+                        step_results.pop()  # Remove the failed step's result
                         i += 1
                     else:
                         plan = new_plan

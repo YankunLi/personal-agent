@@ -129,13 +129,17 @@ def create_notebook_edit_tool(workspace_dir: str | None = None) -> Tool:
 
             cell = cells[idx]
             old_source = cell.get("source", "")
+            old_type = cell.get("cell_type")
             cell["source"] = new_source
             if cell_type:
                 cell["cell_type"] = cell_type
-            # Only reset outputs if the source actually changed
+            # Clear outputs if source changed (for code cells) or type changed to markdown
             if cell.get("cell_type") == "code" and old_source != new_source:
                 cell["outputs"] = []
                 cell["execution_count"] = None
+            elif cell.get("cell_type") == "markdown" and old_type == "code":
+                cell.pop("outputs", None)
+                cell.pop("execution_count", None)
             action = f"Replaced cell at index {idx}"
 
         # Write back

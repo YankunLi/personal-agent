@@ -95,6 +95,11 @@ class ReflectionAgent(BaseAgent):
         for iteration in range(self._max_iterations):
             logger.info("Reflection iteration %d/%d", iteration + 1, self._max_iterations)
 
+            # Snapshot message count before generation to prune iteration
+            # messages afterward, preventing unbounded growth when no
+            # context_manager is configured.
+            msg_count_before = len(state.messages)
+
             # Phase 1: Generate
             current_response = await self._generate(state, task, critique)
             state.steps.append(
@@ -119,6 +124,9 @@ class ReflectionAgent(BaseAgent):
 
             # Store critique for next iteration
             self.working.set("last_critique", critique)
+
+            # Prune iteration messages to prevent unbounded growth
+            state.messages = state.messages[:msg_count_before]
 
         state.final_answer = current_response
         state.done = True

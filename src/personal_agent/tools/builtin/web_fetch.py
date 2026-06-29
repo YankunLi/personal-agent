@@ -117,9 +117,9 @@ async def _validate_url(url: str) -> None:
                 if addr in network:
                     raise ToolExecutionError(f"URL resolves to restricted address: {addr}")
     except socket.gaierror as e:
-        logger.warning("DNS resolution failed for host '%s': %s, proceeding with HTTP request", host, e)
+        raise ToolExecutionError(f"DNS resolution failed for host '{host}': {e}") from e
     except (OSError, ValueError) as e:
-        logger.warning("Failed to validate host '%s': %s, proceeding with HTTP request", host, e)
+        raise ToolExecutionError(f"Failed to validate host '{host}': {e}") from e
 
 
 def create_web_fetch_tool(

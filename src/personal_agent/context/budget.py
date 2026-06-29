@@ -241,9 +241,15 @@ class ContextBudgetManager:
         return system_msgs + kept_older + recent
 
     def _summarize_older(self, messages: list[Message]) -> str:
-        """Generate a simple summary of older messages."""
+        """Generate a simple summary of older messages, sampling from both ends."""
         parts = []
-        for msg in messages[:20]:  # Max 20 messages for summary
+        sample_size = min(20, len(messages))
+        if sample_size == 0:
+            return ""
+        # Sample first and last messages for better coverage
+        half = sample_size // 2
+        sampled = messages[:half] + messages[-half:] if sample_size > 2 else messages[:sample_size]
+        for msg in sampled:
             role = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
             content = (msg.content or "")[:200]
             if content.strip():

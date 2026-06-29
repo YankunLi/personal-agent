@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import threading
 import time
@@ -15,6 +16,8 @@ from personal_agent.memory.short_term import ShortTermMemory
 from personal_agent.memory.working import WorkingMemory
 
 from personal_agent.channels.base import SessionKey
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

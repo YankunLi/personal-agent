@@ -64,7 +64,7 @@ class AnthropicProvider(Provider):
             if msg.role == Role.TOOL:
                 # Anthropic accepts only "user" and "assistant" roles.
                 # Tool results must be sent as user messages with tool_result content blocks.
-                m = {"role": "user", "content": msg.content}
+                m = {"role": "user"}
                 tool_use_id = msg.tool_call_id
                 if not tool_use_id:
                     logger.warning("Tool message missing tool_call_id, using fallback")

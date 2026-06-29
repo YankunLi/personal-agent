@@ -158,6 +158,9 @@ def _python_fallback(
     show_line_numbers: bool | None,
     head_limit: int | None,
     offset: int | None,
+    after: int | None = None,
+    before: int | None = None,
+    context: int | None = None,
     multiline: bool | None = None,
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
 ) -> str:
@@ -190,12 +193,10 @@ def _python_fallback(
         file_walker = os.walk(search_root)
 
     for root, dirs, files in file_walker:
-        # Skip hidden/VCS directories
-        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        # Skip VCS directories (matching rg behavior)
+        dirs[:] = [d for d in dirs if d not in (".git", ".svn", ".hg", ".bzr")]
 
         for fname in files:
-            if fname.startswith("."):
-                continue
             if glob_filter and not fnmatch.fnmatch(fname, glob_filter):
                 continue
 
@@ -213,13 +214,29 @@ def _python_fallback(
                 continue
 
             file_matches = 0
+            # Determine context window
+            ctx_before = context or before or 0
+            ctx_after = context or after or 0
+
             for i, line in enumerate(lines, 1):
                 if compiled.search(line):
                     file_matches += 1
                     match_count += 1
                     if output_mode == "content":
-                        prefix = f"{fpath}:{i}: " if show_line_numbers is not False else f"{fpath}: "
-                        results.append(f"{prefix}{line.rstrip()}")
+                        if ctx_before or ctx_after:
+                            # Show context lines around the match
+                            start = max(0, i - 1 - ctx_before)
+                            end = min(len(lines), i - 1 + ctx_after + 1)
+                            for ctx_i in range(start, end):
+                                ln = ctx_i + 1
+                                prefix = f"{fpath}-{ln}- " if show_line_numbers is not False else f"{fpath}- "
+                                marker = ":" if ln == i else "-"
+                                prefix = f"{fpath}{marker}{ln}- " if show_line_numbers is not False else f"{fpath}{marker} "
+                                results.append(f"{prefix}{lines[ctx_i].rstrip()}")
+                            results.append("--")
+                        else:
+                            prefix = f"{fpath}:{i}: " if show_line_numbers is not False else f"{fpath}: "
+                            results.append(f"{prefix}{line.rstrip()}")
                     elif output_mode == "count":
                         pass  # Accumulate per file
             if file_matches > 0:
@@ -324,6 +341,7 @@ def create_grep_tool(
                     return _python_fallback(
                         pattern, search_path, glob, output_mode,
                         case_insensitive, show_line_numbers, head_limit, offset,
+                        after=after, before=before, context=context,
                         multiline=multiline, max_result_chars=max_result_chars,
                     )
                 return f"Error: {stderr_text}"
@@ -355,6 +373,7 @@ def create_grep_tool(
         return _python_fallback(
             pattern, search_path, glob, output_mode,
             case_insensitive, show_line_numbers, head_limit, offset,
+            after=after, before=before, context=context,
             multiline=multiline, max_result_chars=max_result_chars,
         )
 
