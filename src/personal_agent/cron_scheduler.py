@@ -227,7 +227,8 @@ class CronScheduler:
 
     async def delete_job(self, job_id: str) -> bool:
         """Delete a job by ID. Returns True if the job existed."""
-        job = self._jobs.pop(job_id, None)
+        async with self._jobs_lock:
+            job = self._jobs.pop(job_id, None)
         if job is None:
             return False
         if job.durable:
@@ -269,29 +270,35 @@ class CronScheduler:
 
     async def _check_and_fire(self, now: datetime) -> None:
         """Check all jobs and fire those that match the current time."""
+        to_fire: list[tuple[str, str]] = []  # (job_id, prompt)
         to_remove = []
-        for job in list(self._jobs.values()):
-            if _cron_matches(job.cron, now):
-                logger.info("Cron job '%s' firing: %s", job.id, job.prompt[:50])
-                job.last_fired = now.isoformat()
-                job.fired_count += 1
 
-                if self._callback:
-                    # Fire callback as background task so the scheduler loop
-                    # isn't blocked by long-running callbacks.
-                    task = asyncio.create_task(
-                        self._fire_callback(job.id, job.prompt)
-                    )
-                    self._pending_callbacks.add(task)
-                    task.add_done_callback(self._pending_callbacks.discard)
+        async with self._jobs_lock:
+            for job in list(self._jobs.values()):
+                if _cron_matches(job.cron, now):
+                    logger.info("Cron job '%s' firing: %s", job.id, job.prompt[:50])
+                    job.last_fired = now.isoformat()
+                    job.fired_count += 1
 
-                if not job.recurring:
-                    to_remove.append(job.id)
+                    to_fire.append((job.id, job.prompt))
 
-        for job_id in to_remove:
-            job = self._jobs.pop(job_id, None)
-            if job and job.durable:
-                await self._save_durable()
+                    if not job.recurring:
+                        to_remove.append(job.id)
+
+            for job_id in to_remove:
+                self._jobs.pop(job_id, None)
+
+        # Fire callbacks outside the lock to avoid blocking job management
+        for job_id, prompt in to_fire:
+            if self._callback:
+                task = asyncio.create_task(
+                    self._fire_callback(job_id, prompt)
+                )
+                self._pending_callbacks.add(task)
+                task.add_done_callback(self._pending_callbacks.discard)
+
+        if to_remove:
+            await self._save_durable()
 
     async def _fire_callback(self, job_id: str, prompt: str) -> None:
         """Fire a callback with error handling, safe for background execution."""
@@ -301,8 +308,9 @@ class CronScheduler:
             logger.error("Cron callback error for job '%s': %s", job_id, e)
 
     async def _save_durable(self) -> None:
-        """Save durable jobs to the JSON file."""
-        durable_jobs = [j.to_dict() for j in self._jobs.values() if j.durable]
+        """Save durable jobs to the JSON file. Acquires _jobs_lock to serialize saves."""
+        async with self._jobs_lock:
+            durable_jobs = [j.to_dict() for j in self._jobs.values() if j.durable]
         try:
             self._storage_path.parent.mkdir(parents=True, exist_ok=True)
             tmp_path = self._storage_path.with_suffix(".tmp")
