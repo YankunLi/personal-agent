@@ -689,6 +689,10 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
                 await mcp_source.disconnect_all()
             except Exception as cleanup_err:
                 logger.warning("Failed to disconnect MCP during cleanup: %s", cleanup_err)
+            try:
+                await agent.close()
+            except Exception as close_err:
+                logger.warning("Failed to close agent during MCP cleanup: %s", close_err)
             raise
         agent._mcp_source = mcp_source
 
