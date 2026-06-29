@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import logging
 import re
 import socket
 from html.parser import HTMLParser
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 import httpx
 
@@ -113,8 +116,10 @@ async def _validate_url(url: str) -> None:
             for network in _BLOCKED_NETWORKS:
                 if addr in network:
                     raise ToolExecutionError(f"URL resolves to restricted address: {addr}")
-    except (socket.gaierror, OSError, ValueError):
-        return
+    except socket.gaierror as e:
+        logger.warning("DNS resolution failed for host '%s': %s, proceeding with HTTP request", host, e)
+    except (OSError, ValueError) as e:
+        logger.warning("Failed to validate host '%s': %s, proceeding with HTTP request", host, e)
 
 
 def create_web_fetch_tool(
