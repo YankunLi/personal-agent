@@ -372,7 +372,7 @@ class CronScheduler:
         """
         try:
             if job.recurring:
-                ref_time = job.last_fired or job.created_at
+                ref_time = job.last_fired if job.last_fired is not None else job.created_at
                 created = datetime.fromisoformat(ref_time)
                 return datetime.now() - created > timedelta(days=DEFAULT_MAX_AGE_DAYS)
             else:

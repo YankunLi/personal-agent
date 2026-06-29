@@ -198,8 +198,8 @@ class SessionManager:
                 try:
                     session = self._load_session_file(f)
                     self._sessions[session.id] = session
-                except Exception:
-                    pass  # Skip corrupted files
+                except Exception as e:
+                    logger.warning("Failed to load session file '%s': %s", f.name, e)
             return sorted(self._sessions.values(), key=lambda s: s.updated_at, reverse=True)
 
     def cleanup_expired(self) -> list[str]:
@@ -280,12 +280,13 @@ class SessionManager:
         return self._storage_dir / f"{session_id}.json"
 
     def _save_session(self, session: Session) -> None:
-        """Write a session to disk atomically."""
+        """Write a session to disk atomically with restrictive permissions."""
         path = self._session_path(session.id)
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         try:
             with open(tmp_path, "w") as f:
                 json.dump(session.to_dict(), f, ensure_ascii=False, indent=2)
+            os.chmod(tmp_path, 0o600)
             os.replace(tmp_path, path)
         except Exception:
             # Clean up partial temp file on failure

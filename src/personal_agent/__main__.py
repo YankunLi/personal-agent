@@ -83,29 +83,29 @@ async def run_agent(task: str, config_path: str | None = None, workdir: Path | N
 
     agent = await create_agent(settings, task=task, **(overrides or {}))
 
-    # Restore session memory into agent if available
-    current = session_mgr.current
-    if current:
-        agent.short_term = current.short_term
-        agent.working = current.working
-
-    # Wire up rich terminal display
-    from personal_agent.display import TerminalDisplay
-    from personal_agent.types import AgentCallbacks
-
-    display = TerminalDisplay()
-    agent._callbacks = AgentCallbacks(
-        on_step_start=display.on_step_start,
-        on_thought=display.on_thought,
-        on_tool_call=display.on_tool_call,
-        on_tool_result=display.on_tool_result,
-        on_answer=display.on_answer,
-        on_text_delta=display.on_text_delta,
-        on_tool_call_stream=display.on_tool_call_stream,
-    )
-    agent._streaming_enabled = True
-
     try:
+        # Restore session memory into agent if available
+        current = session_mgr.current
+        if current:
+            agent.short_term = current.short_term
+            agent.working = current.working
+
+        # Wire up rich terminal display
+        from personal_agent.display import TerminalDisplay
+        from personal_agent.types import AgentCallbacks
+
+        display = TerminalDisplay()
+        agent._callbacks = AgentCallbacks(
+            on_step_start=display.on_step_start,
+            on_thought=display.on_thought,
+            on_tool_call=display.on_tool_call,
+            on_tool_result=display.on_tool_result,
+            on_answer=display.on_answer,
+            on_text_delta=display.on_text_delta,
+            on_tool_call_stream=display.on_tool_call_stream,
+        )
+        agent._streaming_enabled = True
+
         result = await agent.run(task)
 
         # Save session

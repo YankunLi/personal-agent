@@ -153,7 +153,10 @@ async def delete_task(session_id: str, task_id: str) -> bool:
             # Update high water mark after successful deletion.
             # Serialize with _create_lock to prevent TOCTOU race between
             # concurrent delete_task calls for different tasks.
-            numeric_id = int(task_id)
+            try:
+                numeric_id = int(task_id)
+            except ValueError:
+                return True  # File deleted, non-numeric ID can't update HWM
             async with _create_lock:
                 current_mark = await asyncio.to_thread(_read_high_water_mark, session_id)
                 if numeric_id > current_mark:

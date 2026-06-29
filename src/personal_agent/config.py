@@ -368,7 +368,10 @@ def load_config(config_path: str | Path | None = None) -> Settings:
       3. Environment variables (PA_ prefix)
     """
     if config_path:
-        return _parse_config_file(Path(config_path))
+        path = Path(config_path)
+        if not path.exists():
+            raise ConfigError(f"Config file not found: {path}")
+        return _parse_config_file(path)
 
     # Auto-discover
     discovered = _find_config_file()

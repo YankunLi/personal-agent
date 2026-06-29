@@ -20,7 +20,11 @@ def _to_openai_messages(messages: list[Message]) -> list[dict]:
     """Convert internal Message format to OpenAI API format."""
     openai_msgs = []
     for msg in messages:
-        m: dict = {"role": msg.role.value, "content": msg.content}
+        m: dict = {"role": msg.role.value}
+        # OpenAI requires content to be omitted (not empty string) for
+        # assistant messages with tool_calls and no text content
+        if msg.content or not msg.tool_calls:
+            m["content"] = msg.content
         if msg.tool_call_id:
             m["tool_call_id"] = msg.tool_call_id
         if msg.tool_calls:

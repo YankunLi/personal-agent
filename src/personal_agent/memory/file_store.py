@@ -158,13 +158,12 @@ class FileMemoryStore:
         cache = await self._ensure_cache()
         filepath = cache.get(name)
         if filepath is None or not filepath.exists():
-            if filepath is not None:
-                async with self._lock:
-                    self._invalidate_cache()
-                await self.repair_index()
-                # Retry with rebuilt cache
-                cache = await self._ensure_cache()
-                filepath = cache.get(name)
+            async with self._lock:
+                self._invalidate_cache()
+            await self.repair_index()
+            # Retry with rebuilt cache
+            cache = await self._ensure_cache()
+            filepath = cache.get(name)
             if filepath is None or not filepath.exists():
                 return None
 
