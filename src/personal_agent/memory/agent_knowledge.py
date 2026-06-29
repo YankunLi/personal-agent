@@ -91,8 +91,8 @@ class AgentKnowledge:
 
         If the section exists, replaces its content. Otherwise, appends a new section.
         """
-        await asyncio.to_thread(self._ensure_file)
         async with self._lock:
+            await asyncio.to_thread(self._ensure_file)
             text = await asyncio.to_thread(self._global_path.read_text)
             sections = self._parse_sections(text)
 
@@ -116,8 +116,8 @@ class AgentKnowledge:
         if not learnings:
             return 0
 
-        await asyncio.to_thread(self._ensure_file)
         async with self._lock:
+            await asyncio.to_thread(self._ensure_file)
             text = await asyncio.to_thread(self._global_path.read_text)
 
             # Parse existing sections
