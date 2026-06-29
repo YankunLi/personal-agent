@@ -109,6 +109,7 @@ class PlanAndExecuteAgent(BaseAgent):
                         # Replan returned the same plan (fallback) — skip the failed step
                         step_results.pop()  # Remove the failed step's result
                         i += 1
+                        continue
                     else:
                         if not new_plan:
                             # LLM returned an empty plan — fall back to skipping the failed step
