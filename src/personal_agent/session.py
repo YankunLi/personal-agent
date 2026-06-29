@@ -238,10 +238,10 @@ class SessionManager:
         for s in self._sessions.values():
             if s.name == id_or_name:
                 return s
-        # Try partial ID match
-        for s in self._sessions.values():
-            if s.id.startswith(id_or_name):
-                return s
+        # Try partial ID match (only if exactly one session matches)
+        matches = [s for s in self._sessions.values() if s.id.startswith(id_or_name)]
+        if len(matches) == 1:
+            return matches[0]
         return None
 
     def has_session(self, session_id: str) -> bool:
@@ -287,7 +287,7 @@ class SessionManager:
         path = self._session_path(session.id)
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         try:
-            with open(tmp_path, "w") as f:
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(session.to_dict(), f, ensure_ascii=False, indent=2)
             os.chmod(tmp_path, 0o600)
             os.replace(tmp_path, path)
@@ -299,6 +299,6 @@ class SessionManager:
 
     def _load_session_file(self, path: Path) -> Session:
         """Load a session from a JSON file."""
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return Session.from_dict(data)

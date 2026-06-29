@@ -687,11 +687,11 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
         except BaseException:
             try:
                 await mcp_source.disconnect_all()
-            except Exception as cleanup_err:
+            except BaseException as cleanup_err:
                 logger.warning("Failed to disconnect MCP during cleanup: %s", cleanup_err)
             try:
                 await agent.close()
-            except Exception as close_err:
+            except BaseException as close_err:
                 logger.warning("Failed to close agent during MCP cleanup: %s", close_err)
             raise
         agent._mcp_source = mcp_source
@@ -713,11 +713,11 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     except BaseException:
         try:
             await cron_scheduler.stop()
-        except Exception as stop_err:
+        except BaseException as stop_err:
             logger.warning("Error stopping cron scheduler after start failure: %s", stop_err)
         try:
             await agent.close()
-        except Exception as close_err:
+        except BaseException as close_err:
             logger.warning("Error closing agent after cron start failure: %s", close_err)
         raise
 

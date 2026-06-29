@@ -42,9 +42,9 @@ class FileTokenStorage:
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
         async with self._lock:
-            data = self._read_locked()
+            data = await self._read_locked()
             data["tokens"] = tokens.model_dump(mode="json")
-            self._write_locked(data)
+            await self._write_locked(data)
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         data = await self._read()
@@ -54,33 +54,33 @@ class FileTokenStorage:
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
         async with self._lock:
-            data = self._read_locked()
+            data = await self._read_locked()
             data["client_info"] = client_info.model_dump(mode="json")
-            self._write_locked(data)
+            await self._write_locked(data)
 
     async def _read(self) -> dict[str, Any]:
         async with self._lock:
-            return self._read_locked()
+            return await self._read_locked()
 
-    def _read_locked(self) -> dict[str, Any]:
+    async def _read_locked(self) -> dict[str, Any]:
         """Read token data. Caller must hold self._lock."""
         if self._filepath.exists():
             try:
-                return json.loads(self._filepath.read_text())
+                return json.loads(await asyncio.to_thread(self._filepath.read_text))
             except json.JSONDecodeError:
                 logger.warning("Corrupted token cache at %s, resetting", self._filepath)
         return {}
 
     async def _write(self, data: dict[str, Any]) -> None:
         async with self._lock:
-            self._write_locked(data)
+            await self._write_locked(data)
 
-    def _write_locked(self, data: dict[str, Any]) -> None:
+    async def _write_locked(self, data: dict[str, Any]) -> None:
         """Write token data. Caller must hold self._lock."""
-        self._filepath.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(self._filepath.parent.mkdir, parents=True, exist_ok=True)
         # Ensure directory has restrictive permissions (owner only)
         os.chmod(self._filepath.parent, 0o700)
-        atomic_write(self._filepath, json.dumps(data, indent=2))
+        await asyncio.to_thread(atomic_write, self._filepath, json.dumps(data, indent=2))
         # Ensure token file is readable only by the owner
         os.chmod(self._filepath, 0o600)
 

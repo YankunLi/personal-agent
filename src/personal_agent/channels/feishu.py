@@ -242,9 +242,11 @@ class FeishuChannel(Channel):
         event = body.get("event", {})
 
         # Verify token for event callbacks
-        if self._verification_token:
-            event_token = header.get("token", "") if header else body.get("token", "")
-            if event_token != self._verification_token:
+        if not self._verification_token:
+            logger.warning("Feishu verification token not configured, rejecting event")
+            return web.json_response({"code": 1, "msg": "Verification token not configured"}, status=403)
+        event_token = header.get("token", "") if header else body.get("token", "")
+        if event_token != self._verification_token:
                 logger.warning("Feishu event rejected: invalid token")
                 return web.json_response({"code": 1, "msg": "Invalid token"}, status=403)
 
@@ -342,16 +344,11 @@ class FeishuChannel(Channel):
 
     async def _get_or_create_agent(self, user_id: str) -> Any:
         """Get or create an agent for a Feishu user."""
-        agent = self._conn_agents.get(user_id)
-        if agent is not None:
-            self._conn_agent_times[user_id] = time.time()
-            return agent
-
         async with self._agent_lock:
-            # Double-check: another task may have created the agent while we waited
-            if user_id in self._conn_agents:
+            agent = self._conn_agents.get(user_id)
+            if agent is not None:
                 self._conn_agent_times[user_id] = time.time()
-                return self._conn_agents[user_id]
+                return agent
 
             # Evict idle agents to prevent unbounded memory growth
             await self._evict_idle_agents()
