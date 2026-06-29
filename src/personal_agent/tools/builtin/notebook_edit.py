@@ -133,8 +133,12 @@ def create_notebook_edit_tool(workspace_dir: str | None = None) -> Tool:
             cell["source"] = new_source
             if cell_type:
                 cell["cell_type"] = cell_type
+            # Normalize source for comparison: Jupyter cells may store source
+            # as a string or a list of strings.
+            _old_src = "".join(old_source) if isinstance(old_source, list) else old_source
+            _new_src = "".join(new_source) if isinstance(new_source, list) else new_source
             # Clear outputs if source changed (for code cells) or type changed to markdown
-            if cell.get("cell_type") == "code" and old_source != new_source:
+            if cell.get("cell_type") == "code" and _old_src != _new_src:
                 cell["outputs"] = []
                 cell["execution_count"] = None
             elif cell.get("cell_type") == "markdown" and old_type == "code":
