@@ -84,6 +84,8 @@ class ParallelJudgeAgent(BaseAgent):
 
         for cfg, result in zip(self._agent_configs, results):
             name = cfg.name or cfg.provider
+            if isinstance(result, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
+                raise result
             if isinstance(result, BaseException):
                 logger.error("Agent %s failed: %s", name, result)
                 agent_answers[name] = f"[Error: {result}]"
