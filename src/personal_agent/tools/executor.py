@@ -306,7 +306,7 @@ class ToolExecutor:
         return ToolResult(
             call_id=tool_call.id,
             name=tool_call.name,
-            error=last_error or "Unknown error",
+            error=last_error if last_error is not None else "Unknown error",
         )
 
     async def execute_all(self, tool_calls: list[ToolCall]) -> list[ToolResult]:
