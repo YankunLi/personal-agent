@@ -90,9 +90,10 @@ async def run_one_shot(
     console.print(Text(task, style="info"))
     console.print()
 
-    agent = await create_agent(settings, task=task, **(overrides or {}))
-
+    agent = None
     try:
+        agent = await create_agent(settings, task=task, **(overrides or {}))
+
         current = session_mgr.current
         if current:
             agent.short_term = current.short_term
@@ -104,21 +105,30 @@ async def run_one_shot(
 
         result = await agent.run(task)
 
-        if current:
-            current.short_term = agent.short_term
-            current.working = agent.working
-            session_mgr.save_current()
-
         # Render the formatted answer. For ReAct this already fired via
         # callback during run() and is a no-op (idempotent); for all other
         # patterns this is the only render. Render before the summary so the
         # summary sits below the answer, not between stream and answer.
         await display.on_answer(result.answer)
         display.print_summary(result.elapsed_ms, len(result.steps), result.token_usage)
+
+        # Best-effort session persistence — do not let save failures hide the
+        # answer that was already rendered above.
+        if current:
+            current.short_term = agent.short_term
+            current.working = agent.working
+            try:
+                session_mgr.save_current()
+            except Exception:
+                logger.warning("Failed to save session", exc_info=True)
     except KeyboardInterrupt:
         console.print(Text("\nInterrupted", style="warning"))
+    except Exception as e:
+        logger.exception("One-shot agent run failed: %s", e)
+        console.print(Text.assemble(("Error: ", "error"), (str(e), "error")))
     finally:
-        await agent.close()
+        if agent is not None:
+            await agent.close()
 
 
 async def interactive_loop(
