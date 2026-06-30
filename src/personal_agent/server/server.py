@@ -70,12 +70,14 @@ class AgentServer:
             logger.info("Starting channel: %s", channel.name)
             tasks.append(asyncio.create_task(channel.start()))
 
-        # Wait for all channels to complete
-        try:
-            await asyncio.gather(*tasks)
-        except asyncio.CancelledError:
-            logger.info("AgentServer channels interrupted by cancellation")
-            raise
+        # Wait for all channels to complete. Use return_exceptions so a single
+        # channel failure (e.g. WebSocket port already bound) does not abort the
+        # whole server and orphan the still-running channel tasks — the failed
+        # channel is logged and the remaining ones keep serving.
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for channel, result in zip(self._channels, results):
+            if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                logger.error("Channel '%s' failed: %s", channel.name, result)
 
     async def stop(self) -> None:
         """Stop all channels, cleanup task, and persist sessions."""
@@ -88,8 +90,10 @@ class AgentServer:
             self._cleanup_task.cancel()
             try:
                 await self._cleanup_task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
                 pass
+            except Exception:
+                logger.warning("Error awaiting cleanup task", exc_info=True)
         self._cleanup_task = None
 
         logger.info("AgentServer stopping %d channel(s)", len(self._channels))
