@@ -209,7 +209,15 @@ class ReflectionAgent(BaseAgent):
             }
 
     def _is_satisfactory(self, critique: dict) -> bool:
-        """Check if the critique indicates a satisfactory response."""
+        """Check if the critique indicates a satisfactory response.
+
+        The score is authoritative: if the overall score meets the threshold
+        and every individual score meets the minimum, the response is
+        satisfactory. The boolean ``is_satisfactory`` field is only consulted
+        as a tiebreaker when individual scores are absent, since LLMs
+        frequently contradict themselves by marking ``is_satisfactory: false``
+        while returning passing scores.
+        """
         try:
             overall = float(critique.get("overall", 0))
         except (TypeError, ValueError):
@@ -219,8 +227,9 @@ class ReflectionAgent(BaseAgent):
             return False
 
         scores = critique.get("scores", {})
-        if not isinstance(scores, dict):
-            return overall >= self._critique_threshold
+        if not isinstance(scores, dict) or not scores:
+            # No per-criterion scores: fall back to the LLM's boolean verdict.
+            return bool(critique.get("is_satisfactory", overall >= self._critique_threshold))
         for criterion, score in scores.items():
             try:
                 if float(score) < self._min_score:
@@ -228,4 +237,4 @@ class ReflectionAgent(BaseAgent):
             except (TypeError, ValueError):
                 return False
 
-        return critique.get("is_satisfactory", overall >= self._critique_threshold)
+        return True

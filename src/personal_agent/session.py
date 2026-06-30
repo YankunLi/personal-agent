@@ -195,10 +195,35 @@ class SessionManager:
                 self._save_session(session)
 
     def load_all(self) -> list[Session]:
-        """Load all sessions from disk."""
+        """Load all sessions from disk.
+
+        Skips any session file that is not owned by the current user or that
+        grants group/other access — a tampered file could otherwise inject
+        arbitrary state (e.g., conversation history, working-memory keys) into
+        a live session on restart.
+        """
+        import stat
+
         with self._lock:
             self._sessions.clear()
             for f in sorted(self._storage_dir.glob("*.json")):
+                try:
+                    st = f.stat()
+                except OSError as e:
+                    logger.warning("Cannot stat session file '%s': %s", f.name, e)
+                    continue
+                if st.st_uid != os.geteuid():
+                    logger.warning(
+                        "Skipping session file '%s': not owned by current user (uid=%d)",
+                        f.name, st.st_uid,
+                    )
+                    continue
+                if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+                    logger.warning(
+                        "Skipping session file '%s': group/other access bits set (mode=%o)",
+                        f.name, st.st_mode & 0o777,
+                    )
+                    continue
                 try:
                     session = self._load_session_file(f)
                     self._sessions[session.id] = session

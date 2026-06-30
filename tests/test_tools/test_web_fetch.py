@@ -33,6 +33,23 @@ def _make_response(
     return resp
 
 
+def _mock_httpx_client(response: httpx.Response) -> MagicMock:
+    """Build a mock httpx.AsyncClient that streams ``response``.
+
+    The implementation uses ``client.build_request`` + ``client.send(stream=True)``
+    so that the response body can be read with a hard byte cap. Tests mock at
+    that boundary.
+    """
+    mock_client = MagicMock()
+    mock_client.build_request = MagicMock(
+        return_value=httpx.Request("GET", "https://example.com/")
+    )
+    mock_client.send = AsyncMock(return_value=response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+    return mock_client
+
+
 @pytest.fixture
 def executor():
     """Create a web_fetch tool executor with DNS resolution mocked."""
@@ -96,13 +113,10 @@ class TestTextExtractor:
 @pytest.mark.asyncio
 async def test_http_upgrade(executor):
     """HTTP URLs should be upgraded to HTTPS."""
-    mock_client = MagicMock()
-    mock_client.get = AsyncMock(return_value=_make_response(
+    mock_client = _mock_httpx_client(_make_response(
         text="<html><body>Secure content</body></html>",
         headers={"content-type": "text/html"},
     ))
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
@@ -113,21 +127,17 @@ async def test_http_upgrade(executor):
         assert result.error is None
         assert "Secure content" in result.output
         # Verify the URL was upgraded to HTTPS
-        call_url = mock_client.get.call_args[0][0] if mock_client.get.call_args else ""
-        # URL is upgraded inside the tool, we just check the result
-        assert "https://" in call_url
+        req = mock_client.build_request.call_args[0][0] if mock_client.build_request.call_args else ""
+        assert "https://" in req
 
 
 @pytest.mark.asyncio
 async def test_html_extraction(executor):
     """HTML content should be extracted to plain text."""
-    mock_client = MagicMock()
-    mock_client.get = AsyncMock(return_value=_make_response(
+    mock_client = _mock_httpx_client(_make_response(
         text="<html><body><h1>Title</h1><p>Paragraph one.</p><p>Paragraph two.</p></body></html>",
         headers={"content-type": "text/html; charset=utf-8"},
     ))
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
@@ -144,13 +154,10 @@ async def test_html_extraction(executor):
 @pytest.mark.asyncio
 async def test_plain_text(executor):
     """Plain text content should be returned as-is."""
-    mock_client = MagicMock()
-    mock_client.get = AsyncMock(return_value=_make_response(
+    mock_client = _mock_httpx_client(_make_response(
         text="Just plain text content.",
         headers={"content-type": "text/plain"},
     ))
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
@@ -165,13 +172,10 @@ async def test_plain_text(executor):
 @pytest.mark.asyncio
 async def test_json_content(executor):
     """JSON content should be returned as-is."""
-    mock_client = MagicMock()
-    mock_client.get = AsyncMock(return_value=_make_response(
+    mock_client = _mock_httpx_client(_make_response(
         text='{"key": "value"}',
         headers={"content-type": "application/json"},
     ))
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
@@ -192,13 +196,10 @@ async def test_truncation():
     exec_small = ToolExecutor(registry=registry)
 
     long_text = "A" * 200
-    mock_client = MagicMock()
-    mock_client.get = AsyncMock(return_value=_make_response(
+    mock_client = _mock_httpx_client(_make_response(
         text=f"<html><body><p>{long_text}</p></body></html>",
         headers={"content-type": "text/html"},
     ))
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
 
     with patch("socket.getaddrinfo", return_value=_MOCK_DNS_RESULT), \
          patch("httpx.AsyncClient", return_value=mock_client):
@@ -215,13 +216,10 @@ async def test_truncation():
 @pytest.mark.asyncio
 async def test_unsupported_content_type(executor):
     """Unsupported content types should return an error message."""
-    mock_client = MagicMock()
-    mock_client.get = AsyncMock(return_value=_make_response(
+    mock_client = _mock_httpx_client(_make_response(
         content=b"\x89PNG\x00",
         headers={"content-type": "image/png"},
     ))
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
@@ -237,12 +235,9 @@ async def test_unsupported_content_type(executor):
 @pytest.mark.asyncio
 async def test_http_error(executor):
     """HTTP errors should be raised as ToolExecutionError."""
-    mock_client = MagicMock()
-    mock_client.get = AsyncMock(return_value=_make_response(
+    mock_client = _mock_httpx_client(_make_response(
         status_code=404,
     ))
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(
@@ -256,13 +251,10 @@ async def test_http_error(executor):
 @pytest.mark.asyncio
 async def test_follows_redirects(executor):
     """Should follow redirects — httpx handles this automatically with follow_redirects=True."""
-    mock_client = MagicMock()
-    mock_client.get = AsyncMock(return_value=_make_response(
+    mock_client = _mock_httpx_client(_make_response(
         text="<html><body>Final destination</body></html>",
         headers={"content-type": "text/html"},
     ))
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", return_value=mock_client):
         tc = ToolCall(

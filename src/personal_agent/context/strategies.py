@@ -4,7 +4,25 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from personal_agent.types import Message
+from personal_agent.types import Message, Role
+
+
+def _is_tool_message(m: Message) -> bool:
+    return m.role.value == "tool"
+
+
+def _avoid_splitting_tool_group(messages: list[Message], split: int) -> int:
+    """Move a split index left so it does not fall inside a tool-call group.
+
+    A tool-call group is an assistant message bearing ``tool_calls`` followed by
+    one or more ``tool`` result messages. If the split lands on a ``tool``
+    message whose parent assistant message would be left in the "older" portion,
+    the orphaned tool result causes provider API errors. We instead move the
+    boundary back to include the parent assistant message.
+    """
+    while split > 0 and _is_tool_message(messages[split]):
+        split -= 1
+    return split
 
 
 class ContextStrategy(ABC):
@@ -16,7 +34,7 @@ class ContextStrategy(ABC):
 
 
 class SlidingWindowStrategy(ContextStrategy):
-    """Keep only the most recent N messages, preserving the system prompt."""
+    """Keep only the most recent N messages, preserving the leading system prompt."""
 
     def __init__(self, max_messages: int = 100):
         self.max_messages = max_messages
@@ -25,13 +43,23 @@ class SlidingWindowStrategy(ContextStrategy):
         if len(messages) <= self.max_messages:
             return list(messages)
 
-        # Always preserve the system message if present
-        system_msgs = [m for m in messages if m.role.value == "system"]
-        non_system = [m for m in messages if m.role.value != "system"]
+        # Preserve only the leading system message (base prompt). Other system
+        # messages (mid-conversation hints) stay in their relative positions so
+        # their temporal context is not destroyed by hoisting them to the front.
+        if messages and messages[0].role.value == "system":
+            head = [messages[0]]
+            rest = messages[1:]
+        else:
+            head = []
+            rest = list(messages)
 
-        effective_max = max(0, self.max_messages - len(system_msgs))
-        kept = non_system[-effective_max:] if effective_max > 0 else []
-        return system_msgs + kept
+        effective_max = max(0, self.max_messages - len(head))
+        if effective_max <= 0 or effective_max >= len(rest):
+            return list(messages)
+
+        split = len(rest) - effective_max
+        split = _avoid_splitting_tool_group(rest, split)
+        return head + rest[split:]
 
 
 class CompressionStrategy(ContextStrategy):
@@ -58,11 +86,13 @@ class CompressionStrategy(ContextStrategy):
         if len(non_system) <= self.keep_recent:
             return list(messages)
 
-        recent = non_system[-self.keep_recent:]
-        older = non_system[:-self.keep_recent]
+        # Choose a split that does not orphan tool results from their tool calls.
+        split = len(non_system) - self.keep_recent
+        split = _avoid_splitting_tool_group(non_system, split)
+        recent = non_system[split:]
+        older = non_system[:split]
 
         summary = await self.compressor.summarize(older)
-        from personal_agent.types import Role
         summary_msg = Message(
             role=Role.SYSTEM,
             content=f"[Compressed conversation history]\n{summary}",

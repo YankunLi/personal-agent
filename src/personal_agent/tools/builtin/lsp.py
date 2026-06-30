@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -81,15 +82,19 @@ def create_lsp_tool(workspace_dir: str | None = None) -> Tool:
             return f"Error: File not found: {filePath}"
 
         try:
-            source = p.read_text(encoding="utf-8")
+            source = await asyncio.to_thread(lambda: p.read_text(encoding="utf-8"))
         except UnicodeDecodeError:
             return f"Error: Cannot analyze binary file: {filePath}"
 
         jedi = _get_jedi()
         if jedi is not None and p.suffix == ".py":
-            return _handle_python(jedi, operation, source, str(p), line, character)
+            return await asyncio.to_thread(
+                _handle_python, jedi, operation, source, str(p), line, character
+            )
         else:
-            return _handle_fallback(operation, source, str(p), line, character)
+            return await asyncio.to_thread(
+                _handle_fallback, operation, source, str(p), line, character
+            )
 
     return FunctionTool(
         spec=ToolSpec(

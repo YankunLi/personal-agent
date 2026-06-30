@@ -133,12 +133,20 @@ class AgentKnowledge:
                 if section not in existing:
                     existing[section] = []
 
-                # Deduplicate — check both with and without bullet prefix
-                new_stripped = new_text
-                if new_stripped.startswith("- "):
-                    new_stripped = new_stripped[2:]
+                # Deduplicate — compare on the stripped bullet text. Use an
+                # explicit prefix strip; ``lstrip("- ")`` strips a *character
+                # set* and would mangle entries like "-5 rating scale".
+                def _strip_bullet(s: str) -> str:
+                    s = s.strip()
+                    if s.startswith("- "):
+                        s = s[2:]
+                    elif s.startswith("-"):
+                        s = s[1:]
+                    return s.strip()
+
+                new_stripped = _strip_bullet(new_text)
                 if any(
-                    new_stripped == e.strip() or new_stripped == e.strip().lstrip("- ")
+                    new_stripped == _strip_bullet(e)
                     for e in existing[section]
                 ):
                     continue

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 
@@ -79,7 +80,7 @@ def create_notebook_edit_tool(workspace_dir: str | None = None) -> Tool:
             return f"Error: new_source is required for edit_mode={edit_mode}"
 
         try:
-            content = p.read_text(encoding="utf-8")
+            content = await asyncio.to_thread(lambda: p.read_text(encoding="utf-8"))
             nb = json.loads(content)
         except json.JSONDecodeError as e:
             return f"Error: Invalid notebook JSON: {e}"
@@ -133,22 +134,29 @@ def create_notebook_edit_tool(workspace_dir: str | None = None) -> Tool:
             cell["source"] = new_source
             if cell_type:
                 cell["cell_type"] = cell_type
-            # Normalize source for comparison: Jupyter cells may store source
-            # as a string or a list of strings.
-            _old_src = "".join(old_source) if isinstance(old_source, list) else old_source
-            _new_src = "".join(new_source) if isinstance(new_source, list) else new_source
-            # Clear outputs if source changed (for code cells) or type changed to markdown
-            if cell.get("cell_type") == "code" and _old_src != _new_src:
-                cell["outputs"] = []
-                cell["execution_count"] = None
-            elif cell.get("cell_type") == "markdown" and old_type == "code":
+            # Normalize stored source for comparison: Jupyter cells may store
+            # source as a string or a list of strings. new_source is always a
+            # str (validated above), so only normalize old_source.
+            _old_src = "".join(old_source) if isinstance(old_source, list) else (old_source or "")
+            _new_src = new_source or ""
+            new_type = cell.get("cell_type")
+            if new_type == "code":
+                # Ensure code cells always carry outputs/execution_count keys,
+                # and clear them when the source changed (or when converting
+                # from markdown, which had none).
+                if _old_src != _new_src or old_type != "code":
+                    cell["outputs"] = []
+                    cell["execution_count"] = None
+            elif new_type == "markdown" and old_type == "code":
                 cell.pop("outputs", None)
                 cell.pop("execution_count", None)
             action = f"Replaced cell at index {idx}"
 
         # Write back
         nb["cells"] = cells
-        atomic_write(p, json.dumps(nb, indent=1, ensure_ascii=False) + "\n")
+        await asyncio.to_thread(
+            atomic_write, p, json.dumps(nb, indent=1, ensure_ascii=False) + "\n"
+        )
         return f"Notebook edited: {notebook_path} ({action})"
 
     return FunctionTool(

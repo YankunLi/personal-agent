@@ -144,16 +144,27 @@ class CronJob:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CronJob":
-        job = cls(
-            cron=data["cron"],
-            prompt=data["prompt"],
-            recurring=data.get("recurring", True),
-            durable=data.get("durable", False),
-            job_id=data.get("id"),
-        )
-        job.created_at = data.get("created_at", job.created_at)
-        job.last_fired = data.get("last_fired")
-        job.fired_count = data.get("fired_count", 0)
+        """Build a CronJob from a dict, coercing types from (possibly tampered)
+        durable-storage JSON. Raises ValueError on malformed entries.
+        """
+        try:
+            job = cls(
+                cron=str(data["cron"]),
+                prompt=str(data["prompt"]),
+                recurring=bool(data.get("recurring", True)),
+                durable=bool(data.get("durable", False)),
+                job_id=str(data["id"]) if data.get("id") else None,
+            )
+        except (KeyError, TypeError) as e:
+            raise ValueError(f"Invalid cron job entry: {e}") from e
+        created = data.get("created_at")
+        job.created_at = str(created) if created is not None else job.created_at
+        last_fired = data.get("last_fired")
+        job.last_fired = str(last_fired) if last_fired is not None else None
+        try:
+            job.fired_count = int(data.get("fired_count", 0))
+        except (TypeError, ValueError):
+            job.fired_count = 0
         return job
 
 
@@ -165,6 +176,7 @@ class CronScheduler:
     """
 
     MAX_JOBS = 50
+    MAX_PROMPT_LEN = 10_000
 
     def __init__(self, storage_path: Path | None = None, check_interval: float = DEFAULT_CHECK_INTERVAL):
         self._jobs: dict[str, CronJob] = {}
@@ -220,7 +232,11 @@ class CronScheduler:
     async def add_job(
         self, cron: str, prompt: str, recurring: bool = True, durable: bool = False
     ) -> str:
-        """Add a job and return its ID. Raises ValueError on invalid cron."""
+        """Add a job and return its ID. Raises ValueError on invalid cron/prompt."""
+        if not isinstance(prompt, str) or len(prompt) > self.MAX_PROMPT_LEN:
+            raise ValueError(
+                f"prompt must be a string of at most {self.MAX_PROMPT_LEN} chars"
+            )
         # Validate cron expression (CPU-bound search, run in thread outside lock)
         if await asyncio.to_thread(_next_cron_match, cron) is None:
             raise ValueError(f"Invalid cron expression: '{cron}' — no match in next 2 years")
@@ -282,11 +298,22 @@ class CronScheduler:
 
     async def _check_and_fire(self, now: datetime) -> None:
         """Check all jobs and fire those that match the current time."""
+        # If stop() has run, do not mutate job state (fired_count / removal of
+        # one-shot jobs) — otherwise a one-shot job would be recorded as fired
+        # and deleted without its callback ever running, silently losing it.
+        if not self._running:
+            return
         to_fire: list[tuple[str, str]] = []  # (job_id, prompt)
         to_remove = []
         has_durable_fired = False
 
         async with self._jobs_lock:
+            # Re-check inside the lock: stop() may have set _running=False
+            # between the guard above and lock acquisition. Without this,
+            # a one-shot job would be recorded as fired and removed from
+            # _jobs, but its callback would never run (silently lost).
+            if not self._running:
+                return
             for job in list(self._jobs.values()):
                 if _cron_matches(job.cron, now):
                     logger.info("Cron job '%s' firing: %s", job.id, job.prompt[:50])
@@ -369,25 +396,35 @@ class CronScheduler:
             return
         try:
             data = json.loads(await asyncio.to_thread(self._storage_path.read_text))
-            for item in data:
-                job = CronJob.from_dict(item)
-                if self._is_expired(job):
-                    logger.info("Expired cron job '%s' removed", job.id)
-                    continue
-                self._jobs[job.id] = job
-            if self._jobs:
-                await self._save_durable()  # Clean up expired jobs
-            elif data:
-                # All loaded jobs were expired — write empty file to clean up
-                await self._save_durable()
-        except (json.JSONDecodeError, OSError, KeyError) as e:
+        except (json.JSONDecodeError, OSError) as e:
             logger.error("Failed to load durable cron jobs: %s", e)
+            return
+        if not isinstance(data, list):
+            logger.error("Durable cron storage is not a list; skipping load")
+            return
+        for item in data:
+            # Skip individual malformed entries instead of aborting the whole
+            # load — one bad entry should not brick the scheduler.
+            try:
+                job = CronJob.from_dict(item)
+            except (ValueError, TypeError, KeyError) as e:
+                logger.warning("Skipping malformed cron job entry: %s", e)
+                continue
+            if self._is_expired(job):
+                logger.info("Expired cron job '%s' removed", job.id)
+                continue
+            self._jobs[job.id] = job
+        if self._jobs or data:
+            await self._save_durable()  # Clean up expired/malformed entries
 
     def _is_expired(self, job: CronJob) -> bool:
         """Check if a job has exceeded its max age.
 
-        For recurring jobs: uses last_fired time (so weekly jobs don't expire
-        before their second fire), falling back to created_at. Max age 7 days.
+        For recurring jobs: uses last_fired time. A job that has never fired
+        is kept indefinitely — it may have a period longer than 7 days (e.g.
+        weekly or monthly) and expiring it based on created_at would silently
+        delete legitimate schedules. Once fired, expires after 7 days of
+        inactivity.
 
         For non-recurring jobs: only expires if already fired (last_fired is set).
         Otherwise keeps the job indefinitely since it may have a distant future
@@ -395,8 +432,10 @@ class CronScheduler:
         """
         try:
             if job.recurring:
-                ref_time = job.last_fired if job.last_fired is not None else job.created_at
-                created = datetime.fromisoformat(ref_time)
+                # Never fired: keep — period may be longer than the max age.
+                if job.last_fired is None:
+                    return False
+                created = datetime.fromisoformat(job.last_fired)
                 return datetime.now() - created > timedelta(days=DEFAULT_MAX_AGE_DAYS)
             else:
                 # Non-recurring: only expire if it has fired

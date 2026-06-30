@@ -64,7 +64,36 @@ class LongTermMemory:
             if entry["filename"] == entry_id:
                 name = entry["name"]
                 break
-        return await self._store.delete(name)
+        deleted = await self._store.delete(name)
+        if deleted:
+            return True
+        # Fallback: the index may be stale and the file exists on disk but is
+        # not referenced by any tracked entry. Try removing the file directly by
+        # treating entry_id as a filename within the store directory.
+        from pathlib import Path
+
+        store_dir = getattr(self._store, "_dir", None)
+        if store_dir is not None:
+            # entry_id must be a bare filename within the store directory —
+            # reject anything containing path separators or parent traversal,
+            # since entry_id can originate from LLM-controlled tool arguments.
+            safe_name = Path(entry_id).name
+            if not safe_name or safe_name != entry_id or safe_name in (".", ".."):
+                return False
+            store_root = Path(store_dir).resolve()
+            candidate = (store_root / safe_name).resolve()
+            try:
+                candidate.relative_to(store_root)
+            except ValueError:
+                return False
+            try:
+                await asyncio.to_thread(candidate.unlink)
+                return True
+            except FileNotFoundError:
+                return False
+            except OSError:
+                return False
+        return False
 
     async def clear(self) -> None:
         """Clear all memories."""
@@ -72,4 +101,4 @@ class LongTermMemory:
 
     async def count(self) -> int:
         """Return the number of stored memories."""
-        return self._store.count()
+        return await asyncio.to_thread(self._store.count)

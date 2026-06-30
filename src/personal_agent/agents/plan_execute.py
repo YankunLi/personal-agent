@@ -44,6 +44,32 @@ After all steps are complete, synthesize the results into a comprehensive answer
 - Summarize findings at the end"""
 
 
+def _normalize_plan(plan_data: list) -> list[dict]:
+    """Normalize LLM-produced plan entries into a uniform shape.
+
+    Defends against entries that use alternate keys (``task``/``text``) or omit
+    ``step``/``description`` — which would otherwise raise ``KeyError`` inside
+    ``_execute_step``.
+    """
+    normalized: list[dict] = []
+    for idx, item in enumerate(plan_data, 1):
+        if not isinstance(item, dict):
+            continue
+        desc = (
+            item.get("description")
+            or item.get("task")
+            or item.get("text")
+            or item.get("step_description")
+            or ""
+        )
+        normalized.append({
+            "step": item.get("step", idx),
+            "description": str(desc),
+            "depends_on": item.get("depends_on", []),
+        })
+    return normalized
+
+
 class PlanAndExecuteAgent(BaseAgent):
     """Agent that uses the Plan-and-Execute pattern."""
 
@@ -120,11 +146,27 @@ class PlanAndExecuteAgent(BaseAgent):
                             continue
                         plan = new_plan
                         self.working.set("plan", plan)
-                        i = 0  # Restart from beginning of new plan
-                        # Preserve results from previously successful steps for synthesis
-                        # Only keep results for steps that succeeded before the failure
+                        # Record descriptions of steps that already succeeded so
+                        # we can skip them if the replanned plan redundantly
+                        # re-lists them (avoids re-running side effects and
+                        # burning the LLM-call budget).
+                        completed_descs = {
+                            r.get("description", "").strip()
+                            for r in step_results
+                            if not r.get("error") and r.get("description")
+                        }
+                        # Preserve successful results for synthesis.
                         step_results = [r for r in step_results if not r.get("error")]
-                        del state.steps[base_step_count:]  # Prune steps from old plan
+                        i = 0
+                        while (
+                            i < len(plan)
+                            and plan[i].get("description", "").strip() in completed_descs
+                            and completed_descs
+                        ):
+                            i += 1
+                        # NOTE: execution history in state.steps is intentionally
+                        # preserved (not pruned) so the audit trail of what
+                        # actually ran survives the replan.
                     continue
                 else:
                     logger.warning(
@@ -172,9 +214,9 @@ class PlanAndExecuteAgent(BaseAgent):
 
             plan_data = json.loads(content)
             if isinstance(plan_data, dict) and "plan" in plan_data:
-                return plan_data["plan"]
+                plan_data = plan_data["plan"]
             if isinstance(plan_data, list):
-                return plan_data
+                return _normalize_plan(plan_data)
         except (json.JSONDecodeError, KeyError, IndexError) as e:
             logger.warning("Failed to parse plan JSON: %s. Response: %s", e, response.content[:200])
 
@@ -192,7 +234,7 @@ class PlanAndExecuteAgent(BaseAgent):
             max_substeps = self._max_substeps
 
         step_prompt = (
-            f"Execute step {step['step']}: {step['description']}\n\n"
+            f"Execute step {step.get('step', '?')}: {step.get('description', '')}\n\n"
             f"Use tools if needed. After completing this step, describe what you found."
         )
         state.messages.append(self._make_message(Role.USER, step_prompt))
@@ -238,16 +280,16 @@ class PlanAndExecuteAgent(BaseAgent):
                         consecutive_failures.pop(tool_name)
             else:
                 return {
-                    "step": step["step"],
-                    "description": step["description"],
+                    "step": step.get("step", "?"),
+                    "description": step.get("description", ""),
                     "result": response.content,
                     "error": None,
                     "llm_calls": substep_count,
                 }
 
         return {
-            "step": step["step"],
-            "description": step["description"],
+            "step": step.get("step", "?"),
+            "description": step.get("description", ""),
             "result": "Step did not complete within sub-steps limit.",
             "error": "max_substeps_exceeded",
             "llm_calls": substep_count,
@@ -281,9 +323,11 @@ class PlanAndExecuteAgent(BaseAgent):
                 content = content.split("```")[1].split("```")[0]
             new_plan = json.loads(content)
             if isinstance(new_plan, dict) and "plan" in new_plan:
-                return new_plan["plan"]
+                new_plan = new_plan["plan"]
             if isinstance(new_plan, list):
-                return new_plan
+                normalized = _normalize_plan(new_plan)
+                if normalized:
+                    return normalized
         except (json.JSONDecodeError, KeyError, IndexError) as e:
             logger.warning("Failed to parse replan JSON: %s. Response: %s", e, response.content[:200])
 

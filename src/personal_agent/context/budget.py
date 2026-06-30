@@ -197,8 +197,13 @@ class ContextBudgetManager:
         system_msgs = [m for m in messages if m.role == Role.SYSTEM]
         non_system = [m for m in messages if m.role != Role.SYSTEM]
         keep_recent = min(10, len(non_system))
-        recent = non_system[-keep_recent:]
-        older = non_system[:-keep_recent]
+
+        # Choose a split that does not orphan tool results from their tool calls.
+        split = len(non_system) - keep_recent
+        while split > 0 and non_system[split].role.value == "tool":
+            split -= 1
+        recent = non_system[split:]
+        older = non_system[:split]
 
         if not older:
             return messages
@@ -228,8 +233,11 @@ class ContextBudgetManager:
             kept_older.insert(0, msg)
             older_tokens += t
 
-        # If we dropped some older messages, add a summary
-        dropped = [m for m in older if m not in kept_older]
+        # Identify dropped messages by identity, not value equality: Message is
+        # a dataclass with value-based __eq__, so duplicate messages (e.g. two
+        # identical "continue" turns) would be miscounted with ``in``.
+        kept_ids = {id(m) for m in kept_older}
+        dropped = [m for m in older if id(m) not in kept_ids]
         if dropped:
             summary = self._summarize_older(dropped)
             if summary:

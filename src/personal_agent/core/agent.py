@@ -423,8 +423,10 @@ class BaseAgent(ABC):
                 memory_context = "Relevant past memories:\n" + "\n".join(
                     f"- {e['content']}" for e in entries
                 )
-                # Insert after system prompt (index 1), or at end if no messages
-                insert_at = 1 if len(state.messages) > 0 else 0
+                # Insert after the leading system prompt, or at the front if the
+                # first message is not a system message (avoid inserting between
+                # a user task and its context).
+                insert_at = 1 if (state.messages and state.messages[0].role == Role.SYSTEM) else 0
                 state.messages.insert(
                     insert_at,
                     self._make_message(Role.SYSTEM, memory_context),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from personal_agent.tools.base import FunctionTool, Tool
@@ -56,7 +57,10 @@ def create_glob_tool(
         if not search_dir.is_dir():
             return f"Error: Not a directory: {path or search_dir}"
 
-        matches = sorted(search_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+        def _scan() -> list[Path]:
+            return sorted(search_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+
+        matches = await asyncio.to_thread(_scan)
         # Filter hidden files unless explicitly requested
         if include_hidden:
             files = list(matches)

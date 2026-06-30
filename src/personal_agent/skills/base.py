@@ -877,8 +877,24 @@ class SkillManager:
         - https://github.com/user/repo/tree/main/path → (repo_url, "path", "main")
         - user/repo → (https://github.com/user/repo, "", "")
         - gh:user/repo → (https://github.com/user/repo, "", "")
+
+        Only https URLs (and the unshorthand forms above) are permitted.
+        file://, ssh://, git://, http://, etc. are rejected to prevent
+        local-file read and use of unauthenticated transports.
         """
+        from urllib.parse import urlparse
+
         url = url.strip()
+
+        # If the URL has an explicit scheme, only allow https. Reject file://,
+        # ssh://, git://, http://, and any other transport that could read
+        # local files or use unauthenticated channels.
+        if "://" in url:
+            scheme = urlparse(url).scheme.lower()
+            if scheme != "https":
+                raise SkillError(
+                    f"Unsupported git URL scheme '{scheme}': only https is allowed"
+                )
 
         # Shorthand: gh:user/repo or user/repo
         if not url.startswith("http"):

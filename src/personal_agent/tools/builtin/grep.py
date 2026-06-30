@@ -254,8 +254,15 @@ def _python_fallback(
                                 end = min(len(lines), i - 1 + ctx_after + 1)
                                 for ctx_i in range(start, end):
                                     ln = ctx_i + 1
-                                    marker = ":" if ln == i else "-"
-                                    prefix = f"{fpath}{marker}{ln}- " if show_line_numbers is not False else f"{fpath}{marker} "
+                                    is_match = ln == i
+                                    marker = ":" if is_match else "-"
+                                    # Match rg's format: "file:line:content" for matches,
+                                    # "file-line-content" for context lines.
+                                    suffix = ":" if is_match else "-"
+                                    if show_line_numbers is not False:
+                                        prefix = f"{fpath}{marker}{ln}{suffix} "
+                                    else:
+                                        prefix = f"{fpath}{marker} "
                                     results.append(f"{prefix}{lines[ctx_i].rstrip()}")
                                 results.append("--")
                             else:
@@ -366,11 +373,12 @@ def create_grep_tool(
                 # isn't on PATH; "No such file" from rg means the search path
                 # is invalid and should be reported as an error.
                 if "command not found" in stderr_text.lower():
-                    return _python_fallback(
+                    return await asyncio.to_thread(
+                        _python_fallback,
                         pattern, search_path, glob, output_mode,
                         case_insensitive, show_line_numbers, head_limit, offset,
-                        after=after, before=before, context=context,
-                        multiline=multiline, max_result_chars=max_result_chars,
+                        after, before, context,
+                        multiline, max_result_chars,
                     )
                 return f"Error: {stderr_text}"
 
@@ -398,11 +406,12 @@ def create_grep_tool(
             # ripgrep not installed, fall back to Python
             pass
 
-        return _python_fallback(
+        return await asyncio.to_thread(
+            _python_fallback,
             pattern, search_path, glob, output_mode,
             case_insensitive, show_line_numbers, head_limit, offset,
-            after=after, before=before, context=context,
-            multiline=multiline, max_result_chars=max_result_chars,
+            after, before, context,
+            multiline, max_result_chars,
         )
 
     return FunctionTool(

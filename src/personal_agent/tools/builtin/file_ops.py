@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from personal_agent.tools.base import FunctionTool, Tool
@@ -74,7 +75,7 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
         if p.is_dir():
             return f"Error: Path is a directory: {path}"
 
-        try:
+        def _read_sync() -> str:
             file_size = p.stat().st_size
             if file_size > DEFAULT_MAX_READ_BYTES:
                 with open(p, "r", encoding="utf-8") as f:
@@ -85,7 +86,10 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
                     f"showing first {DEFAULT_MAX_READ_BYTES}. "
                     f"Use a more specific path or read in chunks.]"
                 )
-            content = p.read_text(encoding="utf-8")
+            return p.read_text(encoding="utf-8")
+
+        try:
+            content = await asyncio.to_thread(_read_sync)
         except UnicodeDecodeError:
             return f"Error: Cannot read binary file: {path}"
 
@@ -98,7 +102,7 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
         if sm is not None:
             sm.activate_for_paths([str(p)])
         p.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write(p, content)
+        await asyncio.to_thread(atomic_write, p, content)
         return f"File written: {path} ({len(content)} bytes)"
 
     async def _list_dir(path: str) -> str:
@@ -111,7 +115,7 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
 
         items = []
         try:
-            dir_entries = sorted(p.iterdir())
+            dir_entries = await asyncio.to_thread(lambda: sorted(p.iterdir()))
         except PermissionError:
             return f"Error: Permission denied: {path}"
         for entry in dir_entries:

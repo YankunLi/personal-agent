@@ -151,6 +151,9 @@ class FeishuChannel(Channel):
         self._agent_lock = asyncio.Lock()
         self._user_locks: dict[str, asyncio.Lock] = {}
         self._user_locks_lock = asyncio.Lock()
+        # Per-user count of in-flight agent.run() calls. Eviction skips users
+        # with active runs so an agent is never closed mid-run.
+        self._active_runs: dict[str, int] = {}
         self._stop_event = asyncio.Event()
 
     # ── Channel interface ────────────────────────────────────────────────────
@@ -260,7 +263,7 @@ class FeishuChannel(Channel):
             task.add_done_callback(
                 lambda t: (
                     logger.error("Feishu message processing failed: %s", t.exception())
-                    if t.exception() else None
+                    if not t.cancelled() and t.exception() else None
                 )
             )
             task.add_done_callback(self._pending_tasks.discard)
@@ -337,22 +340,37 @@ class FeishuChannel(Channel):
             session = self._router.resolve(msg)
             self._conn_sessions[user_id] = session
 
-            # Get or create agent for this user
+            # Get or create agent for this user (increments active-run count
+            # under _agent_lock so eviction cannot close it mid-run).
             agent = await self._get_or_create_agent(user_id)
-            async with session.memory_lock:
-                agent.short_term = session.short_term
-                agent.working = session.working
+            try:
+                async with session.memory_lock:
+                    agent.short_term = session.short_term
+                    agent.working = session.working
 
-            await self._run_agent(agent, session, text, message_id)
+                await self._run_agent(agent, session, text, message_id)
+            finally:
+                async with self._agent_lock:
+                    remaining = self._active_runs.get(user_id, 0) - 1
+                    if remaining > 0:
+                        self._active_runs[user_id] = remaining
+                    else:
+                        self._active_runs.pop(user_id, None)
 
     # ── Agent management ─────────────────────────────────────────────────────
 
     async def _get_or_create_agent(self, user_id: str) -> Any:
-        """Get or create an agent for a Feishu user."""
+        """Get or create an agent for a Feishu user.
+
+        The active-run counter is incremented under ``_agent_lock`` so that
+        ``_evict_idle_agents`` (which holds the same lock) cannot close this
+        agent between lookup and run. The caller decrements in a ``finally``.
+        """
         async with self._agent_lock:
             agent = self._conn_agents.get(user_id)
             if agent is not None:
                 self._conn_agent_times[user_id] = time.time()
+                self._active_runs[user_id] = self._active_runs.get(user_id, 0) + 1
                 return agent
 
             # Evict idle agents to prevent unbounded memory growth
@@ -363,20 +381,26 @@ class FeishuChannel(Channel):
             agent = await create_agent(self._settings, user_id=user_id)
             self._conn_agents[user_id] = agent
             self._conn_agent_times[user_id] = time.time()
+            self._active_runs[user_id] = self._active_runs.get(user_id, 0) + 1
             return agent
 
     async def _evict_idle_agents(self) -> None:
-        """Evict agents that have been idle longer than AGENT_TTL."""
+        """Evict agents that have been idle longer than AGENT_TTL.
+
+        Skips any user with an in-flight run so an agent is never closed while
+        ``agent.run()`` is executing.
+        """
         now = time.time()
         stale = [
             uid for uid, last_used in self._conn_agent_times.items()
-            if now - last_used > AGENT_TTL
+            if now - last_used > AGENT_TTL and self._active_runs.get(uid, 0) == 0
         ]
         for uid in stale:
             agent = self._conn_agents.pop(uid, None)
             self._conn_agent_times.pop(uid, None)
             self._conn_sessions.pop(uid, None)
             self._user_locks.pop(uid, None)
+            self._active_runs.pop(uid, None)
             if agent:
                 try:
                     await agent.close()

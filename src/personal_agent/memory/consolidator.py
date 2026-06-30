@@ -194,19 +194,21 @@ class MemoryConsolidator:
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError:
-            # Try extracting from code blocks (split-based, handles nested JSON)
+            # Extract between the first and last ``` fence. A naive
+            # ``split("```")[1::2]`` misparses when the JSON itself contains a
+            # literal ``` run (odd number of fences), picking a text segment
+            # instead of the code block.
             if "```" in content:
-                parts = content.split("```")
-                # The JSON should be in the second segment (after opening ```)
-                for part in parts[1::2]:  # Skip every other segment (code blocks)
-                    part = part.strip()
-                    if part.startswith("json"):
-                        part = part[4:].strip()
+                first = content.find("```")
+                last = content.rfind("```")
+                if first != last:
+                    block = content[first + 3:last].strip()
+                    if block.startswith("json"):
+                        block = block[4:].strip()
                     try:
-                        parsed = json.loads(part)
-                        break
+                        parsed = json.loads(block)
                     except json.JSONDecodeError:
-                        continue
+                        pass
 
         if parsed is None:
             logger.warning("Failed to parse consolidation response: %s", content[:200])

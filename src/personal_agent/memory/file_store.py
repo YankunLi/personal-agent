@@ -99,22 +99,25 @@ class FileMemoryStore:
             # Double-check: another task may have built the cache while we waited
             if self._name_to_path is not None:
                 return self._name_to_path
+            return await self._rebuild_cache_locked()
 
-            cache: dict[str, Path] = {}
-            for f in self._dir.glob("*.md"):
-                if f.name == "MEMORY.md":
-                    continue
-                try:
-                    text = await asyncio.to_thread(f.read_text)
-                    meta, _ = _parse_frontmatter(text)
-                    name = meta.get("name", f.stem)
-                    cache[name] = f
-                except Exception:
-                    logger.debug("Failed to parse memory file: %s", f.name, exc_info=True)
-                    continue
+    async def _rebuild_cache_locked(self) -> dict[str, Path]:
+        """Rebuild the name→path cache. Caller MUST hold ``self._lock``."""
+        cache: dict[str, Path] = {}
+        for f in self._dir.glob("*.md"):
+            if f.name == "MEMORY.md":
+                continue
+            try:
+                text = await asyncio.to_thread(f.read_text)
+                meta, _ = _parse_frontmatter(text)
+                name = meta.get("name", f.stem)
+                cache[name] = f
+            except Exception:
+                logger.debug("Failed to parse memory file: %s", f.name, exc_info=True)
+                continue
 
-            self._name_to_path = cache
-            return cache
+        self._name_to_path = cache
+        return cache
 
     # ── CRUD operations ──────────────────────────────────────────────────────
 
@@ -187,16 +190,22 @@ class FileMemoryStore:
 
     async def delete(self, name: str) -> bool:
         """Delete a memory file and remove from index."""
-        cache = await self._ensure_cache()
-        filepath = cache.get(name)
-        if filepath is None:
-            return False
-
         async with self._lock:
+            # Rebuild the cache inside the lock: a concurrent add() that ran
+            # between a prior cache read and this lock acquisition may have
+            # invalidated the cache and rewritten the file under the same name,
+            # so any path cached outside the lock could be stale.
+            cache = self._name_to_path
+            if cache is None:
+                cache = await self._rebuild_cache_locked()
+            filepath = cache.get(name)
+            if filepath is None:
+                return False
+
             try:
                 await asyncio.to_thread(filepath.unlink)
             except FileNotFoundError:
-                pass
+                return False
 
             await self._remove_index_entry_locked(name)
             self._invalidate_cache()

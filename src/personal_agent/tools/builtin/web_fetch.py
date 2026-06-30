@@ -31,6 +31,8 @@ WEB_FETCH_PARAMETERS = {
 
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_CONTENT_CHARS = 100_000
+# Hard cap on bytes read from a single response to prevent OOM on huge bodies.
+DEFAULT_MAX_CONTENT_BYTES = DEFAULT_MAX_CONTENT_CHARS * 4 + 1024
 # Blocked host patterns: private, loopback, link-local, and multicast addresses
 _BLOCKED_NETWORKS = [
     ipaddress.ip_network("10.0.0.0/8"),       # RFC 1918
@@ -87,8 +89,13 @@ class _TextExtractor(HTMLParser):
         return text.strip()
 
 
-async def _validate_url(url: str) -> None:
-    """Validate URL safety: only http/https, no private/internal hosts."""
+async def _validate_url(url: str) -> str | None:
+    """Validate URL safety: only http/https, no private/internal hosts.
+
+    Returns the resolved IP literal for the host when DNS resolution was
+    performed, so callers can pin the connection to that address and defeat
+    DNS-rebinding attacks. Returns ``None`` for literal-IP hosts.
+    """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ToolExecutionError(f"URL scheme '{parsed.scheme}' is not allowed")
@@ -101,7 +108,7 @@ async def _validate_url(url: str) -> None:
         for network in _BLOCKED_NETWORKS:
             if addr in network:
                 raise ToolExecutionError(f"URL resolves to restricted address: {addr}")
-        return
+        return None
     except ValueError:
         pass
 
@@ -114,17 +121,56 @@ async def _validate_url(url: str) -> None:
             ),
             timeout=10.0,
         )
+        resolved_ip: str | None = None
         for info in infos:
             addr = ipaddress.ip_address(info[4][0])
             for network in _BLOCKED_NETWORKS:
                 if addr in network:
                     raise ToolExecutionError(f"URL resolves to restricted address: {addr}")
+            if resolved_ip is None:
+                resolved_ip = info[4][0]
+        return resolved_ip
     except asyncio.TimeoutError:
         raise ToolExecutionError(f"DNS resolution timed out for host '{host}'")
     except socket.gaierror as e:
         raise ToolExecutionError(f"DNS resolution failed for host '{host}': {e}") from e
     except (OSError, ValueError) as e:
         raise ToolExecutionError(f"Failed to validate host '{host}': {e}") from e
+
+
+async def _reverify_host_ip(url: str, pinned_ip: str | None) -> None:
+    """Re-resolve the host and confirm it still matches the validated IP.
+
+    This narrows the DNS-rebinding window: if a low-TTL record flips to a
+    private/internal address between validation and the actual httpx request,
+    reject before connecting.
+    """
+    if pinned_ip is None:
+        return
+    host = urlparse(url).hostname
+    if not host:
+        return
+    try:
+        infos = await asyncio.wait_for(
+            asyncio.to_thread(
+                socket.getaddrinfo, host, None,
+                family=socket.AF_UNSPEC, type=socket.SOCK_STREAM,
+            ),
+            timeout=10.0,
+        )
+    except (asyncio.TimeoutError, socket.gaierror, OSError):
+        return
+    current_ips = {info[4][0] for info in infos}
+    if pinned_ip not in current_ips:
+        raise ToolExecutionError(
+            f"DNS resolution for '{host}' changed between validation and request; "
+            f"possible DNS rebinding. Refusing to fetch."
+        )
+    for info in infos:
+        addr = ipaddress.ip_address(info[4][0])
+        for network in _BLOCKED_NETWORKS:
+            if addr in network:
+                raise ToolExecutionError(f"URL re-resolved to restricted address: {addr}")
 
 
 def create_web_fetch_tool(
@@ -143,47 +189,81 @@ def create_web_fetch_tool(
         if url.startswith("http://"):
             url = "https://" + url[7:]
 
-        await _validate_url(url)
+        pinned_ip = await _validate_url(url)
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 # Manual redirect following to re-validate each URL in the chain
                 max_redirects = 10
                 current_url = url
+                response: httpx.Response | None = None
                 for _ in range(max_redirects):
-                    response = await client.get(
-                        current_url,
-                        headers={"User-Agent": "personal-agent/0.1.0"},
-                        follow_redirects=False,
+                    # Re-verify DNS has not flipped to a private address since
+                    # validation (mitigates DNS rebinding).
+                    await _reverify_host_ip(current_url, pinned_ip)
+                    response = await client.send(
+                        client.build_request(
+                            current_url,
+                            headers={"User-Agent": "personal-agent/0.1.0"},
+                        ),
+                        stream=True,
                     )
-                    if response.status_code in (301, 302, 303, 307, 308):
-                        redirect_url = response.headers.get("location", "")
-                        if not redirect_url:
-                            raise ToolExecutionError("Redirect with no Location header")
-                        # Resolve relative URLs
-                        if redirect_url.lower().startswith("http://"):
-                            redirect_url = "https://" + redirect_url[7:]
-                        elif not redirect_url.lower().startswith("https://"):
-                            from urllib.parse import urljoin
-                            redirect_url = urljoin(current_url, redirect_url)
+                    try:
+                        if response.status_code in (301, 302, 303, 307, 308):
+                            redirect_url = response.headers.get("location", "")
+                            # Release the redirect response (opened with
+                            # stream=True) before following the next URL.
+                            await response.aclose()
+                            if not redirect_url:
+                                raise ToolExecutionError("Redirect with no Location header")
+                            # Resolve relative URLs
                             if redirect_url.lower().startswith("http://"):
                                 redirect_url = "https://" + redirect_url[7:]
-                        await _validate_url(redirect_url)
-                        current_url = redirect_url
-                        continue
-                    response.raise_for_status()
-                    break
+                            elif not redirect_url.lower().startswith("https://"):
+                                from urllib.parse import urljoin
+                                redirect_url = urljoin(current_url, redirect_url)
+                                if redirect_url.lower().startswith("http://"):
+                                    redirect_url = "https://" + redirect_url[7:]
+                            pinned_ip = await _validate_url(redirect_url)
+                            current_url = redirect_url
+                            continue
+                        response.raise_for_status()
+                        break
+                    except BaseException:
+                        if response is not None and not response.is_closed:
+                            await response.aclose()
+                        raise
                 else:
                     raise ToolExecutionError("Too many redirects")
 
-                content_type = response.headers.get("content-type", "").lower()
+                assert response is not None
+                try:
+                    # Reject obviously oversized responses before buffering.
+                    content_length = response.headers.get("content-length")
+                    if content_length:
+                        try:
+                            if int(content_length) > DEFAULT_MAX_CONTENT_BYTES:
+                                raise ToolExecutionError(
+                                    f"Response too large: Content-Length {content_length} exceeds "
+                                    f"limit {DEFAULT_MAX_CONTENT_BYTES} bytes"
+                                )
+                        except ValueError:
+                            pass
+
+                    content_type = response.headers.get("content-type", "").lower()
+
+                    # Stream the body with a hard byte cap to avoid OOM on huge
+                    # or never-ending responses.
+                    body = await _read_capped(response, DEFAULT_MAX_CONTENT_BYTES)
+                finally:
+                    await response.aclose()
 
                 if "text/html" in content_type:
                     extractor = _TextExtractor()
-                    extractor.feed(response.text)
+                    extractor.feed(body)
                     text = extractor.get_text()
                 elif "text/" in content_type or "application/json" in content_type:
-                    text = response.text
+                    text = body
                 else:
                     return f"Error: Unsupported content type: {content_type}"
 
@@ -217,3 +297,27 @@ def create_web_fetch_tool(
         ),
         fn=_execute,
     )
+
+
+async def _read_capped(response: httpx.Response, max_bytes: int) -> str:
+    """Read up to ``max_bytes`` bytes from a streaming response, then stop.
+
+    Avoids buffering arbitrarily large bodies into memory. The response body is
+    decoded as UTF-8 with replacement.
+    """
+    chunks: list[bytes] = []
+    total = 0
+    capped = False
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        if total > max_bytes:
+            keep = max_bytes - (total - len(chunk))
+            if keep > 0:
+                chunks.append(chunk[:keep])
+            capped = True
+            break
+        chunks.append(chunk)
+    body = b"".join(chunks).decode("utf-8", errors="replace")
+    if capped:
+        body += f"\n\n[Response truncated at {max_bytes} bytes]"
+    return body

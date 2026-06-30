@@ -229,6 +229,7 @@ class BaiduProvider(Provider):
                 params={"access_token": token},
                 json=payload,
             ) as response:
+                response.raise_for_status()
                 usage: dict[str, int] = {}
                 async for line in response.aiter_lines():
                     if line.startswith("data:"):

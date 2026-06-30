@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 import tempfile
 
 from personal_agent.tools.base import FunctionTool, Tool
@@ -24,26 +25,63 @@ CODE_EXEC_PARAMETERS = {
     "required": ["language", "code"],
 }
 
+# Hard cap on captured stdout/stderr to prevent OOM from chatty processes.
+MAX_OUTPUT_BYTES = 1_000_000
+
+
+def _kill_process_group(pid: int) -> None:
+    """SIGKILL the whole process group so grandchildren are reaped too."""
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+
 
 async def _run_command(cmd: list[str], timeout: float = 30) -> tuple[str, str, int]:
+    # ``start_new_session=True`` makes the child a session/group leader so a
+    # later ``os.killpg`` reaches grandchildren (e.g. processes spawned by the
+    # bash script), not just the parent shell.
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
     )
+
+    async def _read_capped(stream: asyncio.StreamReader) -> bytes:
+        """Read up to MAX_OUTPUT_BYTES; kill the process group if exceeded."""
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = await stream.read(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_OUTPUT_BYTES:
+                _kill_process_group(proc.pid)
+                break
+        return b"".join(chunks)[:MAX_OUTPUT_BYTES]
+
     try:
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            stdout_b, stderr_b = await asyncio.wait_for(
+                asyncio.gather(_read_capped(proc.stdout), _read_capped(proc.stderr)),
+                timeout=timeout,
+            )
         except asyncio.TimeoutError:
-            proc.kill()
+            _kill_process_group(proc.pid)
             await proc.wait()
             return "", f"Timeout: execution exceeded {timeout} seconds", -1
-        return stdout.decode("utf-8", errors="replace"), stderr.decode("utf-8", errors="replace"), proc.returncode if proc.returncode is not None else -1
+        await proc.wait()
+        rc = proc.returncode if proc.returncode is not None else -1
+        return (
+            stdout_b.decode("utf-8", errors="replace"),
+            stderr_b.decode("utf-8", errors="replace"),
+            rc,
+        )
     except BaseException:
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        _kill_process_group(proc.pid)
         try:
             await asyncio.shield(proc.wait())
         except BaseException:

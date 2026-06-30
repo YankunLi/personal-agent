@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from personal_agent.exceptions import ToolExecutionError
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.tools.builtin._workspace_utils import (
@@ -53,7 +55,7 @@ def create_file_edit_tool(workspace_dir: str | None = None) -> Tool:
             return f"Error: Path is a directory, not a file: {file_path}"
 
         try:
-            content = p.read_text(encoding="utf-8")
+            content = await asyncio.to_thread(lambda: p.read_text(encoding="utf-8"))
         except UnicodeDecodeError:
             return f"Error: Cannot edit binary file: {file_path}"
 
@@ -77,7 +79,7 @@ def create_file_edit_tool(workspace_dir: str | None = None) -> Tool:
             )
 
         new_content = content.replace(old_string, new_string)
-        atomic_write(p, new_content)
+        await asyncio.to_thread(atomic_write, p, new_content)
 
         if replace_all and count > 1:
             return f"File edited: {file_path} ({count} occurrences replaced)"
