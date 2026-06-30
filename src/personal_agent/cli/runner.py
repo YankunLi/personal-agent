@@ -240,12 +240,23 @@ def cmd_init(args, workdir: Path) -> None:
     session_mgr = SessionManager()
     session = session_mgr.create(name)
 
-    pa_path = init_project(
-        name=name,
-        description=description,
-        session_id=session.id,
-        directory=workdir,
-    )
+    try:
+        pa_path = init_project(
+            name=name,
+            description=description,
+            session_id=session.id,
+            directory=workdir,
+        )
+    except Exception as e:
+        # init_project failed (e.g. disk/permission error). Roll back the
+        # session so a retry doesn't accumulate orphan sessions.
+        logger.exception("init_project failed: %s", e)
+        try:
+            session_mgr.delete(session.name)
+        except Exception:
+            logger.warning("Failed to roll back orphan session", exc_info=True)
+        console.print(Text.assemble(("Failed to initialize project: ", "error"), (str(e), "error")))
+        return
 
     console.print(Text("✓ Initialized personal-agent project", style="success"))
     console.print(Text.assemble(("  Project:     ", "label"), (name, "value")))
