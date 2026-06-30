@@ -722,10 +722,22 @@ class CLIChannel(Channel):
             return None
         try:
             with open(p) as f:
-                return json.load(f)
+                data = json.load(f)
         except json.JSONDecodeError as e:
             console.print(Text.assemble(("Invalid JSON: ", "error"), (str(e), "error")))
             return None
+        except OSError as e:
+            console.print(Text.assemble(("Read error: ", "error"), (str(e), "error")))
+            return None
+        if not isinstance(data, list):
+            console.print(
+                Text.assemble(
+                    ("Expected a JSON array of tasks, got ", "error"),
+                    (type(data).__name__, "error"),
+                )
+            )
+            return None
+        return data
 
     async def _confirm_and_exit(self) -> None:
         console.print(Text("Goodbye!", style="warning"))

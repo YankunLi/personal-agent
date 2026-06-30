@@ -383,7 +383,7 @@ async def _cmd_load(channel: CLIChannel, arg: str) -> bool:
         console.print(Text("Usage: /load <path>", style="error"))
         return True
     loaded = channel._load_session(arg)
-    if loaded:
+    if loaded is not None:
         channel._session_tasks.extend(loaded)
         console.print(
             Text.assemble(
