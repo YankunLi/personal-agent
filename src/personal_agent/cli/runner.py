@@ -208,6 +208,9 @@ async def interactive_loop(
         await server.start()
     except KeyboardInterrupt:
         console.print(Text("\nInterrupted", style="warning"))
+    except Exception as e:
+        logger.exception("Interactive loop failed: %s", e)
+        console.print(Text.assemble(("Error: ", "error"), (str(e), "error")))
     finally:
         await server.stop()
 
