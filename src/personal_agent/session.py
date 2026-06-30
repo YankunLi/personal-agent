@@ -283,6 +283,33 @@ class SessionManager:
                     return s
             return None
 
+    def find_or_create_for_key(self, key: SessionKey) -> Session:
+        """Atomically find or create a session for a routing key.
+
+        find_by_key + create_for_key as separate calls race: two concurrent
+        messages with the same (channel, user, conversation) triple both find
+        None and both create a session, producing duplicates. This method
+        does both under a single lock hold.
+        """
+        with self._lock:
+            for s in self._sessions.values():
+                if s.channel == key.channel and s.user_id == key.user_id and s.conversation_id == key.conversation_id:
+                    return s
+            name = f"{key.channel}-{key.user_id}-{key.conversation_id}"
+            session = Session(
+                name=name,
+                channel=key.channel,
+                user_id=key.user_id,
+                conversation_id=key.conversation_id,
+            )
+            self._sessions[session.id] = session
+            try:
+                self._save_session(session)
+            except Exception:
+                self._sessions.pop(session.id, None)
+                raise
+            return session
+
     def create_for_key(self, key: SessionKey) -> Session:
         """Create a new session for the given routing key.
 

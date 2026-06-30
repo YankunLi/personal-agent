@@ -42,11 +42,4 @@ class MessageRouter:
             user_id=msg.user_id,
             conversation_id=msg.conversation_id,
         )
-        session = self._session_manager.find_by_key(key)
-        if session is None:
-            logger.info(
-                "Creating new session for channel=%s user=%s conv=%s",
-                key.channel, key.user_id, key.conversation_id,
-            )
-            session = self._session_manager.create_for_key(key)
-        return session
+        return self._session_manager.find_or_create_for_key(key)
