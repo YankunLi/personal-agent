@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any
 
 PA_FILE = "pa.json"
+
+
+class ProjectError(Exception):
+    """Raised when a project file cannot be read or written."""
 
 
 def find_project_root(start: Path | None = None) -> Path | None:
@@ -32,16 +37,31 @@ def load_project(path: Path | None = None) -> dict[str, Any] | None:
     if not pa_file.exists():
         return None
 
-    with open(pa_file) as f:
-        return json.load(f)
+    try:
+        with open(pa_file) as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        raise ProjectError(f"Invalid JSON in {pa_file}: {e}") from e
+    except OSError as e:
+        raise ProjectError(f"Cannot read {pa_file}: {e}") from e
 
 
 def save_project(data: dict[str, Any], directory: Path | None = None) -> Path:
-    """Save pa.json to the given directory."""
+    """Save pa.json to the given directory atomically."""
     target = (directory or Path.cwd()) / PA_FILE
     data["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-    with open(target, "w") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    tmp_path = target.with_suffix(target.suffix + ".tmp")
+    try:
+        with open(tmp_path, "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, target)
+    except OSError:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+        raise
     return target
 
 
