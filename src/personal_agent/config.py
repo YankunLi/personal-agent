@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from personal_agent.exceptions import ConfigError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ── Providers ──────────────────────────────────────────────────────────────────
@@ -321,7 +321,16 @@ def _parse_config_file(path: Path) -> Settings:
 
     if data is None:
         data = {}
-    return Settings(**data)
+    try:
+        return Settings(**data)
+    except ValidationError as e:
+        # Wrap pydantic's verbose ValidationError (which embeds field paths
+        # and may include configured values such as API keys placed in wrong
+        # fields) into a clean ConfigError.
+        raise ConfigError(
+            f"Invalid configuration in '{path}': {e.error_count()} error(s). "
+            f"First: {e.errors()[0].get('msg', 'unknown') if e.errors() else 'unknown'}"
+        ) from e
 
 
 def _find_config_file() -> Path | None:
