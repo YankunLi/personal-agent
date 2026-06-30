@@ -369,10 +369,23 @@ class FileMemoryStore:
         return len([f for f in self._dir.glob("*.md") if f.name != "MEMORY.md"])
 
     async def clear(self) -> None:
-        """Delete all memory files and regenerate empty index."""
+        """Delete all memory files and regenerate empty index.
+
+        Best-effort: a single unreadable/locked file does not abort the
+        clear. The index is always rebuilt from surviving files so it never
+        references deleted entries.
+        """
         async with self._lock:
             files = await asyncio.to_thread(lambda: list(self._dir.glob("*.md")))
             for f in files:
-                await asyncio.to_thread(f.unlink)
-            await asyncio.to_thread(self._write_index_locked, [])
+                try:
+                    await asyncio.to_thread(f.unlink)
+                except FileNotFoundError:
+                    pass
+                except OSError as e:
+                    logger.warning("Could not delete memory file '%s': %s", f, e)
+            # Rebuild the index from whatever files remain on disk, so the
+            # index never points at deleted files even if some unlinks failed.
+            remaining = await asyncio.to_thread(lambda: [f.name for f in self._dir.glob("*.md")])
+            await asyncio.to_thread(self._write_index_locked, sorted(remaining))
             self._invalidate_cache()
