@@ -158,7 +158,8 @@ class ContextBudgetManager:
         if loaded_memories:
             mem_budget = self._allocations.get("loaded_memories", 2000)
             per_mem_budget = max(mem_budget // max(len(loaded_memories), 1), 200)
-            for i, mem in enumerate(loaded_memories):
+            inserted = 0
+            for mem in loaded_memories:
                 mem_text = (
                     f"{SECTION_MEMORY_OPEN}\n"
                     f"### {mem.get('name', 'Memory')}\n"
@@ -166,7 +167,10 @@ class ContextBudgetManager:
                     f"\n{SECTION_MEMORY_CLOSE}"
                 )
                 if estimate_tokens(mem_text) <= per_mem_budget:
-                    messages.insert(1 + i, Message(role=Role.SYSTEM, content=mem_text))
+                    # Use inserted (not the loop index) so skipped memories
+                    # don't leave gaps or push later inserts out of order.
+                    messages.insert(1 + inserted, Message(role=Role.SYSTEM, content=mem_text))
+                    inserted += 1
 
         # 3. Wrap the last user message (task) with attention markers
         if messages:
@@ -174,7 +178,7 @@ class ContextBudgetManager:
             if last.role == Role.USER and SECTION_TASK_OPEN not in (last.content or ""):
                 messages[-1] = replace(last, content=(
                     f"{SECTION_TASK_OPEN}\n"
-                    f"{last.content}\n"
+                    f"{last.content or ''}\n"
                     f"{SECTION_TASK_CLOSE}"
                 ))
 
@@ -227,7 +231,10 @@ class ContextBudgetManager:
         kept_older = []
         older_tokens = 0
         for msg in reversed(older):
-            t = estimate_tokens(msg.content or "")
+            # Count tool_call argument tokens too, otherwise older assistant
+            # messages with large tool args are undercounted and kept beyond
+            # the budget (recent_tokens already counts tool_calls).
+            t = estimate_message_tokens([msg])
             if older_tokens + t > available:
                 break
             kept_older.insert(0, msg)
