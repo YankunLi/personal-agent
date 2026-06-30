@@ -166,7 +166,6 @@ def _python_fallback(
     max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
 ) -> str:
     """Pure Python fallback when ripgrep is not available."""
-    import fnmatch
 
     # Default to content mode, matching ripgrep's default behavior
     if output_mode is None:
@@ -198,10 +197,16 @@ def _python_fallback(
         dirs[:] = [d for d in dirs if d not in (".git", ".svn", ".hg", ".bzr")]
 
         for fname in files:
-            if glob_filter and not fnmatch.fnmatch(fname, glob_filter):
-                continue
-
             fpath = os.path.join(root, fname)
+            if glob_filter:
+                # Match against the full relative path (like rg), not just the
+                # filename. Use PurePath.match() which supports ** patterns.
+                try:
+                    rel = os.path.relpath(fpath, search_root)
+                except ValueError:
+                    rel = fpath
+                if not Path(rel).match(glob_filter):
+                    continue
             # Skip symlinks to prevent workspace traversal
             if os.path.islink(fpath):
                 continue

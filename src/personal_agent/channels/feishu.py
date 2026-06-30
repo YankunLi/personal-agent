@@ -264,6 +264,11 @@ class FeishuChannel(Channel):
                 )
             )
             task.add_done_callback(self._pending_tasks.discard)
+            # Re-check: if stop() beat us between the initial check and task
+            # creation, cancel the task to prevent use-after-close on resources.
+            if self._stop_event.is_set():
+                task.cancel()
+                return web.json_response({"code": 0, "msg": "Server shutting down"})
             return web.json_response({"code": 0})
 
         # Challenge event (old format, POST with challenge)
