@@ -368,8 +368,10 @@ class CronScheduler:
         async with self._jobs_lock:
             durable_jobs = [j.to_dict() for j in self._jobs.values() if j.durable]
             try:
-                self._storage_path.parent.mkdir(parents=True, exist_ok=True)
-                os.chmod(self._storage_path.parent, 0o700)
+                def _prep_and_mkdir() -> None:
+                    self._storage_path.parent.mkdir(parents=True, exist_ok=True)
+                    os.chmod(self._storage_path.parent, 0o700)
+                await asyncio.to_thread(_prep_and_mkdir)
                 fd, tmp_path = await asyncio.to_thread(
                     tempfile.mkstemp, dir=str(self._storage_path.parent), suffix=".tmp"
                 )

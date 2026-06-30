@@ -79,10 +79,10 @@ class FileTokenStorage:
         """Write token data. Caller must hold self._lock."""
         await asyncio.to_thread(self._filepath.parent.mkdir, parents=True, exist_ok=True)
         # Ensure directory has restrictive permissions (owner only)
-        os.chmod(self._filepath.parent, 0o700)
+        await asyncio.to_thread(os.chmod, self._filepath.parent, 0o700)
         await asyncio.to_thread(atomic_write, self._filepath, json.dumps(data, indent=2))
         # Ensure token file is readable only by the owner
-        os.chmod(self._filepath, 0o600)
+        await asyncio.to_thread(os.chmod, self._filepath, 0o600)
 
 
 def _default_token_cache_path(server_name: str) -> str:

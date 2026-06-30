@@ -95,24 +95,28 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
     async def _execute(language: str, code: str) -> str:
         stdout, stderr, code_ = "", "", -1
         if language == "python":
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-                tmp_path = f.name
-                try:
-                    f.write(code)
-                except BaseException:
+            def _write_temp() -> str:
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+                    tmp = f.name
                     try:
-                        os.unlink(tmp_path)
-                    except OSError:
-                        pass
-                    raise
+                        f.write(code)
+                    except BaseException:
+                        try:
+                            os.unlink(tmp)
+                        except OSError:
+                            pass
+                        raise
+                os.chmod(tmp, 0o400)
+                return tmp
+
+            tmp_path = await asyncio.to_thread(_write_temp)
             try:
-                os.chmod(tmp_path, 0o400)
                 stdout, stderr, code_ = await _run_command(
                     ["python3", "-I", tmp_path], timeout=timeout,
                 )
             finally:
                 try:
-                    os.unlink(tmp_path)
+                    await asyncio.to_thread(os.unlink, tmp_path)
                 except OSError:
                     pass
         elif language == "bash":
