@@ -238,6 +238,15 @@ class BaiduProvider(Provider):
                             continue
                         try:
                             data = json.loads(data_str)
+                            # Baidu reports errors as valid JSON with error_code.
+                            # Without this check, a rate-limit/auth error in the
+                            # stream would parse fine, yield empty content, and
+                            # end the stream with no error signal to the caller.
+                            if "error_code" in data:
+                                raise ProviderError(
+                                    f"Baidu stream error {data.get('error_code')}: "
+                                    f"{data.get('error_msg', 'unknown')}"
+                                )
                             content = data.get("result", "")
                             tool_calls = []
 
