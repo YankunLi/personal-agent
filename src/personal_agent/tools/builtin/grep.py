@@ -34,7 +34,7 @@ GREP_PARAMETERS = {
         "output_mode": {
             "type": "string",
             "enum": ["content", "files_with_matches", "count"],
-            "description": "Output mode: \"content\" shows matching lines, \"files_with_matches\" shows file paths (default), \"count\" shows match counts",
+            "description": "Output mode: \"content\" shows matching lines (default), \"files_with_matches\" shows file paths, \"count\" shows match counts",
         },
         "-A": {
             "type": "integer",

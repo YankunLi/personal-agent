@@ -187,7 +187,15 @@ def create_exit_worktree_tool(
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
             )
-            stdout, _ = await proc.communicate()
+            try:
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                    await asyncio.shield(proc.wait())
+                except BaseException:
+                    pass
+                return "Error: Timeout while determining git repository root"
             if proc.returncode != 0:
                 return "Error: Unable to determine git repository root for path validation"
             repo_root = stdout.decode().strip()
@@ -211,7 +219,15 @@ def create_exit_worktree_tool(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                    await asyncio.shield(proc.wait())
+                except BaseException:
+                    pass
+                return "Error: Timeout removing worktree"
             if proc.returncode != 0:
                 err = stderr.decode().strip()
                 if "modified" in err.lower() or "uncommitted" in err.lower():
