@@ -52,9 +52,20 @@ def create_web_search_tool(
                 response.raise_for_status()
                 return response.text[:20000]
         except httpx.HTTPStatusError as e:
-            raise ToolExecutionError(f"Web search failed with HTTP {e.response.status_code}") from e
-        except httpx.TimeoutException as e:
-            raise ToolExecutionError("Web search timed out") from e
+            status = e.response.status_code
+            if 400 <= status < 500:
+                # Client errors (bad query, auth) are permanent — don't retry.
+                raise ToolExecutionError(f"Web search failed with HTTP {status}") from e
+            # 5xx are transient — re-raise so the executor's retry logic can
+            # classify and retry them instead of treating them as permanent.
+            raise
+        except httpx.TimeoutException:
+            # Transient — let the executor classify and retry via "timeout".
+            raise
+        except httpx.TransportError:
+            # Transient network errors (connection reset/refused, broken pipe)
+            # — re-raise so the executor retries instead of giving up.
+            raise
         except Exception as e:
             raise ToolExecutionError(f"Web search error: {e}") from e
 
