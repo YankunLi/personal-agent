@@ -125,8 +125,9 @@ class CLIChannel(Channel):
                     continue
 
                 await self._process_task(line.strip())
-            except Exception:
+            except Exception as e:
                 logger.exception("Unexpected error in CLI loop")
+                console.print(Text.assemble(("Error: ", "error"), (str(e), "error")))
 
         # Cleanup
         try:
