@@ -300,7 +300,7 @@ def _glob_to_regex(pattern: str) -> str:
             i += 2
             if i < len(pattern) and pattern[i] == "/":
                 # **/ matches zero or more leading directories
-                parts.append("(.*/)?")
+                parts.append("(?:[^/]*/)*")
                 i += 1
             else:
                 # ** at end matches everything

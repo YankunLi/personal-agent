@@ -215,7 +215,8 @@ def _python_fallback(
                 if os.path.getsize(fpath) > DEFAULT_MAX_FILE_BYTES:
                     continue
                 with open(fpath, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
+                    content = f.read()
+                    lines = content.splitlines(keepends=True)
             except (UnicodeDecodeError, OSError):
                 continue
 
@@ -224,26 +225,44 @@ def _python_fallback(
             ctx_before = context or before or 0
             ctx_after = context or after or 0
 
-            for i, line in enumerate(lines, 1):
-                if compiled.search(line):
+            if multiline:
+                # Search the full content as a single string for cross-line patterns
+                for m in compiled.finditer(content):
                     file_matches += 1
                     match_count += 1
                     if output_mode == "content":
-                        if ctx_before or ctx_after:
-                            # Show context lines around the match
-                            start = max(0, i - 1 - ctx_before)
-                            end = min(len(lines), i - 1 + ctx_after + 1)
-                            for ctx_i in range(start, end):
-                                ln = ctx_i + 1
-                                marker = ":" if ln == i else "-"
-                                prefix = f"{fpath}{marker}{ln}- " if show_line_numbers is not False else f"{fpath}{marker} "
-                                results.append(f"{prefix}{lines[ctx_i].rstrip()}")
-                            results.append("--")
+                        # Find line range for the match
+                        start_line = content[:m.start()].count("\n") + 1
+                        end_line = content[:m.end()].count("\n") + 1
+                        if start_line == end_line:
+                            prefix = f"{fpath}:{start_line}: " if show_line_numbers is not False else f"{fpath}: "
+                            results.append(f"{prefix}{lines[start_line - 1].rstrip()}")
                         else:
-                            prefix = f"{fpath}:{i}: " if show_line_numbers is not False else f"{fpath}: "
-                            results.append(f"{prefix}{line.rstrip()}")
+                            prefix = f"{fpath}:{start_line}-{end_line}: " if show_line_numbers is not False else f"{fpath}: "
+                            results.append(f"{prefix}{m.group().rstrip()}")
                     elif output_mode == "count":
-                        pass  # Accumulate per file
+                        pass
+            else:
+                for i, line in enumerate(lines, 1):
+                    if compiled.search(line):
+                        file_matches += 1
+                        match_count += 1
+                        if output_mode == "content":
+                            if ctx_before or ctx_after:
+                                # Show context lines around the match
+                                start = max(0, i - 1 - ctx_before)
+                                end = min(len(lines), i - 1 + ctx_after + 1)
+                                for ctx_i in range(start, end):
+                                    ln = ctx_i + 1
+                                    marker = ":" if ln == i else "-"
+                                    prefix = f"{fpath}{marker}{ln}- " if show_line_numbers is not False else f"{fpath}{marker} "
+                                    results.append(f"{prefix}{lines[ctx_i].rstrip()}")
+                                results.append("--")
+                            else:
+                                prefix = f"{fpath}:{i}: " if show_line_numbers is not False else f"{fpath}: "
+                                results.append(f"{prefix}{line.rstrip()}")
+                        elif output_mode == "count":
+                            pass  # Accumulate per file
             if file_matches > 0:
                 file_count += 1
                 if output_mode == "files_with_matches":

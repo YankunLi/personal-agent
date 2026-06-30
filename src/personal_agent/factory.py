@@ -596,6 +596,17 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
                     await created.close()
                 except BaseException as close_err:
                     logger.warning("Error closing sub-agent during cleanup: %s", close_err)
+            # Close providers that were created before this failure point
+            if consolidation_provider and hasattr(consolidation_provider, "close"):
+                try:
+                    await consolidation_provider.close()
+                except BaseException:
+                    pass
+            if hasattr(provider, "close"):
+                try:
+                    await provider.close()
+                except BaseException:
+                    pass
             raise
 
     # Common agent kwargs

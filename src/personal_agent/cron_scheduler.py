@@ -208,6 +208,15 @@ class CronScheduler:
             await asyncio.gather(*self._pending_callbacks, return_exceptions=True)
             self._pending_callbacks.clear()
 
+        # Second pass: catch any callbacks added during the first pass
+        # (from _check_and_fire that was mid-execution when _loop was cancelled)
+        remaining = list(self._pending_callbacks)
+        if remaining:
+            for cb_task in remaining:
+                cb_task.cancel()
+            await asyncio.gather(*remaining, return_exceptions=True)
+            self._pending_callbacks.clear()
+
     async def add_job(
         self, cron: str, prompt: str, recurring: bool = True, durable: bool = False
     ) -> str:

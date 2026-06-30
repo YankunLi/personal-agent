@@ -101,10 +101,11 @@ class PlanAndExecuteAgent(BaseAgent):
             if step_result.get("error"):
                 logger.warning("Step %d failed: %s", i + 1, step_result["error"])
                 if i < len(plan) - 1 and replan_count < self.MAX_REPLAN_ATTEMPTS:
+                    msg_count_before_replan = len(state.messages)
                     new_plan = await self._replan(state, plan, step_results, step)
                     llm_calls += 1
                     replan_count += 1
-                    state.messages = state.messages[:base_msg_count]  # Prune replan messages
+                    state.messages = state.messages[:msg_count_before_replan]  # Prune replan messages
                     if new_plan is plan:
                         # Replan returned the same plan (fallback) — skip the failed step
                         step_results.pop()  # Remove the failed step's result
