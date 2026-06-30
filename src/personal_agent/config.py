@@ -14,7 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class ProviderCredentials(BaseModel):
     """API credentials for a single LLM provider."""
 
-    api_key: str = ""
+    api_key: str = Field(default="", repr=False)
     api_base: str | None = None
     extra_headers: dict[str, str] | None = None
     timeout: float | None = None
@@ -130,7 +130,7 @@ class MCPOAuthConfig(BaseModel):
     registers the client using the authorization server's registration endpoint.
     """
     client_id: str | None = None
-    client_secret: str | None = None
+    client_secret: str | None = Field(default=None, repr=False)
     redirect_uri: str = "http://localhost:18080/callback"
     scopes: list[str] = Field(default_factory=list)
     token_cache_path: str | None = None  # Auto-generated if not set
@@ -145,7 +145,7 @@ class MCPServerConfig(BaseModel):
     url: str | None = None
     env: dict[str, str] = Field(default_factory=dict)
     headers: dict[str, str] = Field(default_factory=dict)
-    auth_token: str | None = None
+    auth_token: str | None = Field(default=None, repr=False)
     timeout: float = 30.0
     oauth: MCPOAuthConfig | None = None
 
@@ -232,11 +232,11 @@ class FeishuConfig(BaseModel):
 
     enabled: bool = False
     app_id: str = ""
-    app_secret: str = ""
-    verification_token: str = ""
+    app_secret: str = Field(default="", repr=False)
+    verification_token: str = Field(default="", repr=False)
     webhook_port: int = 8080
     webhook_path: str = "/feishu/webhook"
-    encrypt_key: str = ""  # Optional, for message encryption
+    encrypt_key: str = Field(default="", repr=False)  # Optional, for message encryption
 
 
 # ── Root Settings ──────────────────────────────────────────────────────────────
