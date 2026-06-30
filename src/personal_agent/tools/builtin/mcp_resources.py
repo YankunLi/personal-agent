@@ -153,14 +153,14 @@ def create_read_mcp_resource_tool(
                         blob_dir = Path(workspace_dir) if workspace_dir else Path.cwd()
                         blob_path = blob_dir / f".mcp_blob_{_safe_name(uri)}{ext}"
                         validate_within_workspace(blob_path, str(blob_dir))
-                        blob_path.parent.mkdir(parents=True, exist_ok=True)
                         try:
                             blob_data = base64.b64decode(blob) if isinstance(blob, str) else blob
                         except (ValueError, TypeError) as e:
                             logger.warning("Failed to decode base64 blob for '%s': %s", uri, e)
                             output_parts.append(f"[Binary content (decode failed): {len(blob)} bytes]")
                             continue
-                        blob_path.write_bytes(blob_data)
+                        await asyncio.to_thread(blob_path.parent.mkdir, parents=True, exist_ok=True)
+                        await asyncio.to_thread(blob_path.write_bytes, blob_data)
                         output_parts.append(f"[Binary content saved to: {blob_path}]")
                     else:
                         output_parts.append(f"[Unknown content type: {mime_type or 'unspecified'}]")

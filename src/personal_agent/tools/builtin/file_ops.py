@@ -101,7 +101,7 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
         sm = _sm_cell[0]
         if sm is not None:
             sm.activate_for_paths([str(p)])
-        p.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(p.parent.mkdir, parents=True, exist_ok=True)
         await asyncio.to_thread(atomic_write, p, content)
         return f"File written: {path} ({len(content)} bytes)"
 
