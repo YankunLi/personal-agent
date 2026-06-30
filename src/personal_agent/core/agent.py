@@ -492,23 +492,29 @@ class BaseAgent(ABC):
                     last_msg = conversation[-1] if conversation else None
                     if not last_msg or last_msg.role != Role.ASSISTANT or last_msg.content != answer[:2000]:
                         conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
-                # Prune completed tasks before adding new ones
-                self._consolidation_tasks = [t for t in self._consolidation_tasks if not t.done()]
-                # Hold _close_lock around the _closed check and task creation
-                # to prevent a TOCTOU race with close().
+                # Prune completed tasks and create the new one under _close_lock
+                # to prevent a TOCTOU race with close(): close() reads and
+                # clears _consolidation_tasks outside the lock, so pruning must
+                # happen inside the same critical section as the _closed check
+                # and append, otherwise close() could clear a stale list and
+                # leave the new task untracked/uncancelled.
                 async with self._close_lock:
-                    if not self._closed and len(self._consolidation_tasks) < 3:
-                        cons_task = asyncio.create_task(
-                            self._run_consolidation(
-                                consolidator, conversation, existing, self.agent_knowledge
-                            )
-                        )
-                        self._consolidation_tasks.append(cons_task)
+                    if self._closed:
+                        logger.debug("Skipping consolidation: agent already closed")
                     else:
-                        logger.debug(
-                            "Skipping consolidation: %d tasks already in progress",
-                            len(self._consolidation_tasks),
-                        )
+                        self._consolidation_tasks = [t for t in self._consolidation_tasks if not t.done()]
+                        if len(self._consolidation_tasks) < 3:
+                            cons_task = asyncio.create_task(
+                                self._run_consolidation(
+                                    consolidator, conversation, existing, self.agent_knowledge
+                                )
+                            )
+                            self._consolidation_tasks.append(cons_task)
+                        else:
+                            logger.debug(
+                                "Skipping consolidation: %d tasks already in progress",
+                                len(self._consolidation_tasks),
+                            )
             except (OSError, json.JSONDecodeError, ValueError) as e:
                 logger.warning("Memory consolidation failed: %s", e)
 
