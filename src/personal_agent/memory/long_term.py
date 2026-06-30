@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 from typing import Any
 
 from personal_agent.memory.base import keyword_search
 from personal_agent.memory.file_store import FileMemoryStore
 from personal_agent.types import MemoryEntry
+
+logger = logging.getLogger(__name__)
 
 
 class LongTermMemory:
@@ -37,7 +40,13 @@ class LongTermMemory:
 
         memory_entries = []
         for entry in entries:
-            result = await self._store.get(entry["name"])
+            try:
+                result = await self._store.get(entry["name"])
+            except Exception:
+                logger.warning(
+                    "Skipping unreadable memory entry '%s'", entry.get("name"), exc_info=True
+                )
+                continue
             if result:
                 meta, body = result
                 memory_entries.append(
