@@ -705,9 +705,13 @@ class CLIChannel(Channel):
 
     def _save_session(self, path: str) -> None:
         p = Path(path).expanduser().resolve()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, "w") as f:
-            json.dump(self._session_tasks, f, ensure_ascii=False, indent=2)
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w") as f:
+                json.dump(self._session_tasks, f, ensure_ascii=False, indent=2)
+        except OSError as e:
+            console.print(Text.assemble(("Failed to save: ", "error"), (str(e), "error")))
+            return
         console.print(
             Text.assemble(
                 ("✓ Saved ", "success"),
