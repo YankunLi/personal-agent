@@ -173,16 +173,13 @@ class MCPToolSource:
 
     async def disconnect_all(self) -> None:
         """Disconnect from all MCP servers and clean up resources."""
-        for session in self._sessions:
-            try:
-                await session.__aexit__(None, None, None)
-            except Exception as e:
-                logger.debug("Error closing MCP session: %s", e)
+        # Use _cleanup_session/_cleanup_context helpers (which catch
+        # BaseException, including CancelledError) so that an error closing
+        # one session doesn't skip cleanup of the remaining ones.
+        for session in list(self._sessions):
+            await self._cleanup_session(session)
         self._sessions.clear()
 
-        for ctx in self._contexts:
-            try:
-                await ctx.__aexit__(None, None, None)
-            except Exception as e:
-                logger.debug("Error closing MCP transport: %s", e)
+        for ctx in list(self._contexts):
+            await self._cleanup_context(ctx)
         self._contexts.clear()
