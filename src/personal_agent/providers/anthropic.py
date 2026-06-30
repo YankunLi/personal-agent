@@ -194,7 +194,13 @@ class AnthropicProvider(Provider):
                 stream_usage: dict[str, int] = {}
 
                 async for event in stream:
-                    if event.type == "text":
+                    if event.type == "message_start":
+                        # input_tokens arrive here; message_delta only carries
+                        # output_tokens. Without this, stream_usage.input_tokens
+                        # stays 0 and token accounting undercounts in streaming.
+                        if event.message and event.message.usage:
+                            stream_usage["input_tokens"] = event.message.usage.input_tokens or 0
+                    elif event.type == "text":
                         content += event.text
                         yield ChatResponse(
                             content=event.text,
@@ -225,10 +231,7 @@ class AnthropicProvider(Provider):
                     elif event.type == "message_delta":
                         stop_reason = event.delta.stop_reason or stop_reason
                         if event.usage:
-                            stream_usage = {
-                                "input_tokens": event.usage.input_tokens or 0,
-                                "output_tokens": event.usage.output_tokens or 0,
-                            }
+                            stream_usage["output_tokens"] = event.usage.output_tokens or 0
                     elif event.type == "error":
                         logger.error("Anthropic streaming error: %s", getattr(event, "error", event))
                         raise_provider_error(getattr(event, "error", event))
