@@ -91,7 +91,9 @@ def create_self_upgrade_tool(
             if memory_type in ("working", "both"):
                 if _working_memory:
                     _working_memory.delete(key)
-                results.append(f"Key '{key}' removed from working memory.")
+                    results.append(f"Key '{key}' removed from working memory.")
+                else:
+                    results.append("Working memory not available.")
             if memory_type in ("long_term", "both"):
                 if _long_term_memory:
                     await _long_term_memory.forget(key)
