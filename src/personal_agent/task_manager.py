@@ -206,7 +206,7 @@ async def delete_task(session_id: str, task_id: str) -> bool:
 async def list_tasks(session_id: str) -> list[dict[str, Any]]:
     """List all tasks for a session."""
     try:
-        files = sorted(_get_tasks_dir(session_id).glob("*.json"))
+        files = await asyncio.to_thread(lambda: sorted(_get_tasks_dir(session_id).glob("*.json")))
     except FileNotFoundError:
         return []
     tasks = []

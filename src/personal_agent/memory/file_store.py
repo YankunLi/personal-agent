@@ -229,7 +229,8 @@ class FileMemoryStore:
         """Regenerate MEMORY.md from all memory files in the directory."""
         async with self._lock:
             entries = []
-            for f in sorted(self._dir.glob("*.md")):
+            files = await asyncio.to_thread(lambda: sorted(self._dir.glob("*.md")))
+            for f in files:
                 if f.name == "MEMORY.md":
                     continue
                 try:
@@ -370,7 +371,8 @@ class FileMemoryStore:
     async def clear(self) -> None:
         """Delete all memory files and regenerate empty index."""
         async with self._lock:
-            for f in self._dir.glob("*.md"):
+            files = await asyncio.to_thread(lambda: list(self._dir.glob("*.md")))
+            for f in files:
                 await asyncio.to_thread(f.unlink)
             await asyncio.to_thread(self._write_index_locked, [])
             self._invalidate_cache()
