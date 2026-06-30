@@ -125,8 +125,19 @@ class ReflectionAgent(BaseAgent):
             # Store critique for next iteration
             self.working.set("last_critique", critique)
 
-            # Prune iteration messages to prevent unbounded growth
+            # Prune iteration messages to prevent unbounded growth, but
+            # preserve the last assistant response so the next iteration's
+            # LLM call can iteratively refine it rather than regenerating
+            # blind (the critique feedback alone, without the response it
+            # critiqued, is not enough for effective refinement).
+            last_assistant = None
+            for m in reversed(state.messages):
+                if m.role == Role.ASSISTANT:
+                    last_assistant = m
+                    break
             state.messages = state.messages[:msg_count_before]
+            if last_assistant is not None:
+                state.messages.append(last_assistant)
 
         state.final_answer = current_response
         state.done = True
