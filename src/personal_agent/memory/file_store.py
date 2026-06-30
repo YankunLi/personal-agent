@@ -150,12 +150,31 @@ class FileMemoryStore:
                 text = await asyncio.to_thread(filepath.read_text)
                 _, content = _parse_frontmatter(text)
 
-            await asyncio.to_thread(filepath.write_text, frontmatter + "\n\n" + content + "\n")
+            # Atomic write: a crash mid-write must not leave a truncated
+            # memory file (the index is already updated atomically below).
+            await asyncio.to_thread(self._atomic_write_text, filepath, frontmatter + "\n\n" + content + "\n")
 
             await self._update_index_entry_locked(name, filename, description or name)
             self._invalidate_cache()
 
         return filepath
+
+    @staticmethod
+    def _atomic_write_text(path: Path, text: str) -> None:
+        """Write text to path via a temp file + os.replace (crash-safe)."""
+        import tempfile
+
+        fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(text)
+            os.replace(tmp_path, path)
+        except Exception:
+            try:
+                Path(tmp_path).unlink()
+            except OSError:
+                pass
+            raise
 
     async def get(self, name: str) -> tuple[dict[str, str], str] | None:
         """Read a memory file by name. Returns (metadata, body) or None."""
