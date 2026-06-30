@@ -141,7 +141,7 @@ class CLIChannel(Channel):
                     self._router.session_manager.save_session(self._current_session)
                 await self._agent.close()
                 self._agent = None
-        except Exception:
+        except BaseException:
             logger.exception("Error during CLI cleanup")
 
     async def stop(self) -> None:
@@ -883,7 +883,7 @@ class CLIChannel(Channel):
     # ── File I/O helpers ─────────────────────────────────────────────────────
 
     def _save_session(self, path: str) -> None:
-        p = Path(path).expanduser()
+        p = Path(path).expanduser().resolve()
         p.parent.mkdir(parents=True, exist_ok=True)
         with open(p, "w") as f:
             json.dump(self._session_tasks, f, ensure_ascii=False, indent=2)

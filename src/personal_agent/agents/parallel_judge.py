@@ -45,8 +45,9 @@ class ParallelJudgeAgent(BaseAgent):
         providers: dict[str, ProviderCredentials] | None = None,
         **kwargs,
     ):
+        sp = kwargs.pop("system_prompt", None)
         super().__init__(
-            system_prompt=kwargs.pop("system_prompt", "") or PARALLEL_JUDGE_SYSTEM_PROMPT,
+            system_prompt=sp if sp is not None else PARALLEL_JUDGE_SYSTEM_PROMPT,
             **kwargs,
         )
         self._agent_configs = agents or []
@@ -141,7 +142,7 @@ class ParallelJudgeAgent(BaseAgent):
         finally:
             try:
                 await agent.close()
-            except Exception as e:
+            except BaseException as e:
                 logger.warning("Error closing agent for '%s': %s", cfg.name, e)
 
     async def _run_judge(self, task: str, answers: dict[str, str]) -> str:

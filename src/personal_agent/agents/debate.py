@@ -60,8 +60,9 @@ class DebateAgent(BaseAgent):
         providers: dict[str, ProviderCredentials] | None = None,
         **kwargs,
     ):
+        sp = kwargs.pop("system_prompt", None)
         super().__init__(
-            system_prompt=kwargs.pop("system_prompt", "") or DEBATE_SYSTEM_PROMPT,
+            system_prompt=sp if sp is not None else DEBATE_SYSTEM_PROMPT,
             **kwargs,
         )
         self._roles = roles or []
@@ -162,7 +163,7 @@ class DebateAgent(BaseAgent):
             for name, agent in self._role_agents.items():
                 try:
                     await agent.close()
-                except Exception as e:
+                except BaseException as e:
                     logger.warning("Error closing role agent '%s': %s", name, e)
             self._role_agents.clear()
 

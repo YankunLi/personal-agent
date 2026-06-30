@@ -435,7 +435,7 @@ class BaseAgent(ABC):
     ) -> None:
         """Append tool results as tool messages."""
         for result in results:
-            if result.error:
+            if result.error is not None:
                 content = f"Error: {result.error}"
             elif result.output is None:
                 content = "(empty)"
@@ -545,7 +545,7 @@ class BaseAgent(ABC):
                 task.cancel()
                 try:
                     await task
-                except (asyncio.CancelledError, Exception):
+                except BaseException:
                     pass
         self._consolidation_tasks.clear()
 

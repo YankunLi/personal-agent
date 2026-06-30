@@ -101,6 +101,7 @@ class SessionManager:
     def __init__(self, storage_dir: str | Path = "~/.personal-agent/sessions"):
         self._storage_dir = Path(storage_dir).expanduser()
         self._storage_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self._storage_dir, 0o700)
         self._sessions: dict[str, Session] = {}
         self._current_id: str | None = None
         self._lock = threading.Lock()

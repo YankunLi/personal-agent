@@ -38,7 +38,7 @@ class ReActAgent(BaseAgent):
 
     def __init__(self, system_prompt: str = "", **kwargs):
         super().__init__(
-            system_prompt=system_prompt or DEFAULT_REACT_SYSTEM_PROMPT,
+            system_prompt=system_prompt if system_prompt is not None else DEFAULT_REACT_SYSTEM_PROMPT,
             **kwargs,
         )
 

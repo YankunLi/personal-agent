@@ -169,7 +169,7 @@ def create_todo_read_tool(session_id: str = "default") -> Tool:
     """
 
     async def _todo_read() -> str:
-        tasks = list_tasks(session_id)
+        tasks = await list_tasks(session_id)
         # Filter out internal tasks
         visible = [t for t in tasks if not t.get("metadata", {}).get("_internal")]
         return _format_todo_list(visible)

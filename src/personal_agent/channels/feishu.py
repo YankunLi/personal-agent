@@ -202,7 +202,7 @@ class FeishuChannel(Channel):
         for agent in self._conn_agents.values():
             try:
                 await agent.close()
-            except Exception:
+            except BaseException:
                 pass
         self._conn_agents.clear()
         self._conn_agent_times.clear()
@@ -211,7 +211,7 @@ class FeishuChannel(Channel):
         if self._api:
             try:
                 await self._api.close()
-            except Exception:
+            except BaseException:
                 pass
 
     # ── Webhook handlers ─────────────────────────────────────────────────────
@@ -380,7 +380,7 @@ class FeishuChannel(Channel):
             if agent:
                 try:
                     await agent.close()
-                except Exception:
+                except BaseException:
                     pass
         if stale:
             logger.info("Evicted %d idle Feishu agent(s)", len(stale))
@@ -409,7 +409,7 @@ class FeishuChannel(Channel):
                         message_id,
                         "Sorry, an internal error occurred while processing your request. Please try again.",
                     )
-                except Exception:
+                except BaseException:
                     pass
         finally:
             # Persist session state even on error (partial progress may be useful)

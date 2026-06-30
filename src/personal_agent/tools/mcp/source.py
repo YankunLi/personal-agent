@@ -159,14 +159,14 @@ class MCPToolSource:
         """Clean up a session that failed to initialize."""
         try:
             await session.__aexit__(None, None, None)
-        except Exception:
+        except BaseException:
             pass
 
     async def _cleanup_context(self, ctx: Any) -> None:
         """Clean up a transport context and remove it from tracking."""
         try:
             await ctx.__aexit__(None, None, None)
-        except Exception:
+        except BaseException:
             pass
         if ctx in self._contexts:
             self._contexts.remove(ctx)

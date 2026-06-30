@@ -74,7 +74,7 @@ class ReflectionAgent(BaseAgent):
         **kwargs,
     ):
         super().__init__(
-            system_prompt=system_prompt or DEFAULT_REFLECTION_SYSTEM_PROMPT,
+            system_prompt=system_prompt if system_prompt is not None else DEFAULT_REFLECTION_SYSTEM_PROMPT,
             **kwargs,
         )
         self._critique_threshold = critique_threshold

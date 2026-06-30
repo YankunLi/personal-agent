@@ -79,7 +79,7 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
                     pass
         elif language == "bash":
             stdout, stderr, code_ = await _run_command(
-                ["bash", "-e", "-u", "-o", "pipefail", "-c", code], timeout=timeout,
+                ["bash", "--norc", "--noprofile", "-e", "-u", "-o", "pipefail", "-c", code], timeout=timeout,
             )
         else:
             return f"Unsupported language: {language}"

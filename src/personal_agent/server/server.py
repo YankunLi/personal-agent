@@ -74,7 +74,8 @@ class AgentServer:
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
-            pass
+            logger.info("AgentServer channels interrupted by cancellation")
+            raise
 
     async def stop(self) -> None:
         """Stop all channels, cleanup task, and persist sessions."""

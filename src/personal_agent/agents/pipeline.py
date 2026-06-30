@@ -30,8 +30,9 @@ class PipelineAgent(BaseAgent):
     """
 
     def __init__(self, stages: list[PipelineStageConfig] | None = None, providers: dict[str, ProviderCredentials] | None = None, **kwargs):
+        sp = kwargs.pop("system_prompt", None)
         super().__init__(
-            system_prompt=kwargs.pop("system_prompt", "") or DEFAULT_PIPELINE_SYSTEM_PROMPT,
+            system_prompt=sp if sp is not None else DEFAULT_PIPELINE_SYSTEM_PROMPT,
             **kwargs,
         )
         self._stage_configs = stages or []
@@ -112,7 +113,7 @@ class PipelineAgent(BaseAgent):
                 if stage_agent is not None:
                     try:
                         await stage_agent.close()
-                    except Exception as close_err:
+                    except BaseException as close_err:
                         logger.warning("Error closing pipeline stage %d '%s': %s", i + 1, stage_cfg.name, close_err)
 
         state.done = True

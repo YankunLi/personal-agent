@@ -342,6 +342,7 @@ class CronScheduler:
             durable_jobs = [j.to_dict() for j in self._jobs.values() if j.durable]
             try:
                 self._storage_path.parent.mkdir(parents=True, exist_ok=True)
+                os.chmod(self._storage_path.parent, 0o700)
                 fd, tmp_path = await asyncio.to_thread(
                     tempfile.mkstemp, dir=str(self._storage_path.parent), suffix=".tmp"
                 )
@@ -352,6 +353,7 @@ class CronScheduler:
                         json.dumps(durable_jobs, indent=2, ensure_ascii=False),
                     )
                     await asyncio.to_thread(os.replace, tmp_path, str(self._storage_path))
+                    await asyncio.to_thread(os.chmod, str(self._storage_path), 0o600)
                 except BaseException:
                     try:
                         await asyncio.to_thread(os.unlink, tmp_path)

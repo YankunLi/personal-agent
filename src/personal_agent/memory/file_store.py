@@ -76,6 +76,7 @@ class FileMemoryStore:
     def __init__(self, storage_dir: str | Path = "~/.personal-agent/memory"):
         self._dir = Path(storage_dir).expanduser()
         self._dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self._dir, 0o700)
         self._lock = asyncio.Lock()
         self._name_to_path: dict[str, Path] | None = None  # Cache
 
@@ -300,6 +301,8 @@ class FileMemoryStore:
 
     def _write_index_locked(self, entries: list[dict[str, str]]) -> None:
         """Write the index file from a list of entries. Caller must hold lock."""
+        import tempfile
+
         lines = ["# Memory Index\n"]
         for e in entries:
             lines.append(f"- [{e['name']}]({e['filename']}) — {e['description']}")
@@ -307,13 +310,16 @@ class FileMemoryStore:
             lines.append("No memories stored yet.")
         lines.append("")
         content = "\n".join(lines)
-        tmp_path = self.index_path.with_suffix(self.index_path.suffix + ".tmp")
         try:
-            tmp_path.write_text(content)
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(self.index_path.parent), suffix=".tmp"
+            )
+            os.close(fd)
+            Path(tmp_path).write_text(content)
             os.replace(tmp_path, self.index_path)
         except Exception:
-            if tmp_path.exists():
-                tmp_path.unlink()
+            if 'tmp_path' in locals() and Path(tmp_path).exists():
+                Path(tmp_path).unlink()
             raise
 
     async def _update_index_entry_locked(self, name: str, filename: str, description: str) -> None:
