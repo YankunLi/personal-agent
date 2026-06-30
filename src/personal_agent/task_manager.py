@@ -21,20 +21,27 @@ _task_locks: dict[str, asyncio.Lock] = {}
 _task_locks_guard = asyncio.Lock()
 
 
+def _sanitize_id(value: str, default: str) -> str:
+    """Sanitize a session/task ID for use as a path component.
+
+    Rejects anything that isn't a bare filename (path separators, parent
+    traversal, leading dashes that could be interpreted as flags by tools).
+    """
+    safe = Path(value).name
+    if not safe or safe != value or safe in (".", "..") or safe.startswith("-"):
+        return default
+    return safe
+
+
 def _get_tasks_dir(session_id: str) -> Path:
     """Get the tasks directory for a session."""
-    # Sanitize session_id to prevent path traversal
-    safe_id = session_id.replace(os.sep, "_").replace("..", "_").lstrip("/")
-    if not safe_id:
-        safe_id = "default"
+    safe_id = _sanitize_id(session_id, "default")
     return Path("~/.personal-agent/tasks").expanduser() / safe_id
 
 
 def _get_task_path(session_id: str, task_id: str) -> Path:
     """Get the file path for a specific task."""
-    safe_tid = task_id.replace(os.sep, "_").replace("..", "_").lstrip("/")
-    if not safe_tid:
-        safe_tid = "0"
+    safe_tid = _sanitize_id(task_id, "0")
     return _get_tasks_dir(session_id) / f"{safe_tid}.json"
 
 

@@ -800,6 +800,13 @@ class SkillManager:
 
         repo_url, subdir, url_ref = self._parse_git_url(url)
         clone_ref = url_ref or ref
+        # Validate ref to prevent git argument injection: a value like
+        # "--upload-pack=/tmp/evil" would be interpreted by git as a flag
+        # rather than a branch name, even via create_subprocess_exec.
+        if not clone_ref or not re.match(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$", clone_ref):
+            raise SkillError(
+                f"Invalid git ref '{clone_ref}': must be alphanumeric with . _ / - only"
+            )
         installed: list[str] = []
 
         with tempfile.TemporaryDirectory(prefix="skill-clone-") as tmp:
