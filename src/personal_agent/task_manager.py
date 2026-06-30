@@ -70,10 +70,10 @@ def _read_high_water_mark(session_id: str) -> int:
 
 
 def _write_high_water_mark(session_id: str, value: int) -> None:
-    """Write the high water mark."""
+    """Write the high water mark atomically."""
     path = _get_tasks_dir(session_id) / HIGH_WATER_MARK_FILE
     _ensure_tasks_dir(session_id)
-    path.write_text(str(value))
+    atomic_write(path, str(value))
 
 
 def _find_highest_task_id(session_id: str) -> int:
@@ -151,6 +151,12 @@ async def update_task(
         existing["id"] = task_id  # Ensure id is never overwritten
         path = _get_task_path(session_id, task_id)
         await asyncio.to_thread(atomic_write, path, json.dumps(existing, indent=2, ensure_ascii=False))
+        # Clean up the per-task lock when the task reaches a terminal
+        # state to prevent unbounded _task_locks growth for sessions
+        # with many transient tasks that are completed but not deleted.
+        if existing.get("status") == "completed":
+            async with _task_locks_guard:
+                _task_locks.pop(task_id, None)
         return existing
 
 

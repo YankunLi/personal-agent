@@ -10,6 +10,7 @@ from typing import Any
 from personal_agent.config import ParallelAgentConfig
 from personal_agent.core.agent import BaseAgent
 from personal_agent.factory import create_sub_agent
+from personal_agent.providers.registry import ProviderCredentials
 from personal_agent.types import AgentResult, AgentStep
 
 logger = logging.getLogger(__name__)
