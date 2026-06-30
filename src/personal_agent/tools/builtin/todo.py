@@ -86,7 +86,7 @@ def create_todo_tool(session_id: str = "default") -> Tool:
     async def _todo_write(todos: list[dict[str, Any]]) -> str:
         # Sync incoming todos with existing tasks by content matching
         # (not position-based, which corrupts task identity when items are reordered/removed)
-        existing = list_tasks(session_id)
+        existing = await list_tasks(session_id)
         # Filter out internal tasks (managed by task_* tools directly)
         user_tasks = [t for t in existing if not t.get("metadata", {}).get("_internal")]
 

@@ -118,11 +118,11 @@ async def create_task(
     return task_id
 
 
-def get_task(session_id: str, task_id: str) -> dict[str, Any] | None:
+async def get_task(session_id: str, task_id: str) -> dict[str, Any] | None:
     """Read a task by ID."""
     path = _get_task_path(session_id, task_id)
     try:
-        return json.loads(path.read_text())
+        return json.loads(await asyncio.to_thread(path.read_text))
     except (FileNotFoundError, json.JSONDecodeError):
         return None
 
@@ -135,7 +135,7 @@ async def update_task(
     """Update a task with partial fields. Concurrency-safe via per-task lock."""
     lock = await _get_task_lock(task_id)
     async with lock:
-        existing = get_task(session_id, task_id)
+        existing = await get_task(session_id, task_id)
         if existing is None:
             async with _task_locks_guard:
                 _task_locks.pop(task_id, None)
@@ -172,30 +172,38 @@ async def delete_task(session_id: str, task_id: str) -> bool:
             async with _task_locks_guard:
                 _task_locks.pop(task_id, None)
 
-    # Remove references from other tasks (outside lock to avoid deadlock)
-    for task in list_tasks(session_id):
-        changed = False
-        blocks = task.get("blocks", [])
-        blocked_by = task.get("blockedBy", [])
-        if task_id in blocks:
-            blocks.remove(task_id)
-            changed = True
-        if task_id in blocked_by:
-            blocked_by.remove(task_id)
-            changed = True
-        if changed:
-            try:
-                await update_task(session_id, task["id"], {"blocks": blocks, "blockedBy": blocked_by})
-            except Exception:
-                logger.warning(
-                    "Failed to clean up references to deleted task '%s' from task '%s'",
-                    task_id, task["id"], exc_info=True,
-                )
+    # Remove references from other tasks (outside lock to avoid deadlock).
+    # Use per-task locks to prevent lost updates from concurrent modifications.
+    all_tasks = await list_tasks(session_id)
+    for task in all_tasks:
+        if task_id not in task.get("blocks", []) and task_id not in task.get("blockedBy", []):
+            continue
+        lock = await _get_task_lock(task["id"])
+        async with lock:
+            other = await get_task(session_id, task["id"])
+            if other is None:
+                continue
+            changed = False
+            if task_id in other.get("blocks", []):
+                other["blocks"] = [b for b in other["blocks"] if b != task_id]
+                changed = True
+            if task_id in other.get("blockedBy", []):
+                other["blockedBy"] = [b for b in other["blockedBy"] if b != task_id]
+                changed = True
+            if changed:
+                try:
+                    path = _get_task_path(session_id, task["id"])
+                    await asyncio.to_thread(atomic_write, path, json.dumps(other, indent=2, ensure_ascii=False))
+                except Exception:
+                    logger.warning(
+                        "Failed to clean up references to deleted task '%s' from task '%s'",
+                        task_id, task["id"], exc_info=True,
+                    )
 
     return True
 
 
-def list_tasks(session_id: str) -> list[dict[str, Any]]:
+async def list_tasks(session_id: str) -> list[dict[str, Any]]:
     """List all tasks for a session."""
     try:
         files = sorted(_get_tasks_dir(session_id).glob("*.json"))
@@ -206,7 +214,7 @@ def list_tasks(session_id: str) -> list[dict[str, Any]]:
         if f.name.startswith("."):
             continue
         try:
-            tasks.append(json.loads(f.read_text()))
+            tasks.append(json.loads(await asyncio.to_thread(f.read_text)))
         except (json.JSONDecodeError, FileNotFoundError):
             pass
     return tasks
@@ -229,8 +237,8 @@ async def block_task(session_id: str, from_task_id: str, to_task_id: str) -> boo
     async with lock_first:
         async with lock_second:
             # Re-read under lock to prevent lost updates
-            from_task = get_task(session_id, from_task_id)
-            to_task = get_task(session_id, to_task_id)
+            from_task = await get_task(session_id, from_task_id)
+            to_task = await get_task(session_id, to_task_id)
             if not from_task or not to_task:
                 return False
 
@@ -239,14 +247,14 @@ async def block_task(session_id: str, from_task_id: str, to_task_id: str) -> boo
                 blocks.append(to_task_id)
                 from_task["blocks"] = blocks
                 path = _get_task_path(session_id, from_task_id)
-                await asyncio.to_thread(path.write_text, json.dumps(from_task, indent=2, ensure_ascii=False))
+                await asyncio.to_thread(atomic_write, path, json.dumps(from_task, indent=2, ensure_ascii=False))
 
             if from_task_id not in to_task.get("blockedBy", []):
                 blocked_by = list(to_task.get("blockedBy", []))
                 blocked_by.append(from_task_id)
                 to_task["blockedBy"] = blocked_by
                 path = _get_task_path(session_id, to_task_id)
-                await asyncio.to_thread(path.write_text, json.dumps(to_task, indent=2, ensure_ascii=False))
+                await asyncio.to_thread(atomic_write, path, json.dumps(to_task, indent=2, ensure_ascii=False))
 
     return True
 
@@ -268,19 +276,19 @@ async def resolve_dependencies(
         # Unblock all tasks that this task was blocking.
         # Collect affected IDs, then lock each individually to avoid
         # lost updates from concurrent modifications.
-        all_tasks = list_tasks(session_id)
+        all_tasks = await list_tasks(session_id)
         affected = [t["id"] for t in all_tasks if task_id in t.get("blockedBy", [])]
 
         for other_id in affected:
             lock = await _get_task_lock(other_id)
             async with lock:
                 # Re-read under lock to get current state
-                other = get_task(session_id, other_id)
+                other = await get_task(session_id, other_id)
                 if other and task_id in other.get("blockedBy", []):
                     blocked_by = [b for b in other["blockedBy"] if b != task_id]
                     other["blockedBy"] = blocked_by
                     path = _get_task_path(session_id, other_id)
-                    await asyncio.to_thread(path.write_text, json.dumps(other, indent=2, ensure_ascii=False))
+                    await asyncio.to_thread(atomic_write, path, json.dumps(other, indent=2, ensure_ascii=False))
 
         # Clear the completed task's blocks list
         await update_task(session_id, task_id, {"blocks": []})

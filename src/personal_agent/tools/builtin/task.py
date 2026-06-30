@@ -172,7 +172,7 @@ def create_task_get_tool(session_id: str = "default") -> Tool:
     """Create a TaskGet tool."""
 
     async def _task_get(taskId: str) -> str:
-        task = get_task(session_id, taskId)
+        task = await get_task(session_id, taskId)
         if task is None:
             return f"Task not found: {taskId}"
         return json.dumps({"task": task}, indent=2)
@@ -207,7 +207,7 @@ def create_task_list_tool(session_id: str = "default") -> Tool:
     """Create a TaskList tool."""
 
     async def _task_list() -> str:
-        tasks = list_tasks(session_id)
+        tasks = await list_tasks(session_id)
         if not tasks:
             return "No tasks found. Use TaskCreate to create one."
 
@@ -274,7 +274,7 @@ def create_task_update_tool(session_id: str = "default") -> Tool:
         owner: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> str:
-        existing = get_task(session_id, taskId)
+        existing = await get_task(session_id, taskId)
         if existing is None:
             return json.dumps({
                 "success": False,
@@ -392,7 +392,7 @@ def create_task_stop_tool(session_id: str = "default") -> Tool:
                 "error": "task_id must be provided",
             })
 
-        task = get_task(session_id, tid)
+        task = await get_task(session_id, tid)
         if task is None:
             return json.dumps({
                 "success": False,

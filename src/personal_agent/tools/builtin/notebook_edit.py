@@ -62,7 +62,7 @@ def create_notebook_edit_tool(workspace_dir: str | None = None) -> Tool:
 
     async def _notebook_edit(
         notebook_path: str,
-        new_source: str = "",
+        new_source: str | None = None,
         cell_id: str | None = None,
         cell_type: str | None = None,
         edit_mode: str = "replace",
@@ -75,7 +75,7 @@ def create_notebook_edit_tool(workspace_dir: str | None = None) -> Tool:
         if p.suffix != ".ipynb":
             return f"Error: Not a .ipynb file: {notebook_path}"
 
-        if edit_mode in ("replace", "insert") and not new_source:
+        if edit_mode in ("replace", "insert") and new_source is None:
             return f"Error: new_source is required for edit_mode={edit_mode}"
 
         try:
