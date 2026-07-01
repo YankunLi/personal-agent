@@ -297,8 +297,8 @@ class FeishuChannel(Channel):
             return web.json_response({"code": 1, "msg": "Verification token not configured"}, status=403)
         event_token = header.get("token", "") if header else body.get("token", "")
         if event_token != self._verification_token:
-                logger.warning("Feishu event rejected: invalid token")
-                return web.json_response({"code": 1, "msg": "Invalid token"}, status=403)
+            logger.warning("Feishu event rejected: invalid token")
+            return web.json_response({"code": 1, "msg": "Invalid token"}, status=403)
 
         if event_type == "im.message.receive_v1":
             # Don't process messages if the server is shutting down.
