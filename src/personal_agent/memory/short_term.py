@@ -25,6 +25,8 @@ class ShortTermMemory:
 
     def get_recent(self, n: int = 20) -> list[Message]:
         """Return the most recent N messages."""
+        if n <= 0:
+            return []
         return self._messages[-n:]
 
     def to_list(self) -> list[Message]:
