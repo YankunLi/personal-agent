@@ -241,7 +241,14 @@ def _python_fallback(
                         end_line = content[:m.end()].count("\n") + 1
                         if start_line == end_line:
                             prefix = f"{fpath}:{start_line}: " if show_line_numbers is not False else f"{fpath}: "
-                            results.append(f"{prefix}{lines[start_line - 1].rstrip()}")
+                            # Clamp index: a zero-width or end-of-string match
+                            # (e.g. from $ or \Z) can produce a start_line
+                            # beyond the last line in `lines`.
+                            line_idx = min(start_line - 1, len(lines) - 1)
+                            if line_idx < 0:
+                                results.append(f"{prefix}{m.group().rstrip()}")
+                            else:
+                                results.append(f"{prefix}{lines[line_idx].rstrip()}")
                         else:
                             prefix = f"{fpath}:{start_line}-{end_line}: " if show_line_numbers is not False else f"{fpath}: "
                             results.append(f"{prefix}{m.group().rstrip()}")
