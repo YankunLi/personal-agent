@@ -240,6 +240,9 @@ class MemoryConsolidator:
         """Apply memory operations to the store."""
         applied = []
         for op in operations:
+            if not isinstance(op, dict):
+                logger.warning("Skipping non-dict memory operation: %r", op)
+                continue
             action = op.get("action", "ignore")
             if action == "ignore":
                 continue
