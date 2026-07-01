@@ -64,11 +64,10 @@ class BaiduProvider(Provider):
         return self._context_window
 
     async def _get_client(self) -> httpx.AsyncClient:
-        if self._httpx_client is None:
-            async with self._client_lock:
-                if self._httpx_client is None:
-                    self._httpx_client = httpx.AsyncClient(timeout=self._timeout)
-        return self._httpx_client
+        async with self._client_lock:
+            if self._httpx_client is None:
+                self._httpx_client = httpx.AsyncClient(timeout=self._timeout)
+            return self._httpx_client
 
     async def _ensure_token(self) -> str:
         """Get or refresh the OAuth access token. Thread-safe via asyncio.Lock."""
