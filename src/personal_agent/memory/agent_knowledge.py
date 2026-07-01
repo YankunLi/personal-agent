@@ -93,7 +93,7 @@ class AgentKnowledge:
         """
         async with self._lock:
             await asyncio.to_thread(self._ensure_file)
-            text = await asyncio.to_thread(self._global_path.read_text)
+            text = await asyncio.to_thread(self._global_path.read_text, "utf-8")
             sections = self._parse_sections(text)
 
             # Split content into lines for consistent storage
@@ -118,7 +118,7 @@ class AgentKnowledge:
 
         async with self._lock:
             await asyncio.to_thread(self._ensure_file)
-            text = await asyncio.to_thread(self._global_path.read_text)
+            text = await asyncio.to_thread(self._global_path.read_text, "utf-8")
 
             # Parse existing sections
             existing = self._parse_sections(text)
@@ -172,7 +172,7 @@ class AgentKnowledge:
         """Create the global AGENT.md if it doesn't exist."""
         if not self._global_path.exists():
             self._global_path.parent.mkdir(parents=True, exist_ok=True)
-            self._global_path.write_text(self._generate_starter())
+            self._global_path.write_text(self._generate_starter(), encoding="utf-8")
 
     def _generate_starter(self) -> str:
         """Generate a minimal AGENT.md with empty sections."""
@@ -226,14 +226,14 @@ class AgentKnowledge:
     def _read_file(path: Path | None) -> str:
         if path is None or not path.exists():
             return ""
-        return path.read_text().strip()
+        return path.read_text(encoding="utf-8").strip()
 
     @staticmethod
     def _write_file(path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(path.suffix + ".tmp")
         try:
-            tmp_path.write_text(content)
+            tmp_path.write_text(content, encoding="utf-8")
             os.replace(tmp_path, path)
         except Exception:
             if tmp_path.exists():
