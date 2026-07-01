@@ -60,28 +60,45 @@ class ShortTermMemory:
 
     @classmethod
     def from_dict(cls, data: dict) -> ShortTermMemory:
-        """Restore from a serialized dict."""
+        """Restore from a serialized dict.
+
+        Defensive per-entry: a single corrupt message (missing keys, wrong
+        types) is skipped rather than discarding the entire tool_calls list
+        or aborting the whole history.
+        """
         from personal_agent.types import Role, ToolCall
 
         mem = cls(max_messages=data.get("max_messages", 200))
         for m in data.get("messages", []):
+            if not isinstance(m, dict):
+                continue
             try:
-                role = Role(m["role"])
-            except (ValueError, KeyError):
-                role = Role.USER
-            tool_calls = None
-            if m.get("tool_calls"):
                 try:
-                    tool_calls = [ToolCall(**tc) for tc in m["tool_calls"] if tc is not None]
-                except (TypeError, KeyError):
-                    tool_calls = None
-            mem._messages.append(Message(
-                role=role,
-                content=m["content"],
-                tool_call_id=m.get("tool_call_id"),
-                tool_calls=tool_calls,
-                metadata=m.get("metadata") or {},
-            ))
+                    role = Role(m.get("role", "user"))
+                except (ValueError, TypeError):
+                    role = Role.USER
+                tool_calls = None
+                raw_tcs = m.get("tool_calls")
+                if raw_tcs:
+                    built = []
+                    for tc in raw_tcs:
+                        if not isinstance(tc, dict):
+                            continue
+                        try:
+                            built.append(ToolCall(**tc))
+                        except (TypeError, KeyError):
+                            continue
+                    if built:
+                        tool_calls = built
+                mem._messages.append(Message(
+                    role=role,
+                    content=m.get("content", ""),
+                    tool_call_id=m.get("tool_call_id"),
+                    tool_calls=tool_calls,
+                    metadata=m.get("metadata") or {},
+                ))
+            except Exception:
+                continue
         return mem
 
     def __len__(self) -> int:
