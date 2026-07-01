@@ -78,12 +78,20 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
         def _read_sync() -> str:
             file_size = p.stat().st_size
             if file_size > DEFAULT_MAX_READ_BYTES:
-                with open(p, "r", encoding="utf-8") as f:
-                    content = f.read(DEFAULT_MAX_READ_BYTES)
+                # Read in binary and truncate by bytes, then decode. Reading
+                # with f.read(N) would truncate by *characters*, which for
+                # multi-byte encodings (e.g. CJK) can return far more than N
+                # bytes and exceed the intended memory limit.
+                with open(p, "rb") as f:
+                    raw = f.read(DEFAULT_MAX_READ_BYTES)
+                try:
+                    content = raw.decode("utf-8", errors="ignore")
+                except Exception:
+                    content = ""
                 return (
                     f"{content}\n\n"
                     f"[File truncated: {file_size} bytes total, "
-                    f"showing first {DEFAULT_MAX_READ_BYTES}. "
+                    f"showing first {DEFAULT_MAX_READ_BYTES} bytes. "
                     f"Use a more specific path or read in chunks.]"
                 )
             return p.read_text(encoding="utf-8")
