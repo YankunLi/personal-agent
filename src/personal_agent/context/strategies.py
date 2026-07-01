@@ -98,6 +98,11 @@ class CompressionStrategy(ContextStrategy):
             # Compressor failure (e.g. LLM error) must not crash the agent —
             # fall back to passing the original messages through unchanged.
             return list(messages)
+        # An empty summary would discard all older messages and replace them
+        # with a header-only system message, permanently losing context.
+        # Treat it like a compressor failure.
+        if not summary or not summary.strip():
+            return list(messages)
         summary_msg = Message(
             role=Role.SYSTEM,
             content=f"[Compressed conversation history]\n{summary}",
