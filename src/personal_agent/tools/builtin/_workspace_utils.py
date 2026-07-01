@@ -34,12 +34,15 @@ def validate_within_workspace(path: Path, workspace_dir: str | None) -> None:
 def atomic_write(path: Path, content: str, encoding: str = "utf-8") -> None:
     """Atomically write content to a file using temp file + os.replace.
 
-    Prevents file corruption if the process crashes mid-write.
+    Prevents file corruption if the process crashes mid-write. Writes
+    through the secure fd from mkstemp (mode 0600) so the content is
+    never briefly world-readable, which would happen if the fd were
+    closed and the file reopened via Path.write_text (mode 0644).
     """
     fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
     try:
-        os.close(fd)
-        Path(tmp_path).write_text(content, encoding=encoding)
+        with os.fdopen(fd, "w", encoding=encoding) as f:
+            f.write(content)
         os.replace(tmp_path, str(path))
     except BaseException:
         try:
