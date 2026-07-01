@@ -292,8 +292,8 @@ class CronScheduler:
                 current_minute = (now.year, now.month, now.day, now.hour, now.minute)
 
                 if current_minute != last_minute:
-                    last_minute = current_minute
                     await self._check_and_fire(now)
+                    last_minute = current_minute
             except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
                 raise
             except Exception:
