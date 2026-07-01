@@ -877,22 +877,35 @@ class SkillManager:
                     return []
 
                 # Copy each newly discovered skill to the target directory
-                for name in sorted(new_names):
-                    skill = self._skills[name]
-                    if skill.base_path is None:
-                        continue
-                    _validate_name_as_path(name)
-                    target_skill_dir = target_dir / name
-                    if target_skill_dir.exists():
-                        logger.warning("Skill '%s' already exists at %s, skipping", name, target_skill_dir)
-                        del self._skills[name]  # Unregister zombie skill
-                        continue
+                installed_names: set[str] = set()
+                try:
+                    for name in sorted(new_names):
+                        skill = self._skills[name]
+                        if skill.base_path is None:
+                            continue
+                        _validate_name_as_path(name)
+                        target_skill_dir = target_dir / name
+                        if target_skill_dir.exists():
+                            logger.warning("Skill '%s' already exists at %s, skipping", name, target_skill_dir)
+                            del self._skills[name]  # Unregister zombie skill
+                            continue
 
-                    shutil.copytree(skill.base_path, target_skill_dir)
-                    # Update base_path to the new location
-                    skill.base_path = target_skill_dir
-                    installed.append(name)
-                    logger.info("Installed skill '%s' to %s", name, target_skill_dir)
+                        shutil.copytree(skill.base_path, target_skill_dir)
+                        # Update base_path to the new location
+                        skill.base_path = target_skill_dir
+                        installed_names.add(name)
+                        installed.append(name)
+                        logger.info("Installed skill '%s' to %s", name, target_skill_dir)
+                except Exception:
+                    # copytree failure (disk full, permission error, etc.):
+                    # unregister any newly discovered skills that weren't
+                    # successfully installed, so their base_path doesn't
+                    # dangle at the temp directory (which is about to be
+                    # deleted by the TemporaryDirectory context manager).
+                    for name in new_names - installed_names:
+                        self._skills.pop(name, None)
+                        self._loaded_paths.discard(name)
+                    raise
 
         return installed
 
