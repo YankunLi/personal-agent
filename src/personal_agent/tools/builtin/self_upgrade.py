@@ -83,7 +83,7 @@ def create_self_upgrade_tool(
                 _working_memory.clear()
                 results.append("Working memory cleared.")
             if memory_type in ("long_term", "both") and _long_term_memory:
-                _long_term_memory.clear()
+                await _long_term_memory.clear()
                 results.append("Long-term memory cleared.")
             return "\n".join(results) if results else "No memory cleared."
 
