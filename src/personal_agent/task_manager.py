@@ -16,8 +16,10 @@ logger = logging.getLogger(__name__)
 TASK_STATUSES = ["pending", "in_progress", "completed"]
 HIGH_WATER_MARK_FILE = ".highwatermark"
 _create_lock = asyncio.Lock()
-# Per-task locks to prevent lost updates from concurrent writes
-_task_locks: dict[str, asyncio.Lock] = {}
+# Per-task locks to prevent lost updates from concurrent writes.
+# Keyed by (session_id, task_id) so tasks with the same numeric ID in
+# different sessions don't share a lock.
+_task_locks: dict[tuple[str, str], asyncio.Lock] = {}
 _task_locks_guard = asyncio.Lock()
 
 
@@ -52,12 +54,13 @@ def _ensure_tasks_dir(session_id: str) -> Path:
     return d
 
 
-async def _get_task_lock(task_id: str) -> asyncio.Lock:
+async def _get_task_lock(session_id: str, task_id: str) -> asyncio.Lock:
     """Get or create a per-task lock for concurrency-safe writes."""
+    key = (session_id, task_id)
     async with _task_locks_guard:
-        if task_id not in _task_locks:
-            _task_locks[task_id] = asyncio.Lock()
-        return _task_locks[task_id]
+        if key not in _task_locks:
+            _task_locks[key] = asyncio.Lock()
+        return _task_locks[key]
 
 
 def _read_high_water_mark(session_id: str) -> int:
@@ -140,29 +143,21 @@ async def update_task(
     updates: dict[str, Any],
 ) -> dict[str, Any] | None:
     """Update a task with partial fields. Concurrency-safe via per-task lock."""
-    lock = await _get_task_lock(task_id)
+    lock = await _get_task_lock(session_id, task_id)
     async with lock:
         existing = await get_task(session_id, task_id)
         if existing is None:
-            async with _task_locks_guard:
-                _task_locks.pop(task_id, None)
             return None
         existing.update(updates)
         existing["id"] = task_id  # Ensure id is never overwritten
         path = _get_task_path(session_id, task_id)
         await asyncio.to_thread(atomic_write, path, json.dumps(existing, indent=2, ensure_ascii=False))
-        # Clean up the per-task lock when the task reaches a terminal
-        # state to prevent unbounded _task_locks growth for sessions
-        # with many transient tasks that are completed but not deleted.
-        if existing.get("status") == "completed":
-            async with _task_locks_guard:
-                _task_locks.pop(task_id, None)
         return existing
 
 
 async def delete_task(session_id: str, task_id: str) -> bool:
     """Delete a task by ID. Updates high water mark to prevent ID reuse."""
-    lock = await _get_task_lock(task_id)
+    lock = await _get_task_lock(session_id, task_id)
     async with lock:
         path = _get_task_path(session_id, task_id)
         try:
@@ -181,9 +176,6 @@ async def delete_task(session_id: str, task_id: str) -> bool:
                     await asyncio.to_thread(_write_high_water_mark, session_id, numeric_id)
         except FileNotFoundError:
             return False
-        finally:
-            async with _task_locks_guard:
-                _task_locks.pop(task_id, None)
 
     # Remove references from other tasks (outside lock to avoid deadlock).
     # Use per-task locks to prevent lost updates from concurrent modifications.
@@ -191,7 +183,7 @@ async def delete_task(session_id: str, task_id: str) -> bool:
     for task in all_tasks:
         if task_id not in task.get("blocks", []) and task_id not in task.get("blockedBy", []):
             continue
-        lock = await _get_task_lock(task["id"])
+        lock = await _get_task_lock(session_id, task["id"])
         async with lock:
             other = await get_task(session_id, task["id"])
             if other is None:
@@ -244,8 +236,8 @@ async def block_task(session_id: str, from_task_id: str, to_task_id: str) -> boo
 
     # Sort IDs to ensure consistent lock ordering
     first, second = (from_task_id, to_task_id) if from_task_id < to_task_id else (to_task_id, from_task_id)
-    lock_first = await _get_task_lock(first)
-    lock_second = await _get_task_lock(second)
+    lock_first = await _get_task_lock(session_id, first)
+    lock_second = await _get_task_lock(session_id, second)
 
     async with lock_first:
         async with lock_second:
@@ -293,7 +285,7 @@ async def resolve_dependencies(
         affected = [t["id"] for t in all_tasks if task_id in t.get("blockedBy", [])]
 
         for other_id in affected:
-            lock = await _get_task_lock(other_id)
+            lock = await _get_task_lock(session_id, other_id)
             async with lock:
                 # Re-read under lock to get current state
                 other = await get_task(session_id, other_id)
