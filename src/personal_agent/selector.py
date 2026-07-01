@@ -124,6 +124,8 @@ def explain(task: str) -> str:
     reason = reasons[pattern]
     if details:
         reason += f"（{', '.join(details)}）"
+    if matched:
+        reason += f"（匹配 {len(matched)} 个模式）"
 
     return reason
 
