@@ -101,7 +101,9 @@ class WebSocketChannel(Channel):
         for conn_id, agent in list(self._conn_agents.items()):
             try:
                 await agent.close()
-            except BaseException as e:
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as e:
                 logger.warning("Error closing agent for conn %d: %s", conn_id, e)
         self._conn_agents.clear()
         self._conn_sessions.clear()
@@ -132,7 +134,9 @@ class WebSocketChannel(Channel):
             if agent:
                 try:
                     await agent.close()
-                except BaseException:
+                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception:
                     pass
             self._conn_sessions.pop(conn_id, None)
             self._connections.pop(conn_id, None)
@@ -317,7 +321,9 @@ class WebSocketChannel(Channel):
             if conn_id in self._conn_agents:
                 try:
                     await self._conn_agents[conn_id].close()
-                except BaseException:
+                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception:
                     pass
                 del self._conn_agents[conn_id]
         await self._send(websocket, {
