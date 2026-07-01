@@ -85,12 +85,22 @@ def _cron_matches(cron: str, dt: datetime) -> bool:
         # (0=Mon, 1=Tue, ..., 6=Sun)
         python_dow = {(d - 1) % 7 for d in dow}
 
+        # Per POSIX cron: when both day-of-month and day-of-week are
+        # restricted (neither is `*`), the job fires if EITHER matches
+        # (OR). When either is `*`, the other alone determines the match
+        # (AND works because the `*` field always matches).
+        dom_restricted = fields[2] != "*"
+        dow_restricted = fields[4] != "*"
+        if dom_restricted and dow_restricted:
+            day_match = dt.day in dom or dt.weekday() in python_dow
+        else:
+            day_match = dt.day in dom and dt.weekday() in python_dow
+
         return (
             dt.minute in minutes
             and dt.hour in hours
-            and dt.day in dom
+            and day_match
             and dt.month in months
-            and dt.weekday() in python_dow
         )
     except (ValueError, IndexError):
         return False
