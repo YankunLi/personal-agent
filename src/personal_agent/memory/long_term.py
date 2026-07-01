@@ -97,6 +97,10 @@ class LongTermMemory:
                 return False
             try:
                 await asyncio.to_thread(candidate.unlink)
+                # The file was deleted directly, but the MEMORY.md index
+                # may still reference it. Repair the index so recall()
+                # doesn't waste I/O on stale entries every time.
+                await self._store.repair_index()
                 return True
             except FileNotFoundError:
                 return False
