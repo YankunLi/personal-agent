@@ -207,6 +207,10 @@ class DebateAgent(BaseAgent):
             # Clear short-term memory between rounds to prevent unbounded
             # context growth from cumulative conversation history.
             agent.short_term.clear()
+            # Reset accumulated token usage so the next round's result.token_usage
+            # reflects only that round. Without this, each round returns the
+            # running total and the orchestrator double-counts prior rounds.
+            agent._total_usage.clear()
 
     async def _run_judge(self, task: str, responses: dict[str, str]) -> str:
         """Run the judge agent to synthesize debate responses."""
