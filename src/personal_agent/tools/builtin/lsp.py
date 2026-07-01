@@ -157,11 +157,17 @@ def _handle_python(
             return "No references found"
 
         lines = []
+        src_lines = source.splitlines()
         for ref in references:
             rpath = ref.module_path or path
             rline = ref.line if hasattr(ref, "line") else "?"
             rcol = ref.column if hasattr(ref, "column") else "?"
-            code = ref.line if hasattr(ref, "line") else ""
+            # ref.line is a 1-based line number; fetch the actual source line
+            # for display. Without this, the code below would call .strip() on
+            # an int and crash with AttributeError.
+            code = ""
+            if isinstance(rline, int) and 1 <= rline <= len(src_lines):
+                code = src_lines[rline - 1]
             lines.append(f"  {rpath}:{rline}:{rcol}: {code.strip()}")
         return f"Found {len(lines)} references:\n" + "\n".join(lines)
 
