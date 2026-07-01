@@ -287,12 +287,20 @@ class CronScheduler:
         last_minute = None
 
         while self._running:
-            now = datetime.now()
-            current_minute = (now.year, now.month, now.day, now.hour, now.minute)
+            try:
+                now = datetime.now()
+                current_minute = (now.year, now.month, now.day, now.hour, now.minute)
 
-            if current_minute != last_minute:
-                last_minute = current_minute
-                await self._check_and_fire(now)
+                if current_minute != last_minute:
+                    last_minute = current_minute
+                    await self._check_and_fire(now)
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                raise
+            except Exception:
+                # An unhandled exception in _check_and_fire would otherwise kill
+                # the scheduler task silently — no further jobs would ever fire
+                # and the user would never know. Log and keep looping.
+                logger.exception("Cron scheduler _check_and_fire raised; continuing loop")
 
             await asyncio.sleep(self._check_interval)
 
