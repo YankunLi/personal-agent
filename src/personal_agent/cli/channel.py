@@ -471,6 +471,19 @@ class CLIChannel(Channel):
         """
         async with self._task_lock:
             session_mgr = self._router.session_manager
+            # Persist the old session's state before switching, otherwise
+            # its latest conversation is lost (the agent's short_term/working
+            # are the same objects, so they're already up to date — but the
+            # session needs to be saved to disk).
+            if self._current_session and self._agent:
+                async with self._current_session.memory_lock:
+                    self._current_session.short_term = self._agent.short_term
+                    self._current_session.working = self._agent.working
+                try:
+                    session_mgr.save_session(self._current_session)
+                except Exception:
+                    logger.warning("Failed to save old session", exc_info=True)
+
             session = session_mgr.create(name)
             self._current_session = session
             async with session.memory_lock:
