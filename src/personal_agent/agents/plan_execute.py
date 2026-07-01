@@ -134,7 +134,11 @@ class PlanAndExecuteAgent(BaseAgent):
 
             if step_result.get("error"):
                 logger.warning("Step %d failed: %s", i + 1, step_result["error"])
-                if i < len(plan) - 1 and replan_count < self.MAX_REPLAN_ATTEMPTS:
+                if (
+                    i < len(plan) - 1
+                    and replan_count < self.MAX_REPLAN_ATTEMPTS
+                    and llm_calls < self.max_steps
+                ):
                     msg_count_before_replan = len(state.messages)
                     new_plan = await self._replan(state, plan, step_results, step)
                     llm_calls += 1
