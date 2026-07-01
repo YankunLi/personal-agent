@@ -54,7 +54,11 @@ class SlidingWindowStrategy(ContextStrategy):
             rest = list(messages)
 
         effective_max = max(0, self.max_messages - len(head))
-        if effective_max <= 0 or effective_max >= len(rest):
+        if effective_max <= 0:
+            # Budget is entirely consumed by the system prompt — return just
+            # the head instead of the full untruncated list.
+            return head
+        if effective_max >= len(rest):
             return list(messages)
 
         split = len(rest) - effective_max
