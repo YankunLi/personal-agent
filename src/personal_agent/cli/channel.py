@@ -226,6 +226,16 @@ class CLIChannel(Channel):
         Closes the old agent, creates a new one with the given pattern
         override, and restores session memory.
         """
+        # Build the replacement agent BEFORE discarding the old one. If
+        # create_agent raises, self._agent must remain the previously-working
+        # agent so subsequent tasks can still proceed instead of crashing on
+        # a None dereference.
+        overrides = dict(self._overrides)
+        overrides["pattern"] = pattern
+        from personal_agent.factory import create_agent
+
+        new_agent = await create_agent(self._settings, **overrides)
+
         if self._agent is not None:
             # Persist current memory before closing
             if self._current_session:
@@ -236,13 +246,8 @@ class CLIChannel(Channel):
                 await self._agent.close()
             except BaseException:
                 logger.warning("Error closing old agent during pattern switch", exc_info=True)
-            self._agent = None
 
-        overrides = dict(self._overrides)
-        overrides["pattern"] = pattern
-        from personal_agent.factory import create_agent
-
-        self._agent = await create_agent(self._settings, **overrides)
+        self._agent = new_agent
         self._current_pattern = pattern
 
         if self._current_session:
@@ -273,7 +278,22 @@ class CLIChannel(Channel):
                 # task actually runs with the selected pattern, not always
                 # ReAct (the default when no task is available at creation).
                 if suggested != self._current_pattern:
-                    await self._recreate_agent_with_pattern(suggested)
+                    try:
+                        await self._recreate_agent_with_pattern(suggested)
+                    except Exception:
+                        logger.warning(
+                            "Failed to recreate agent with pattern '%s'; "
+                            "falling back to current pattern",
+                            suggested,
+                            exc_info=True,
+                        )
+                        console.print(
+                            Text.assemble(
+                                ("Pattern switch failed; using ", "warning"),
+                                (self._current_pattern or "current", "value"),
+                                (" pattern.", "warning"),
+                            )
+                        )
 
             display = RichDisplay()
             self._agent._callbacks = make_callbacks(display)
