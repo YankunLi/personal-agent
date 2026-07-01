@@ -192,6 +192,14 @@ class BudgetStrategy(ContextStrategy):
 
         self._budget.allocate(system_prompt=system_prompt)
 
+        # The budget manager derives the conversation budget from
+        # context_window (e.g. 128000 * 0.45 = 57600 tokens), which is
+        # typically far larger than max_tokens (e.g. 16384). Cap it so
+        # the agent doesn't send more tokens than the configured limit.
+        conv_budget = self._budget.get_allocation("conversation", 0)
+        if conv_budget > self._max_tokens:
+            self._budget._allocations["conversation"] = self._max_tokens
+
         # Use assemble() for attention-routed formatting with budget-aware
         # section markers, instead of raw compress().
         return self._budget.assemble(messages)
