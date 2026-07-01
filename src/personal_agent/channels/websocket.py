@@ -87,10 +87,15 @@ class WebSocketChannel(Channel):
         await self._server.wait_closed()
 
     async def stop(self) -> None:
-        """Stop the WebSocket server and close all connections."""
-        if self._server:
+        """Stop the WebSocket server and close all connections.
+
+        Idempotent: a second call (e.g. from signal handler + AgentServer
+        teardown) is a no-op.
+        """
+        if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
+            self._server = None
 
         # Close all agent connections
         for conn_id, agent in list(self._conn_agents.items()):
