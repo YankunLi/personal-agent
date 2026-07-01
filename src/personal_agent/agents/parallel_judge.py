@@ -111,8 +111,20 @@ class ParallelJudgeAgent(BaseAgent):
             await self._fire("on_answer", state.final_answer)
             return await self._finalize(state, start_time, task=task)
 
-        # Judge selects/synthesizes
-        judge_answer = await self._run_judge(task, agent_answers)
+        # Judge selects/synthesizes — pass only successful answers so error
+        # text from failed agents does not pollute the synthesis.
+        successful_answers = {
+            k: v for k, v in agent_answers.items()
+            if not v.startswith("[Error: ")
+        }
+        if not successful_answers:
+            state.done = True
+            state.final_answer = "All parallel agents failed to produce responses. Check logs for details."
+            state.steps = all_steps
+            await self._fire("on_answer", state.final_answer)
+            return await self._finalize(state, start_time, task=task)
+
+        judge_answer = await self._run_judge(task, successful_answers)
         all_steps.append(AgentStep(thought="Judge evaluation", observation=judge_answer[:1000]))
 
         state.done = True

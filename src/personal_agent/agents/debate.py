@@ -159,8 +159,20 @@ class DebateAgent(BaseAgent):
                 await self._fire("on_answer", state.final_answer)
                 return await self._finalize(state, start_time, task=task)
 
-            # Judge synthesizes
-            judge_answer = await self._run_judge(task, previous_responses)
+            # Judge synthesizes — pass only successful responses so error
+            # text from failed role agents does not pollute the synthesis.
+            successful_responses = {
+                k: v for k, v in previous_responses.items()
+                if not v.startswith("[Error: ")
+            }
+            if not successful_responses:
+                state.done = True
+                state.final_answer = "All role agents failed to produce responses. Check logs for details."
+                state.steps = all_steps
+                await self._fire("on_answer", state.final_answer)
+                return await self._finalize(state, start_time, task=task)
+
+            judge_answer = await self._run_judge(task, successful_responses)
             all_steps.append(AgentStep(thought="Judge synthesis", observation=judge_answer[:1000]))
         finally:
             # Clean up role agents
