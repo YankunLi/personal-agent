@@ -314,30 +314,52 @@ class ToolExecutor:
         # All retries exhausted — try fallback if available
         if last_error_is_transient and tool_call.name in self._fallbacks:
             fallback_name = self._fallbacks[tool_call.name]
-            logger.info(
-                "Falling back from '%s' to '%s'", tool_call.name, fallback_name
-            )
             try:
                 fallback_tool = self._registry.get(fallback_name)
-                output = await asyncio.wait_for(
-                    fallback_tool(**tool_call.arguments),
-                    timeout=self._timeout,
+            except ToolNotFoundError:
+                fallback_tool = None
+
+            if fallback_tool is None:
+                pass  # fallback itself is missing — fall through to error return
+            elif (
+                tool is not None
+                and tool.spec.mutating
+                and fallback_tool.spec.mutating
+            ):
+                # If the primary tool was mutating and may have partially
+                # applied the side effect (transient error / timeout), running
+                # a mutating fallback creates the same double-write hazard the
+                # retry logic above avoids. Skip it and surface the original
+                # error instead.
+                logger.warning(
+                    "Not running mutating fallback '%s' after mutating tool '%s' "
+                    "transient failure (double-write hazard)",
+                    fallback_name, tool_call.name,
                 )
-                return ToolResult(
-                    call_id=tool_call.id,
-                    name=tool_call.name,
-                    output=self._truncate_output(
-                        f"[Fallback from '{tool_call.name}' to '{fallback_name}']\n{output}"
-                    ),
+            else:
+                logger.info(
+                    "Falling back from '%s' to '%s'", tool_call.name, fallback_name
                 )
-            except asyncio.TimeoutError as e:
-                last_error = (
-                    f"{last_error}; fallback '{fallback_name}' timed out: {e}"
-                )
-            except Exception as e:
-                last_error = (
-                    f"{last_error}; fallback '{fallback_name}' also failed: {e}"
-                )
+                try:
+                    output = await asyncio.wait_for(
+                        fallback_tool(**tool_call.arguments),
+                        timeout=self._timeout,
+                    )
+                    return ToolResult(
+                        call_id=tool_call.id,
+                        name=tool_call.name,
+                        output=self._truncate_output(
+                            f"[Fallback from '{tool_call.name}' to '{fallback_name}']\n{output}"
+                        ),
+                    )
+                except asyncio.TimeoutError as e:
+                    last_error = (
+                        f"{last_error}; fallback '{fallback_name}' timed out: {e}"
+                    )
+                except Exception as e:
+                    last_error = (
+                        f"{last_error}; fallback '{fallback_name}' also failed: {e}"
+                    )
 
         return ToolResult(
             call_id=tool_call.id,
