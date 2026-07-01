@@ -254,6 +254,7 @@ class BaseAgent(ABC):
                         blocked_results[tc.id] = TR(
                             call_id=tc.id,
                             name=tc.name,
+                            error="Tool not available in plan mode",
                             output=(
                                 f"Error: Tool '{tc.name}' is not available in plan mode. "
                                 "Only read-only exploration tools are allowed during planning. "
@@ -266,6 +267,7 @@ class BaseAgent(ABC):
                     blocked_results[tc.id] = TR(
                         call_id=tc.id,
                         name=tc.name,
+                        error="Tool not available in plan mode",
                         output=(
                             f"Error: Tool '{tc.name}' is not available in plan mode. "
                             "Only read-only exploration tools are allowed during planning. "
