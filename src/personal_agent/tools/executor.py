@@ -355,72 +355,70 @@ class ToolExecutor:
         if not tool_calls:
             return []
 
-        # Separate calls into three groups
-        mutating: list[ToolCall] = []
-        non_mutating: list[ToolCall] = []
-        for tc in tool_calls:
+        # Separate calls into three groups, preserving original indices so
+        # results can be reordered without relying on call_id uniqueness
+        # (LLMs can emit duplicate ids, which would collapse dict keys and
+        # silently drop results).
+        mutating: list[tuple[int, ToolCall]] = []
+        non_mutating: list[tuple[int, ToolCall]] = []
+        for idx, tc in enumerate(tool_calls):
             try:
                 tool = self._registry.get(tc.name)
                 if tool.spec.mutating:
-                    mutating.append(tc)
+                    mutating.append((idx, tc))
                 else:
-                    non_mutating.append(tc)
+                    non_mutating.append((idx, tc))
             except ToolNotFoundError:
-                non_mutating.append(tc)
+                non_mutating.append((idx, tc))
 
         # Within non-mutating, split by concurrency safety
-        concurrent: list[ToolCall] = []
-        sequential: list[ToolCall] = []
-        for tc in non_mutating:
+        concurrent: list[tuple[int, ToolCall]] = []
+        sequential: list[tuple[int, ToolCall]] = []
+        for idx, tc in non_mutating:
             try:
                 tool = self._registry.get(tc.name)
                 if tool.spec.concurrency_safe:
-                    concurrent.append(tc)
+                    concurrent.append((idx, tc))
                 else:
-                    sequential.append(tc)
+                    sequential.append((idx, tc))
             except ToolNotFoundError:
-                sequential.append(tc)
+                sequential.append((idx, tc))
 
-        results: list[ToolResult] = []
+        # Pre-allocate result slots; default error so any unfilled slot
+        # (shouldn't happen in practice) is still a valid ToolResult.
+        ordered: list[ToolResult | None] = [None] * len(tool_calls)
 
         # Run concurrency-safe non-mutating tools in parallel
         if concurrent:
             parallel_results = await asyncio.gather(
-                *[self.execute(tc) for tc in concurrent],
+                *[self.execute(tc) for _, tc in concurrent],
                 return_exceptions=True,
             )
-            for i, result in enumerate(parallel_results):
+            for (idx, tc), result in zip(concurrent, parallel_results):
                 if isinstance(result, ToolResult):
-                    results.append(result)
+                    ordered[idx] = result
                 elif isinstance(result, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
                     # gather(return_exceptions=True) already waited for all tasks,
                     # so no orphaned tasks remain. Re-raise to propagate cancellation.
                     raise result
-                elif isinstance(result, BaseException):
-                    results.append(
-                        ToolResult(
-                            call_id=concurrent[i].id,
-                            name=concurrent[i].name,
-                            error=str(result),
-                        )
-                    )
                 else:
-                    results.append(
-                        ToolResult(
-                            call_id=concurrent[i].id,
-                            name=concurrent[i].name,
-                            error=str(result),
-                        )
+                    ordered[idx] = ToolResult(
+                        call_id=tc.id,
+                        name=tc.name,
+                        error=str(result),
                     )
 
         # Run non-concurrency-safe non-mutating tools sequentially
-        for tc in sequential:
-            results.append(await self.execute(tc))
+        for idx, tc in sequential:
+            ordered[idx] = await self.execute(tc)
 
         # Run mutating tools sequentially
-        for tc in mutating:
-            results.append(await self.execute(tc))
+        for idx, tc in mutating:
+            ordered[idx] = await self.execute(tc)
 
-        # Preserve original order
-        id_to_result = {r.call_id: r for r in results}
-        return [id_to_result[tc.id] for tc in tool_calls]
+        # Fill any gap (defensive) and return in original order
+        return [
+            r if r is not None
+            else ToolResult(call_id=tc.id, name=tc.name, error="Not executed")
+            for tc, r in zip(tool_calls, ordered)
+        ]
