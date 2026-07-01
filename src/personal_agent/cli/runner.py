@@ -43,7 +43,7 @@ async def run_one_shot(
     else:
         project_root = find_project_root(start=wd)
         if project_root:
-            project_data = load_project()
+            project_data = load_project(path=project_root)
 
     if project_data:
         sid = project_data.get("session_id")
@@ -157,7 +157,7 @@ async def interactive_loop(
     else:
         project_root = find_project_root(start=wd)
         if project_root:
-            project_data = load_project()
+            project_data = load_project(path=project_root)
 
     if not project_data:
         _prompt_init(workdir)

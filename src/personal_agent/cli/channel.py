@@ -176,7 +176,7 @@ class CLIChannel(Channel):
         else:
             project_root = find_project_root(start=wd)
             if project_root:
-                project_data = load_project()
+                project_data = load_project(path=project_root)
 
         if project_data:
             self._project_data = project_data
