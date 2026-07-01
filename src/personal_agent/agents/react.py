@@ -140,5 +140,6 @@ class ReActAgent(BaseAgent):
                 "Here is what I have so far:\n\n" + last_answer
             )
             state.done = True
+            await self._fire("on_answer", state.final_answer)
 
         return await self._finalize(state, start_time, task=task)
