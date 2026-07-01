@@ -632,56 +632,82 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     }
 
     # Create the appropriate agent
-    if pattern == "pipeline":
-        from personal_agent.agents.pipeline import PipelineAgent
+    try:
+        if pattern == "pipeline":
+            from personal_agent.agents.pipeline import PipelineAgent
 
-        agent = PipelineAgent(
-            stages=settings.pipeline.stages,
-            providers=settings.providers,
-            **agent_kwargs,
-        )
-    elif pattern == "debate":
-        from personal_agent.agents.debate import DebateAgent
+            agent = PipelineAgent(
+                stages=settings.pipeline.stages,
+                providers=settings.providers,
+                **agent_kwargs,
+            )
+        elif pattern == "debate":
+            from personal_agent.agents.debate import DebateAgent
 
-        agent = DebateAgent(
-            roles=settings.debate.roles,
-            judge_provider_name=settings.debate.judge_provider,
-            judge_model=settings.debate.judge_model,
-            judge_temperature=settings.debate.judge_temperature,
-            max_rounds=settings.debate.max_rounds,
-            providers=settings.providers,
-            **agent_kwargs,
-        )
-    elif pattern == "parallel_judge":
-        from personal_agent.agents.parallel_judge import ParallelJudgeAgent
+            agent = DebateAgent(
+                roles=settings.debate.roles,
+                judge_provider_name=settings.debate.judge_provider,
+                judge_model=settings.debate.judge_model,
+                judge_temperature=settings.debate.judge_temperature,
+                max_rounds=settings.debate.max_rounds,
+                providers=settings.providers,
+                **agent_kwargs,
+            )
+        elif pattern == "parallel_judge":
+            from personal_agent.agents.parallel_judge import ParallelJudgeAgent
 
-        agent = ParallelJudgeAgent(
-            agents=settings.parallel_judge.agents,
-            judge_provider_name=settings.parallel_judge.judge_provider,
-            judge_model=settings.parallel_judge.judge_model,
-            judge_temperature=settings.parallel_judge.judge_temperature,
-            providers=settings.providers,
-            **agent_kwargs,
-        )
-    elif pattern == "plan_execute":
-        from personal_agent.agents.plan_execute import PlanAndExecuteAgent
+            agent = ParallelJudgeAgent(
+                agents=settings.parallel_judge.agents,
+                judge_provider_name=settings.parallel_judge.judge_provider,
+                judge_model=settings.parallel_judge.judge_model,
+                judge_temperature=settings.parallel_judge.judge_temperature,
+                providers=settings.providers,
+                **agent_kwargs,
+            )
+        elif pattern == "plan_execute":
+            from personal_agent.agents.plan_execute import PlanAndExecuteAgent
 
-        agent = PlanAndExecuteAgent(
-            max_substeps=plan_cfg.max_substeps,
-            **agent_kwargs,
-        )
-    elif pattern == "reflection":
-        from personal_agent.agents.reflection import ReflectionAgent
+            agent = PlanAndExecuteAgent(
+                max_substeps=plan_cfg.max_substeps,
+                **agent_kwargs,
+            )
+        elif pattern == "reflection":
+            from personal_agent.agents.reflection import ReflectionAgent
 
-        agent = ReflectionAgent(
-            max_iterations=reflection_cfg.max_iterations,
-            min_score=reflection_cfg.min_score,
-            **agent_kwargs,
-        )
-    else:
-        from personal_agent.agents.react import ReActAgent
+            agent = ReflectionAgent(
+                max_iterations=reflection_cfg.max_iterations,
+                min_score=reflection_cfg.min_score,
+                **agent_kwargs,
+            )
+        else:
+            from personal_agent.agents.react import ReActAgent
 
-        agent = ReActAgent(**agent_kwargs)
+            agent = ReActAgent(**agent_kwargs)
+    except BaseException:
+        # Constructor failure would leak the provider, consolidation provider,
+        # cron scheduler, and any sub-agents already registered as tools.
+        logger.exception("Failed to construct agent (pattern=%s)", pattern)
+        for created in created_sub_agents:
+            try:
+                await created.close()
+            except BaseException as close_err:
+                logger.warning("Error closing sub-agent during cleanup: %s", close_err)
+        if consolidation_provider and hasattr(consolidation_provider, "close"):
+            try:
+                await consolidation_provider.close()
+            except BaseException:
+                pass
+        if hasattr(provider, "close"):
+            try:
+                await provider.close()
+            except BaseException:
+                pass
+        if cron_scheduler is not None and hasattr(cron_scheduler, "stop"):
+            try:
+                await cron_scheduler.stop()
+            except BaseException:
+                pass
+        raise
 
     # Wire memory cache invalidation so the memory index is re-read
     # after write_memory/forget_memory tools modify the store.
