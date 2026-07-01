@@ -119,7 +119,16 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
         except PermissionError:
             return f"Error: Permission denied: {path}"
         for entry in dir_entries:
-            suffix = "/" if entry.is_dir() else ""
+            # Don't follow symlinks when deciding the suffix: a symlink to an
+            # external directory would otherwise reveal its target's type, and
+            # showing "/" invites the agent to recurse into it. Mark symlinks
+            # with "@" (common ls -F convention) instead.
+            if entry.is_symlink():
+                suffix = "@"
+            elif entry.is_dir():
+                suffix = "/"
+            else:
+                suffix = ""
             items.append(f"  {entry.name}{suffix}")
             if len(items) > DEFAULT_MAX_LIST_ENTRIES:
                 items.pop()  # Remove the excess entry
