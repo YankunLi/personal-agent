@@ -758,6 +758,7 @@ class CLIChannel(Channel):
 
     async def _confirm_and_exit(self) -> None:
         console.print(Text("Goodbye!", style="warning"))
-        if self._agent:
-            await self._agent.close()
-            self._agent = None
+        # Don't close the agent here — the start() cleanup block handles
+        # session persistence and agent close. Closing here would set
+        # self._agent = None, causing the cleanup block to skip saving
+        # the session (data loss).
