@@ -577,25 +577,25 @@ class BaseAgent(ABC):
                 tool = self.tools.get(tool_name)
                 if hasattr(tool, "close"):
                     await tool.close()
-            except Exception as e:
+            except BaseException as e:
                 logger.warning("Error closing tool '%s': %s", tool_name, e)
 
         if self._mcp_source:
             try:
                 await self._mcp_source.disconnect_all()
-            except Exception as e:
+            except BaseException as e:
                 logger.warning("Error disconnecting MCP: %s", e)
 
         if self._cron_scheduler:
             try:
                 await self._cron_scheduler.stop()
-            except Exception as e:
+            except BaseException as e:
                 logger.warning("Error stopping cron scheduler: %s", e)
 
         if hasattr(self.provider, "close"):
             try:
                 await self.provider.close()
-            except Exception as e:
+            except BaseException as e:
                 logger.warning("Error closing provider: %s", e)
 
         if (
@@ -606,7 +606,7 @@ class BaseAgent(ABC):
             if hasattr(self.consolidation_provider, "close"):
                 try:
                     await self.consolidation_provider.close()
-                except Exception as e:
+                except BaseException as e:
                     logger.warning("Error closing consolidation provider: %s", e)
 
     async def __aenter__(self) -> BaseAgent:
