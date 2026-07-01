@@ -409,7 +409,10 @@ class CLIChannel(Channel):
                 async with self._current_session.memory_lock:
                     self._current_session.short_term = self._agent.short_term
                     self._current_session.working = self._agent.working
-                self._router.session_manager.save_session(self._current_session)
+                try:
+                    self._router.session_manager.save_session(self._current_session)
+                except Exception:
+                    logger.warning("Failed to save session", exc_info=True)
         console.print(Text("✓ Memory cleared.", style="success"))
 
     # ── Session helpers (called by slash-command handlers) ───────────────────
@@ -489,7 +492,10 @@ class CLIChannel(Channel):
                 async with self._current_session.memory_lock:
                     self._current_session.short_term = self._agent.short_term
                     self._current_session.working = self._agent.working
-                session_mgr.save_session(self._current_session)
+                try:
+                    session_mgr.save_session(self._current_session)
+                except Exception:
+                    logger.warning("Failed to save session", exc_info=True)
 
             target = session_mgr.switch(name)
             if target is None:
