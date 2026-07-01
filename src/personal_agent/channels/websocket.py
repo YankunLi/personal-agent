@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
 import time
@@ -66,7 +67,7 @@ class WebSocketChannel(Channel):
         self._connections: dict[int, ServerConnection] = {}
         self._conn_agents: dict[int, Any] = {}
         self._conn_sessions: dict[int, Any] = {}
-        self._conn_counter = 0
+        self._conn_counter = itertools.count()
         self._agent_lock = asyncio.Lock()
         self._conn_locks: dict[int, asyncio.Lock] = {}
         self._conn_locks_lock = asyncio.Lock()
@@ -105,8 +106,10 @@ class WebSocketChannel(Channel):
 
     async def _handle_connection(self, websocket: ServerConnection) -> None:
         """Handle a single WebSocket connection (one per browser tab)."""
-        self._conn_counter += 1
-        conn_id = self._conn_counter
+        # itertools.count.__next__ is atomic under the GIL, avoiding the
+        # read-modify-write race of `self._conn_counter += 1` where two
+        # connections landing in the same tick could share an id.
+        conn_id = next(self._conn_counter)
         self._connections[conn_id] = websocket
 
         remote = websocket.remote_address
