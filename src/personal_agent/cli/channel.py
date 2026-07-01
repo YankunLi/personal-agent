@@ -148,9 +148,15 @@ class CLIChannel(Channel):
             logger.exception("Error during CLI cleanup")
 
     async def stop(self) -> None:
-        """Stop the CLI channel."""
+        """Stop the CLI channel.
+
+        start() already closes the agent and sets self._agent = None on
+        normal exit, so guard against a second close() from AgentServer
+        teardown.
+        """
         if self._agent:
             await self._agent.close()
+            self._agent = None
 
     # ── Session setup ────────────────────────────────────────────────────────
 
