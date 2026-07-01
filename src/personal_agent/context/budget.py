@@ -281,10 +281,17 @@ class ContextBudgetManager:
                 break
             kept.insert(0, msg)
             running += t
-        # Never start the truncated tail on a tool result.
+        # Never start the truncated tail on a tool result — an orphaned
+        # tool message (without its parent assistant tool_calls) is rejected
+        # by most provider APIs.
         while kept and kept[0].role.value == "tool":
             kept.pop(0)
-        return kept if kept else [recent[-1]]
+        if not kept:
+            # All messages that fit were tool results. Returning the last
+            # one would orphan it. Return an empty tail instead — the
+            # caller still has system messages to send to the LLM.
+            return []
+        return kept
 
     def _summarize_older(self, messages: list[Message]) -> str:
         """Generate a simple summary of older messages, sampling from both ends."""
