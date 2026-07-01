@@ -243,7 +243,7 @@ class ToolExecutor:
                 async with self._cache_lock:
                     if not tool.spec.mutating:
                         self._set_cache(tool_call.name, tool_call.arguments, result)
-                    self._record_recent_call(tool_call.name, tool_call.arguments, result)
+                        self._record_recent_call(tool_call.name, tool_call.arguments, result)
                 return result
 
             except ToolNotFoundError:
