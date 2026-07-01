@@ -83,7 +83,18 @@ class MCPToolSource:
 
         self._contexts.append(ctx)
 
-        session = ClientSession(read, write)
+        try:
+            session = ClientSession(read, write)
+        except Exception:
+            # ClientSession constructor failure leaves ctx open — clean it up
+            # and remove from _contexts so disconnect_all doesn't see a stale
+            # entry.
+            await self._cleanup_context(ctx)
+            if ctx in self._contexts:
+                self._contexts.remove(ctx)
+            raise MCPConnectionError(
+                f"Failed to create MCP session for '{config.name}'"
+            )
         try:
             await asyncio.wait_for(
                 session.__aenter__(),
