@@ -141,6 +141,7 @@ class ReflectionAgent(BaseAgent):
 
         state.final_answer = current_response
         state.done = True
+        await self._fire("on_answer", current_response)
 
         return await self._finalize(state, start_time, task=task)
 
