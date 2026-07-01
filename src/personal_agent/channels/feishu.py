@@ -51,6 +51,9 @@ class FeishuAPIClient:
                 },
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
+            # A gateway 5xx/4xx returns an HTML error page, not JSON —
+            # resp.json() would raise JSONDecodeError with no HTTP context.
+            resp.raise_for_status()
             data = resp.json()
             if data.get("code") != 0:
                 raise RuntimeError(f"Feishu token error: {data.get('msg', 'unknown')}")
@@ -75,6 +78,7 @@ class FeishuAPIClient:
                 "Content-Type": "application/json; charset=utf-8",
             },
         )
+        resp.raise_for_status()
         return resp.json()
 
     async def send_text(self, chat_id: str, content: str) -> dict:
@@ -93,6 +97,7 @@ class FeishuAPIClient:
                 "Content-Type": "application/json; charset=utf-8",
             },
         )
+        resp.raise_for_status()
         return resp.json()
 
     async def close(self) -> None:
