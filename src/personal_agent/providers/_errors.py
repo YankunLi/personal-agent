@@ -14,7 +14,8 @@ from personal_agent.exceptions import (
 # Patterns that may carry credentials in raw provider/SDK error strings.
 _REDACT_PATTERNS = [
     # access_token / token query params (e.g. Baidu Qianfan puts it in the URL)
-    re.compile(r"(access_token|token|api_key|apikey|key)=([^&\s]+)", re.IGNORECASE),
+    # \b prevents matching "key" inside words like "monkey=banana" -> "mon***REDACTED***"
+    re.compile(r"\b(access_token|token|api_key|apikey|key)=([^&\s]+)", re.IGNORECASE),
     # Authorization headers
     re.compile(r"(authorization)\s*[:=]\s*(bearer\s+)?(\S+)", re.IGNORECASE),
     # Password in URLs: scheme://user:pass@host
