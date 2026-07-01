@@ -49,7 +49,7 @@ _BLOCKED_NETWORKS = [
 ]
 
 # Tags whose content should be silently dropped
-_SKIP_TAGS = {"script", "style", "noscript", "head", "title", "meta"}
+_SKIP_TAGS = {"script", "style", "noscript", "head", "title"}
 
 # Tags that insert a line break when opened or closed
 _BLOCK_TAGS = {"br", "p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "div", "section", "article", "header", "footer", "main", "nav", "aside"}
