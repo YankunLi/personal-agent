@@ -76,21 +76,37 @@ class Session:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Session":
-        """Restore from a serialized dict."""
+        """Restore from a serialized dict.
+
+        Defensive against corrupt session files: numeric fields are coerced
+        to float (a string/null here would otherwise crash the ``expired``
+        property), and a non-dict ``working`` field is ignored rather than
+        raising AttributeError on ``.items()``.
+        """
+        def _coerce_float(value, default: float) -> float:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
         session = cls(
             id=data.get("id", uuid.uuid4().hex[:12]),
             name=data.get("name", "unnamed"),
             channel=data.get("channel", ""),
             user_id=data.get("user_id", ""),
             conversation_id=data.get("conversation_id", ""),
-            ttl_seconds=data.get("ttl_seconds", 3600.0),
-            created_at=data.get("created_at", time.time()),
-            updated_at=data.get("updated_at", time.time()),
+            ttl_seconds=_coerce_float(data.get("ttl_seconds", 3600.0), 3600.0),
+            created_at=_coerce_float(data.get("created_at", time.time()), time.time()),
+            updated_at=_coerce_float(data.get("updated_at", time.time()), time.time()),
         )
         if "short_term" in data:
-            session.short_term = ShortTermMemory.from_dict(data["short_term"])
-        if "working" in data:
-            for k, v in data["working"].items():
+            try:
+                session.short_term = ShortTermMemory.from_dict(data["short_term"])
+            except Exception:
+                logger.warning("Failed to restore short_term memory; starting empty")
+        working_data = data.get("working")
+        if isinstance(working_data, dict):
+            for k, v in working_data.items():
                 session.working.set(k, v)
         return session
 
