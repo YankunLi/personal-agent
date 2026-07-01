@@ -66,8 +66,10 @@ class ParallelJudgeAgent(BaseAgent):
         await self._load_memories(state, task)
 
         if not self._agent_configs:
+            msg = "No parallel agents configured."
+            await self._fire("on_answer", msg)
             return AgentResult(
-                answer="No parallel agents configured.",
+                answer=msg,
                 steps=[],
                 elapsed_ms=(time.time() - start_time) * 1000,
             )
@@ -106,6 +108,7 @@ class ParallelJudgeAgent(BaseAgent):
             state.done = True
             state.final_answer = "All parallel agents failed to produce responses. Check logs for details."
             state.steps = all_steps
+            await self._fire("on_answer", state.final_answer)
             return await self._finalize(state, start_time, task=task)
 
         # Judge selects/synthesizes
@@ -115,6 +118,7 @@ class ParallelJudgeAgent(BaseAgent):
         state.done = True
         state.final_answer = judge_answer
         state.steps = all_steps
+        await self._fire("on_answer", judge_answer)
 
         return await self._finalize(state, start_time, task=task)
 
