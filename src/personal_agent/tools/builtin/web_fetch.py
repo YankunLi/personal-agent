@@ -281,6 +281,16 @@ def create_web_fetch_tool(
             ) from e
         except httpx.TimeoutException as e:
             raise ToolExecutionError("Web fetch timed out") from e
+        except httpx.TransportError:
+            # Re-raise transient transport errors (connection reset, read
+            # error, etc.) so the executor can classify and retry them —
+            # wrapping as ToolExecutionError would make them permanent.
+            raise
+        except ToolExecutionError:
+            # SSRF protection and validation errors should propagate with
+            # their original message, not be buried inside a generic
+            # "Web fetch error: ..." wrapper.
+            raise
         except Exception as e:
             raise ToolExecutionError(f"Web fetch error: {e}") from e
 
