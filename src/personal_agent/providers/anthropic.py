@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import AsyncIterator
@@ -162,6 +163,8 @@ class AnthropicProvider(Provider):
                 },
                 model=response.model,
             )
+        except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+            raise
         except Exception as e:
             raise_provider_error(e)
 
@@ -260,5 +263,7 @@ class AnthropicProvider(Provider):
                         usage=stream_usage,
                     )
 
+        except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+            raise
         except Exception as e:
             raise_provider_error(e)
