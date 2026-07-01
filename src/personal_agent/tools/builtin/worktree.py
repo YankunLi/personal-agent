@@ -201,7 +201,11 @@ def create_exit_worktree_tool(
             repo_root = stdout.decode().strip()
             expected_parent = (Path(repo_root) / ".claude" / "worktrees").resolve()
             wt_path.relative_to(expected_parent)
-        except (ValueError, FileNotFoundError):
+        except FileNotFoundError:
+            # git binary not installed — create_subprocess_exec raises
+            # FileNotFoundError, not a path traversal issue.
+            return "Error: git is not installed or not on PATH"
+        except ValueError:
             return (
                 f"Error: Path traversal detected. Worktree path '{wt_path}' "
                 f"is outside the expected worktrees directory."
