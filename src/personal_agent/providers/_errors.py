@@ -51,9 +51,12 @@ def raise_provider_error(error: Exception) -> None:
         raise
 
     error_str = str(error).lower()
-    if "401" in error_str or "unauthorized" in error_str or "invalid api key" in error_str or "authentication error" in error_str:
+    # Match HTTP status codes as standalone tokens (e.g., "401", "status 401",
+    # "401 unauthorized") but NOT as substrings of larger numbers/words like
+    # "4012" or "port 40193".
+    if re.search(r"\b401\b", error_str) or "unauthorized" in error_str or "invalid api key" in error_str or "authentication error" in error_str:
         raise ProviderAuthError(_sanitize(error)) from error
-    if "429" in error_str or "rate limit" in error_str:
+    if re.search(r"\b429\b", error_str) or "rate limit" in error_str:
         raise ProviderRateLimitError(_sanitize(error)) from error
     if "timeout" in error_str or "timed out" in error_str:
         raise ProviderTimeoutError(_sanitize(error)) from error
