@@ -117,7 +117,9 @@ class PipelineAgent(BaseAgent):
                 if stage_agent is not None:
                     try:
                         await stage_agent.close()
-                    except BaseException as close_err:
+                    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                        raise
+                    except Exception as close_err:
                         logger.warning("Error closing pipeline stage %d '%s': %s", i + 1, stage_cfg.name, close_err)
 
         state.done = True
