@@ -84,11 +84,21 @@ def create_glob_tool(
             return sorted(results, key=_mtime, reverse=True)
 
         matches = await asyncio.to_thread(_scan)
-        # Filter hidden files unless explicitly requested
+        # Filter hidden files unless explicitly requested. Compare only the
+        # parts RELATIVE to search_dir — m.parts includes the absolute prefix,
+        # so a workspace under a hidden dir (e.g. ~/.config/myagent) would
+        # have every result filtered out.
         if include_hidden:
             files = list(matches)
         else:
-            files = [m for m in matches if not any(p.startswith(".") for p in m.parts)]
+            files = []
+            for m in matches:
+                try:
+                    rel_parts = m.relative_to(search_dir).parts
+                except ValueError:
+                    rel_parts = m.parts
+                if not any(p.startswith(".") for p in rel_parts):
+                    files.append(m)
 
         if not files:
             return "(no matching files)"
