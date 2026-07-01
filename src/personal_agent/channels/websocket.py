@@ -299,6 +299,18 @@ class WebSocketChannel(Channel):
             session_mgr.save_session(old_session)
 
         session = session_mgr.create(name)
+        # Inherit routing identity from the previous session (or connection
+        # defaults) so the next _handle_task's resolve(msg) returns THIS
+        # session instead of creating a different one for the empty
+        # (channel, user_id, conversation_id) triple.
+        if old_session:
+            session.channel = old_session.channel or WS_CHANNEL
+            session.user_id = old_session.user_id or "web-user"
+            session.conversation_id = old_session.conversation_id or f"conn-{conn_id}"
+        else:
+            session.channel = WS_CHANNEL
+            session.user_id = "web-user"
+            session.conversation_id = f"conn-{conn_id}"
         self._conn_sessions[conn_id] = session
         # Reset agent for new session (under lock to prevent races with _get_or_create_agent)
         async with self._agent_lock:
