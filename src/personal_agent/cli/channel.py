@@ -86,7 +86,7 @@ class CLIChannel(Channel):
 
             try:
                 if self._in_multiline:
-                    self._handle_multiline(line)
+                    await self._handle_multiline(line)
                     continue
 
                 if line.startswith("/"):
@@ -277,16 +277,14 @@ class CLIChannel(Channel):
 
     # ── Multiline input ──────────────────────────────────────────────────────
 
-    def _handle_multiline(self, line: str) -> None:
+    async def _handle_multiline(self, line: str) -> None:
         """Process a line in multiline input mode."""
         if line.strip() == "":
             task = "\n".join(self._multiline_buffer)
             self._multiline_buffer = []
             self._in_multiline = False
             if task.strip():
-                t = asyncio.create_task(self._process_task(task))
-                self._background_tasks.add(t)
-                t.add_done_callback(self._background_tasks.discard)
+                await self._process_task(task)
         elif line.strip() == "%%":
             self._multiline_buffer = []
             self._in_multiline = False
