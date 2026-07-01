@@ -55,6 +55,7 @@ class PipelineAgent(BaseAgent):
 
         current_input = task
         all_steps: list[AgentStep] = []
+        failed_stages: list[str] = []
 
         for i, stage_cfg in enumerate(self._stage_configs):
             logger.info("Pipeline stage %d/%d: %s", i + 1, len(self._stage_configs), stage_cfg.name)
@@ -108,6 +109,7 @@ class PipelineAgent(BaseAgent):
                     thought=f"Stage {i+1}: {stage_cfg.name or stage_cfg.pattern}",
                     observation=f"Error: {e}",
                 ))
+                failed_stages.append(stage_cfg.name or f"stage {i + 1}")
                 current_input = f"[Pipeline stage '{stage_cfg.name}' failed: {e}]"
             finally:
                 if stage_agent is not None:
@@ -117,7 +119,15 @@ class PipelineAgent(BaseAgent):
                         logger.warning("Error closing pipeline stage %d '%s': %s", i + 1, stage_cfg.name, close_err)
 
         state.done = True
-        state.final_answer = current_input
+        # If any stage failed, annotate the final answer so the failure is not
+        # masked by a later stage succeeding on top of error-text input.
+        if failed_stages:
+            state.final_answer = (
+                f"[Pipeline completed with failed stage(s): {', '.join(failed_stages)}. "
+                f"The result below may be incomplete or unreliable.]\n\n{current_input}"
+            )
+        else:
+            state.final_answer = current_input
         state.steps = all_steps
 
         return await self._finalize(state, start_time, task=task)
