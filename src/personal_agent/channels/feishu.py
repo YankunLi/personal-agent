@@ -297,6 +297,12 @@ class FeishuChannel(Channel):
         sender_id = sender.get("sender_id", {})
         user_id = sender_id.get("open_id", "")
 
+        # Feishu fires im.message.receive_v1 for the bot's own replies too.
+        # Without this filter the bot would process its own messages and loop.
+        if sender.get("sender_type") != "user":
+            logger.debug("Ignoring non-user message (sender_type=%s)", sender.get("sender_type"))
+            return
+
         chat_id = message.get("chat_id", "")
         message_id = message.get("message_id", "")
         msg_type = message.get("msg_type", "text")
