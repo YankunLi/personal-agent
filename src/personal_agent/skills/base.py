@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import shutil
 import tempfile
@@ -732,6 +733,10 @@ class SkillManager:
         """Save a registered skill as a directory with SKILL.md.
 
         Returns the path to the skill directory. Raises SkillError if not found.
+
+        Writes via a temp file + os.replace so a crash mid-write cannot leave
+        a truncated SKILL.md that would shadow the previous version on next
+        load.
         """
         skill = self._skills.get(name)
         if skill is None:
@@ -741,7 +746,18 @@ class SkillManager:
         skill_dir = directory / name
         skill_dir.mkdir(parents=True, exist_ok=True)
         skill_md = skill_dir / "SKILL.md"
-        skill_md.write_text(skill.to_markdown())
+        content = skill.to_markdown()
+        fd, tmp_path = tempfile.mkstemp(dir=str(skill_dir), suffix=".md.tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+            os.replace(tmp_path, skill_md)
+        except Exception:
+            try:
+                Path(tmp_path).unlink()
+            except OSError:
+                pass
+            raise
         logger.info("Saved skill '%s' to %s", name, skill_dir)
         return skill_dir
 
