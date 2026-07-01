@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, BaseLoader, Template
+from jinja2 import Environment, BaseLoader, Template, meta
 
 
 class PromptTemplate:
@@ -23,13 +23,19 @@ class PromptTemplate:
 
     @staticmethod
     def _extract_variables(template: str) -> list[str]:
-        """Extract variable names from a Jinja2 template."""
-        import re
-        # Match {{ variable_name }}
-        pattern = r"\{\{\s*(\w+)\s*\}\}"
-        # Match {% for ... %}, {% if ... %}, etc.
-        # Simplified: just find all {{ var }} patterns
-        return list(set(re.findall(pattern, template)))
+        """Extract variable names from a Jinja2 template.
+
+        Uses Jinja2's AST-based meta.find_undeclared_variables so that
+        variables referenced inside control-flow blocks ({% for x in ys %},
+        {% if cond %}) are also detected — not just {{ var }} expressions.
+        """
+        try:
+            ast = Environment(loader=BaseLoader()).parse(template)
+            return sorted(meta.find_undeclared_variables(ast))
+        except Exception:
+            # Fall back to a simple {{ var }} regex if parsing fails
+            import re
+            return list(set(re.findall(r"\{\{\s*(\w+)\s*\}\}", template)))
 
     @classmethod
     def from_file(cls, path: str | Path) -> "PromptTemplate":
