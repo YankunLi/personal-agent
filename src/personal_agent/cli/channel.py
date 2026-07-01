@@ -501,7 +501,7 @@ class CLIChannel(Channel):
         """Switch to a different session. Serializes with _process_task."""
         async with self._task_lock:
             session_mgr = self._router.session_manager
-            if self._current_session:
+            if self._current_session and self._agent:
                 async with self._current_session.memory_lock:
                     self._current_session.short_term = self._agent.short_term
                     self._current_session.working = self._agent.working
