@@ -35,12 +35,13 @@ def create_web_search_tool(
     async def _execute(query: str) -> str:
         nonlocal _last_request_time
 
-        # Rate limiting
+        # Rate limiting — use monotonic time so NTP clock adjustments
+        # don't produce negative elapsed values that disable the limiter.
         async with _rate_limit_lock:
-            elapsed = time.time() - _last_request_time
+            elapsed = time.monotonic() - _last_request_time
             if elapsed < rate_limit:
                 await asyncio.sleep(rate_limit - elapsed)
-            _last_request_time = time.time()
+            _last_request_time = time.monotonic()
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
