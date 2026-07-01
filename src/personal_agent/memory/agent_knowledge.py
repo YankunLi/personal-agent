@@ -210,6 +210,10 @@ class AgentKnowledge:
             parts.append(f"\n## {name}")
             lines = sections.get(name, [])
             if lines:
+                # Preserve the section description as context even after
+                # content is added, so the purpose of each section remains
+                # visible in the rendered AGENT.md.
+                parts.append(f"*{desc}*")
                 parts.extend(lines)
             else:
                 parts.append(f"*{desc}*")
