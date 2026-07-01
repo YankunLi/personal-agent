@@ -109,6 +109,8 @@ def create_self_upgrade_tool(
             if _working_memory:
                 _working_memory.set(key, instruction)
                 results.append(f"Stored in working memory (key: '{key}')")
+            else:
+                results.append("Working memory not available")
 
         if memory_type in ("long_term", "both"):
             if _long_term_memory:
