@@ -27,6 +27,11 @@ def keyword_search(
 
     Uses substring matching (+10) and word overlap scoring.
     """
+    # An empty/whitespace query would match every entry ("" in content is
+    # always True), leaking the entire store as "search results". Return
+    # nothing instead — callers should guard upstream, but don't trust them.
+    if not query or not query.strip():
+        return []
     query_lower = query.lower()
     query_words = set(query_lower.split())
     scored = []
