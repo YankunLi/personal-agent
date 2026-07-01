@@ -82,8 +82,10 @@ class DebateAgent(BaseAgent):
         await self._load_memories(state, task)
 
         if not self._roles:
+            msg = "No debate roles configured."
+            await self._fire("on_answer", msg)
             return AgentResult(
-                answer="No debate roles configured.",
+                answer=msg,
                 steps=[],
                 elapsed_ms=(time.time() - start_time) * 1000,
             )
@@ -154,6 +156,7 @@ class DebateAgent(BaseAgent):
                 state.done = True
                 state.final_answer = "All role agents failed to produce responses. Check logs for details."
                 state.steps = all_steps
+                await self._fire("on_answer", state.final_answer)
                 return await self._finalize(state, start_time, task=task)
 
             # Judge synthesizes
@@ -171,6 +174,7 @@ class DebateAgent(BaseAgent):
         state.done = True
         state.final_answer = judge_answer
         state.steps = all_steps
+        await self._fire("on_answer", judge_answer)
 
         return await self._finalize(state, start_time, task=task)
 
