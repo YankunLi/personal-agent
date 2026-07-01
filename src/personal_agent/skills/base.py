@@ -249,12 +249,16 @@ class Skill:
         if not text.startswith("---"):
             raise SkillError("SKILL.md must start with YAML frontmatter (---)")
 
-        parts = text.split("---", 2)
-        if len(parts) < 3:
+        # Match frontmatter delimited by `---` on its own line. Using
+        # text.split("---", 2) would split inside a frontmatter value that
+        # contains the literal `---` (e.g. `description: Use --- for em-dashes`),
+        # truncating the frontmatter and corrupting the body.
+        fm_match = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", text, re.DOTALL)
+        if not fm_match:
             raise SkillError("SKILL.md has malformed frontmatter: missing closing ---")
 
-        frontmatter_text = parts[1].strip()
-        body = parts[2].strip()
+        frontmatter_text = fm_match.group(1).strip()
+        body = fm_match.group(2).strip()
 
         try:
             import yaml
