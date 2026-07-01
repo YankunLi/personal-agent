@@ -219,7 +219,16 @@ class ToolExecutor:
                 if not tool.spec.mutating:
                     cached = self._get_cached(tool_call.name, tool_call.arguments)
                     if cached is not None:
-                        return cached
+                        # Return a copy with the CURRENT call_id — the cached
+                        # result carries the original caller's id, which would
+                        # violate the LLM tool_call_id contract and confuse
+                        # the model about which call produced which result.
+                        return ToolResult(
+                            call_id=tool_call.id,
+                            name=cached.name,
+                            output=cached.output,
+                            error=cached.error,
+                        )
             except ToolNotFoundError:
                 pass  # Will be handled in the execution attempt below
 
