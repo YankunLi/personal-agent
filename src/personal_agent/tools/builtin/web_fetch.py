@@ -185,9 +185,10 @@ def create_web_fetch_tool(
     """
 
     async def _execute(url: str) -> str:
-        # Upgrade HTTP to HTTPS
-        if url.startswith("http://"):
-            url = "https://" + url[7:]
+        # Upgrade HTTP to HTTPS (case-insensitive — the redirect handler
+        # already lowercases the scheme check, but the initial URL did not).
+        if url.lower().startswith("http://"):
+            url = "https://" + url[len("http://"):]
 
         pinned_ip = await _validate_url(url)
 
