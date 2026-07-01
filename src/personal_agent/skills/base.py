@@ -658,7 +658,7 @@ class SkillManager:
 
         Returns the number of skills loaded. Non-fatal on errors (logged).
         """
-        if not directory.exists():
+        if not directory.is_dir():
             return 0
 
         loaded = 0
