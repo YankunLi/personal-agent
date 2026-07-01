@@ -251,11 +251,16 @@ class ToolExecutor:
                     name=tool_call.name,
                     output=self._truncate_output(output),
                 )
-                # Cache non-mutating results and record for duplicate detection under lock
+                # Cache non-mutating results and record for duplicate detection under lock.
+                # _record_recent_call is called for ALL tools (including mutating)
+                # because inputs_equivalent duplicate detection is independent of
+                # caching: a tool author may set inputs_equivalent on a mutating
+                # tool to prevent redundant double-writes, and that check must
+                # see recorded calls regardless of mutating flag.
                 async with self._cache_lock:
                     if not tool.spec.mutating:
                         self._set_cache(tool_call.name, tool_call.arguments, result)
-                        self._record_recent_call(tool_call.name, tool_call.arguments, result)
+                    self._record_recent_call(tool_call.name, tool_call.arguments, result)
                 return result
 
             except ToolNotFoundError:
