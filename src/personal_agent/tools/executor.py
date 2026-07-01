@@ -268,6 +268,13 @@ class ToolExecutor:
                     "Tool timeout (attempt %d/%d): %s",
                     attempt + 1, max_retries + 1, last_error,
                 )
+                # Mutating tools may have completed the side effect server-side
+                # before the timeout — retrying risks duplicate writes/edits.
+                if tool.spec.mutating:
+                    logger.warning(
+                        "Not retrying mutating tool '%s' after timeout", tool_call.name,
+                    )
+                    break
 
             except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
                 raise
@@ -279,6 +286,14 @@ class ToolExecutor:
                         "Tool transient error (attempt %d/%d): %s",
                         attempt + 1, max_retries + 1, last_error,
                     )
+                    # Same hazard as timeout: the operation may have partially
+                    # or fully applied before the error surfaced.
+                    if tool.spec.mutating:
+                        logger.warning(
+                            "Not retrying mutating tool '%s' after transient error",
+                            tool_call.name,
+                        )
+                        break
                 else:
                     # Permanent error — don't retry
                     logger.error("Tool permanent error: %s", last_error)
