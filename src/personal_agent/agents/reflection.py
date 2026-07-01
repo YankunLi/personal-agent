@@ -196,6 +196,12 @@ class ReflectionAgent(BaseAgent):
 
         try:
             content = result.content
+            if not content:
+                logger.warning("Critique returned empty content. Usage: %s", result.usage)
+                return {
+                    "overall": 0.0,
+                    "summary": "Critique returned empty content",
+                }
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0]
             elif "```" in content:
@@ -208,8 +214,8 @@ class ReflectionAgent(BaseAgent):
                     "summary": f"Failed to parse critique: unexpected type {type(parsed).__name__}",
                 }
             return parsed
-        except (json.JSONDecodeError, KeyError, IndexError) as e:
-            logger.warning("Failed to parse critique JSON: %s. Response: %s", e, result.content[:200])
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
+            logger.warning("Failed to parse critique JSON: %s. Response: %s", e, (result.content or "")[:200])
             return {
                 "scores": {"accuracy": 7, "completeness": 7, "clarity": 7, "logic": 7},
                 "overall": 7.0,
