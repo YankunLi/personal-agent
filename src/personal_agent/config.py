@@ -307,10 +307,10 @@ def _parse_config_file(path: Path) -> Settings:
         try:
             import yaml  # type: ignore
         except ImportError:
-            raise ImportError(
+            raise ConfigError(
                 "PyYAML is required to parse YAML config files. "
                 "Install it with: pip install pyyaml"
-            )
+            ) from None
 
         with open(path) as f:
             try:
