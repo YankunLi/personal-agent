@@ -92,7 +92,12 @@ class CompressionStrategy(ContextStrategy):
         recent = non_system[split:]
         older = non_system[:split]
 
-        summary = await self.compressor.summarize(older)
+        try:
+            summary = await self.compressor.summarize(older)
+        except Exception:
+            # Compressor failure (e.g. LLM error) must not crash the agent —
+            # fall back to passing the original messages through unchanged.
+            return list(messages)
         summary_msg = Message(
             role=Role.SYSTEM,
             content=f"[Compressed conversation history]\n{summary}",
