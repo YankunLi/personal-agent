@@ -218,9 +218,19 @@ class MemoryConsolidator:
         if isinstance(parsed, list):
             return {"memories": parsed, "agent_learnings": []}
         if isinstance(parsed, dict):
+            memories = parsed.get("memories", [])
+            if isinstance(memories, dict):
+                memories = [memories]
+            elif not isinstance(memories, list):
+                memories = []
+            learnings = parsed.get("agent_learnings", [])
+            if isinstance(learnings, dict):
+                learnings = [learnings]
+            elif not isinstance(learnings, list):
+                learnings = []
             return {
-                "memories": parsed.get("memories", []),
-                "agent_learnings": parsed.get("agent_learnings", []),
+                "memories": memories,
+                "agent_learnings": learnings,
             }
         return None
 
