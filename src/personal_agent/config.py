@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from personal_agent.exceptions import ConfigError
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ── Providers ──────────────────────────────────────────────────────────────────
@@ -118,6 +118,26 @@ class BudgetConfig(BaseModel):
     conversation_pct: float = 0.45
     tool_definitions_pct: float = 0.05
     response_reserve_pct: float = 0.25
+
+    @model_validator(mode="after")
+    def _check_pct_sum(self) -> "BudgetConfig":
+        total = (
+            self.system_prompt_pct
+            + self.loaded_memories_pct
+            + self.conversation_pct
+            + self.tool_definitions_pct
+            + self.response_reserve_pct
+        )
+        if abs(total - 1.0) > 0.01:
+            raise ValueError(
+                f"Budget percentages must sum to 1.0, got {total:.4f}. "
+                f"(system_prompt={self.system_prompt_pct}, "
+                f"loaded_memories={self.loaded_memories_pct}, "
+                f"conversation={self.conversation_pct}, "
+                f"tool_definitions={self.tool_definitions_pct}, "
+                f"response_reserve={self.response_reserve_pct})"
+            )
+        return self
 
 
 # ── MCP ────────────────────────────────────────────────────────────────────────
