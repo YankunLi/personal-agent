@@ -267,7 +267,10 @@ class SessionManager:
                 # Delete from disk
                 session_file = self._storage_dir / f"{sid}.json"
                 if session_file.exists():
-                    session_file.unlink()
+                    try:
+                        session_file.unlink()
+                    except OSError as e:
+                        logger.warning("Could not delete session file '%s': %s", session_file, e)
 
         return expired_ids
 
