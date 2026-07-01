@@ -111,8 +111,10 @@ def _next_cron_match(cron: str, after: datetime | None = None) -> datetime | Non
     if after is None:
         after = datetime.now()
     dt = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
-    # Search up to 2 years ahead
-    end = dt + timedelta(days=730)
+    # Search up to 4 years ahead to accommodate leap-year-dependent
+    # expressions like `0 0 29 2 *` (Feb 29), which can be up to ~4 years
+    # from the current date.
+    end = dt + timedelta(days=1461)
     while dt <= end:
         if _cron_matches(cron, dt):
             return dt
