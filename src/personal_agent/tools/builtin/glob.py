@@ -58,7 +58,30 @@ def create_glob_tool(
             return f"Error: Not a directory: {path or search_dir}"
 
         def _scan() -> list[Path]:
-            return sorted(search_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+            raw = search_dir.glob(pattern)
+            results: list[Path] = []
+            ws_resolved = Path(workspace_dir).expanduser().resolve() if workspace_dir else None
+            for p in raw:
+                # Path.glob with ** follows symlinks, which can reach files
+                # outside the workspace via a symlinked directory inside it.
+                # Filter any match whose resolved path escapes the workspace.
+                if ws_resolved is not None:
+                    try:
+                        resolved = p.resolve()
+                    except OSError:
+                        continue
+                    try:
+                        resolved.relative_to(ws_resolved)
+                    except ValueError:
+                        continue
+                results.append(p)
+            # Sort by mtime; use a safe stat to avoid following broken symlinks.
+            def _mtime(p: Path) -> float:
+                try:
+                    return p.lstat().st_mtime
+                except OSError:
+                    return 0.0
+            return sorted(results, key=_mtime, reverse=True)
 
         matches = await asyncio.to_thread(_scan)
         # Filter hidden files unless explicitly requested
