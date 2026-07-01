@@ -101,6 +101,7 @@ class PlanAndExecuteAgent(BaseAgent):
         if not plan:
             state.final_answer = "Failed to generate a plan."
             state.done = True
+            await self._fire("on_answer", state.final_answer)
             return await self._finalize(state, start_time, task=task)
 
         logger.info("Plan generated with %d steps", len(plan))
@@ -196,6 +197,7 @@ class PlanAndExecuteAgent(BaseAgent):
             final_answer = "Plan execution reached the step limit. Partial results: " + json.dumps(step_results)
         state.final_answer = final_answer
         state.done = True
+        await self._fire("on_answer", final_answer)
 
         return await self._finalize(state, start_time, task=task)
 
