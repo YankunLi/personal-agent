@@ -199,6 +199,9 @@ async def _cmd_restart(channel: CLIChannel, arg: str) -> bool:
 
 
 async def _cmd_tools(channel: CLIChannel, arg: str) -> bool:
+    if channel._agent is None:
+        console.print(Text("Agent not initialized yet.", style="warning"))
+        return True
     names = channel._agent.tools.list_names()
     if not names:
         console.print(Text("No tools available.", style="dim"))
@@ -270,6 +273,9 @@ async def _cmd_skill(channel: CLIChannel, arg: str) -> bool:
 
 
 async def _cmd_memory(channel: CLIChannel, arg: str) -> bool:
+    if channel._agent is None:
+        console.print(Text("Agent not initialized yet.", style="warning"))
+        return True
     console.print(Panel("Memory status", style="label", expand=False))
     console.print(
         Text.assemble(
