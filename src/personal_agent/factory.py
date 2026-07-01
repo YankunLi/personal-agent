@@ -226,7 +226,8 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     file_ops_tools, _file_ops_sm_cell = create_file_ops_tools(workspace_dir=ws or None)
     file_ops_map = {t.spec.name: t for t in file_ops_tools}
 
-    if enabled_tools:
+    if enabled_tools is not None:
+        # Explicit tool list (including empty list = no builtin tools)
         for tool_name in enabled_tools:
             if tool_name == "web_search":
                 tool_registry.register(
