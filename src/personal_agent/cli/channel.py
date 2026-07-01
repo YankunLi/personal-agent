@@ -145,7 +145,7 @@ class CLIChannel(Channel):
                     self._router.session_manager.save_session(self._current_session)
                 await self._agent.close()
                 self._agent = None
-        except BaseException:
+        except Exception:
             logger.exception("Error during CLI cleanup")
 
     async def stop(self) -> None:
@@ -244,7 +244,7 @@ class CLIChannel(Channel):
                     self._current_session.working = self._agent.working
             try:
                 await self._agent.close()
-            except BaseException:
+            except Exception:
                 logger.warning("Error closing old agent during pattern switch", exc_info=True)
 
         self._agent = new_agent
