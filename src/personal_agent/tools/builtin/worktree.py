@@ -193,7 +193,9 @@ def create_exit_worktree_tool(
                 try:
                     proc.kill()
                     await asyncio.shield(proc.wait())
-                except BaseException:
+                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception:
                     pass
                 return "Error: Timeout while determining git repository root"
             if proc.returncode != 0:
@@ -229,7 +231,9 @@ def create_exit_worktree_tool(
                 try:
                     proc.kill()
                     await asyncio.shield(proc.wait())
-                except BaseException:
+                except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                    raise
+                except Exception:
                     pass
                 return "Error: Timeout removing worktree"
             if proc.returncode != 0:
