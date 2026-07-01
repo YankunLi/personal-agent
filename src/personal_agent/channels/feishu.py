@@ -410,7 +410,12 @@ class FeishuChannel(Channel):
             agent = self._conn_agents.pop(uid, None)
             self._conn_agent_times.pop(uid, None)
             self._conn_sessions.pop(uid, None)
-            self._user_locks.pop(uid, None)
+            # Do NOT pop _user_locks[uid]: a task may already be waiting on
+            # the old lock object (between releasing user_lock and incrementing
+            # _active_runs inside _get_or_create_agent). Removing it lets the
+            # next task create a different lock and run concurrently with the
+            # in-flight one, corrupting agent/session state. Lock objects are
+            # small; keep them to preserve per-user serialization.
             self._active_runs.pop(uid, None)
             if agent:
                 try:
