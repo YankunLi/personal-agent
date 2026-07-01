@@ -75,9 +75,18 @@ class AgentServer:
         # whole server and orphan the still-running channel tasks — the failed
         # channel is logged and the remaining ones keep serving.
         results = await asyncio.gather(*tasks, return_exceptions=True)
+        any_failed = False
         for channel, result in zip(self._channels, results):
             if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                any_failed = True
                 logger.error("Channel '%s' failed: %s", channel.name, result)
+
+        # When all channels have exited (normally or via failure), run cleanup
+        # so the cleanup task is cancelled and sessions are persisted. Without
+        # this, a full channel failure would leave the cleanup task orphaned
+        # and never save sessions. stop() is idempotent with the _running guard.
+        if self._running:
+            await self.stop()
 
     async def stop(self) -> None:
         """Stop all channels, cleanup task, and persist sessions."""
