@@ -136,10 +136,14 @@ class HybridStrategy(ContextStrategy):
         )
 
     async def apply(self, messages: list[Message]) -> list[Message]:
-        # First apply sliding window (hard cap)
-        messages = await self._sliding.apply(messages)
-        # Then apply compression (soft cap)
+        # Compress FIRST so old messages are summarized (preserved as a
+        # summary) before the sliding window can drop them. The previous
+        # order (sliding window then compression) truncated the oldest
+        # messages outright, then summarized only the truncated tail —
+        # losing the oldest context entirely instead of folding it into
+        # the summary.
         messages = await self._compression.apply(messages)
+        messages = await self._sliding.apply(messages)
         return messages
 
 
