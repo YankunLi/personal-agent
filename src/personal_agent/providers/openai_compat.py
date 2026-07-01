@@ -147,8 +147,6 @@ class OpenAICompatibleProvider(Provider):
             )
         except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
             raise
-        except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
-            raise
         except Exception as e:
             raise_provider_error(e)
 
