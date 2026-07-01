@@ -192,6 +192,7 @@ class DebateRoleConfig(BaseModel):
     model: str = "gpt-4o"
     temperature: float = 0.7
     max_tokens: int = 8192
+    tools: list[str] = Field(default_factory=list)
 
 
 class DebateConfig(BaseModel):

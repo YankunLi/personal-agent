@@ -105,6 +105,7 @@ class DebateAgent(BaseAgent):
                     max_tokens=role.max_tokens,
                     system_prompt=role.system_prompt,
                     description=role.name,
+                    tools=role.tools,
                 )
                 self._role_agents[role.name] = await create_sub_agent(
                     sub_cfg, providers=self._providers, extra_tools=extra_tools,
