@@ -71,7 +71,7 @@ def classify(task: str) -> AgentPattern:
         plan_score += 1
 
     # Bullet points or numbered lists → planning
-    if re.search(r"^\s*[\d\-\*•]\s", task, re.MULTILINE):
+    if re.search(r"^\s*[\d\-\*\+•]\s", task, re.MULTILINE):
         plan_score += 2
 
     # Code blocks → structured task
