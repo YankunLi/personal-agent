@@ -63,6 +63,7 @@ class CLIChannel(Channel):
         self._background_tasks: set[asyncio.Task] = set()
         self._current_session: Any = None
         self._commands = build_default_registry()
+        self._current_pattern: str = ""
 
     # ── Channel interface ────────────────────────────────────────────────────
 
@@ -208,6 +209,42 @@ class CLIChannel(Channel):
             console.print(Text("Check your provider configuration and API key.", style="dim"))
             raise
 
+        # Track the actual pattern used so "auto" mode can detect when a
+        # task's classified pattern differs and recreate the agent.
+        self._current_pattern = self._overrides.get("pattern", self._settings.agent.pattern)
+        if self._current_pattern == "auto":
+            self._current_pattern = "react"  # auto without task defaults to react
+
+        if self._current_session:
+            async with self._current_session.memory_lock:
+                self._agent.short_term = self._current_session.short_term
+                self._agent.working = self._current_session.working
+
+    async def _recreate_agent_with_pattern(self, pattern: str) -> None:
+        """Recreate the agent with a specific pattern (for auto-mode).
+
+        Closes the old agent, creates a new one with the given pattern
+        override, and restores session memory.
+        """
+        if self._agent is not None:
+            # Persist current memory before closing
+            if self._current_session:
+                async with self._current_session.memory_lock:
+                    self._current_session.short_term = self._agent.short_term
+                    self._current_session.working = self._agent.working
+            try:
+                await self._agent.close()
+            except BaseException:
+                logger.warning("Error closing old agent during pattern switch", exc_info=True)
+            self._agent = None
+
+        overrides = dict(self._overrides)
+        overrides["pattern"] = pattern
+        from personal_agent.factory import create_agent
+
+        self._agent = await create_agent(self._settings, **overrides)
+        self._current_pattern = pattern
+
         if self._current_session:
             async with self._current_session.memory_lock:
                 self._agent.short_term = self._current_session.short_term
@@ -232,6 +269,11 @@ class CLIChannel(Channel):
                         (explain(task), "dim"),
                     )
                 )
+                # Recreate the agent with the classified pattern so the
+                # task actually runs with the selected pattern, not always
+                # ReAct (the default when no task is available at creation).
+                if suggested != self._current_pattern:
+                    await self._recreate_agent_with_pattern(suggested)
 
             display = RichDisplay()
             self._agent._callbacks = make_callbacks(display)
