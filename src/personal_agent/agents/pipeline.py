@@ -47,8 +47,10 @@ class PipelineAgent(BaseAgent):
         await self._load_memories(state, task)
 
         if not self._stage_configs:
+            msg = "No pipeline stages configured."
+            await self._fire("on_answer", msg)
             return AgentResult(
-                answer="No pipeline stages configured.",
+                answer=msg,
                 steps=[],
                 elapsed_ms=(time.time() - start_time) * 1000,
             )
@@ -129,5 +131,6 @@ class PipelineAgent(BaseAgent):
         else:
             state.final_answer = current_input
         state.steps = all_steps
+        await self._fire("on_answer", state.final_answer)
 
         return await self._finalize(state, start_time, task=task)
