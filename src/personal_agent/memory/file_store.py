@@ -43,11 +43,16 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
 
 
 def _format_frontmatter(metadata: dict[str, str]) -> str:
-    """Format metadata dict as YAML-like frontmatter."""
+    """Format metadata dict as YAML-like frontmatter.
+
+    Values are single-line: embedded newlines are replaced with spaces
+    so they don't break ``_parse_frontmatter``'s line-by-line parser.
+    """
     lines = ["---"]
     for key in ("name", "description", "type"):
         if key in metadata:
-            lines.append(f"{key}: {metadata[key]}")
+            val = str(metadata[key]).replace("\n", " ").replace("\r", "")
+            lines.append(f"{key}: {val}")
     lines.append("---")
     return "\n".join(lines)
 
