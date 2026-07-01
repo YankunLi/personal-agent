@@ -869,12 +869,19 @@ class SkillManager:
                 else:
                     discover_root = tmp_path
                 before = set(self._skills.keys())
+                loaded_paths_before = set(self._loaded_paths)
                 self.discover_from(discover_root)
                 new_names = set(self._skills.keys()) - before
 
                 if not new_names:
                     logger.warning("No new skills found in %s", url)
                     return []
+
+                # Real paths added by this discovery pass, so we can roll
+                # back _loaded_paths if installation fails. _loaded_paths
+                # stores resolved-path strings (not skill names), so the
+                # prior cleanup that discarded by name was a no-op.
+                new_loaded_paths = self._loaded_paths - loaded_paths_before
 
                 # Copy each newly discovered skill to the target directory
                 installed_names: set[str] = set()
@@ -904,7 +911,7 @@ class SkillManager:
                     # deleted by the TemporaryDirectory context manager).
                     for name in new_names - installed_names:
                         self._skills.pop(name, None)
-                        self._loaded_paths.discard(name)
+                    self._loaded_paths -= new_loaded_paths
                     raise
 
         return installed
