@@ -121,6 +121,14 @@ class OpenAICompatibleProvider(Provider):
                             tc.function.name, tc.function.arguments[:200],
                         )
                         args = {}
+                    # json.loads("null") returns None — downstream code calls
+                    # args.get(...) which would crash with AttributeError.
+                    if not isinstance(args, dict):
+                        logger.warning(
+                            "Tool call '%s' arguments are not a JSON object: %r",
+                            tc.function.name, args,
+                        )
+                        args = {}
                     tool_calls.append(
                         ToolCall(id=tc.id, name=tc.function.name, arguments=args)
                     )
@@ -155,6 +163,7 @@ class OpenAICompatibleProvider(Provider):
                 "temperature": temperature,
                 "max_tokens": max_tokens,
                 "stream": True,
+                "stream_options": {"include_usage": True},
             }
             if tools:
                 kwargs["tools"] = _to_tool_schemas(tools)
@@ -171,11 +180,20 @@ class OpenAICompatibleProvider(Provider):
                 last_finish_reason = "stop"
 
                 async for chunk in stream:
+                    # Capture usage/model from any chunk (the usage-only final
+                    # chunk has choices=[] and would be skipped by the guard
+                    # below, losing token accounting).
+                    if chunk.model:
+                        stream_model = chunk.model
+                    if chunk.usage:
+                        usage = {
+                            "prompt_tokens": chunk.usage.prompt_tokens or 0,
+                            "completion_tokens": chunk.usage.completion_tokens or 0,
+                            "total_tokens": chunk.usage.total_tokens or 0,
+                        }
                     if not chunk.choices:
                         continue
                     delta = chunk.choices[0].delta
-                    if chunk.model:
-                        stream_model = chunk.model
 
                     # Capture actual finish_reason from the API (e.g. "length", "content_filter")
                     if chunk.choices[0].finish_reason:
@@ -208,14 +226,6 @@ class OpenAICompatibleProvider(Provider):
                                 if tc_delta.function.arguments:
                                     entry["arguments_json"] += tc_delta.function.arguments
 
-                    # Check for usage in the final chunk
-                    if chunk.usage:
-                        usage = {
-                            "prompt_tokens": chunk.usage.prompt_tokens or 0,
-                            "completion_tokens": chunk.usage.completion_tokens or 0,
-                            "total_tokens": chunk.usage.total_tokens or 0,
-                        }
-
                 # Yield final response with accumulated tool calls and usage
                 tool_calls = []
                 if tool_call_deltas:
@@ -226,6 +236,8 @@ class OpenAICompatibleProvider(Provider):
                         try:
                             args = json.loads(entry["arguments_json"])
                         except json.JSONDecodeError:
+                            args = {}
+                        if not isinstance(args, dict):
                             args = {}
                         tool_calls.append(
                             ToolCall(id=entry["id"], name=entry["name"], arguments=args)
