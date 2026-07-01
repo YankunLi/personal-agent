@@ -529,7 +529,7 @@ class BaseAgent(ABC):
                                 "Skipping consolidation: %d tasks already in progress",
                                 len(self._consolidation_tasks),
                             )
-            except (OSError, json.JSONDecodeError, ValueError) as e:
+            except Exception as e:
                 logger.warning("Memory consolidation failed: %s", e)
 
         return AgentResult(
