@@ -49,18 +49,28 @@ async def _run_command(cmd: list[str], timeout: float = 30) -> tuple[str, str, i
     )
 
     async def _read_capped(stream: asyncio.StreamReader) -> bytes:
-        """Read up to MAX_OUTPUT_BYTES; kill the process group if exceeded."""
+        """Read up to MAX_OUTPUT_BYTES; kill the process group if exceeded.
+
+        After hitting the cap, continue draining to EOF (discarding data) so
+        the underlying pipe transport closes cleanly instead of leaking its
+        file descriptor until GC. The subprocess has already been SIGKILL'd,
+        so the drain is bounded by the kernel pipe buffer.
+        """
         chunks: list[bytes] = []
         total = 0
+        capped = False
         while True:
             chunk = await stream.read(65536)
             if not chunk:
                 break
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > MAX_OUTPUT_BYTES:
-                _kill_process_group(proc.pid)
-                break
+            if not capped:
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > MAX_OUTPUT_BYTES:
+                    capped = True
+                    _kill_process_group(proc.pid)
+            # Once capped, keep reading to drain the pipe to EOF so the
+            # transport is closed by asyncio rather than leaked.
         return b"".join(chunks)[:MAX_OUTPUT_BYTES]
 
     try:
