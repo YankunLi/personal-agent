@@ -130,9 +130,14 @@ class BaseAgent(ABC):
         # id() differs from the originals already in full_messages, which
         # would otherwise produce duplicates. Only check the last 20
         # messages to allow genuinely repeated content (e.g., "continue").
-        recent_keys = {(m.role, m.content or "") for m in state.full_messages[-20:]}
+        # Include tool_call_id so tool results with identical output text but
+        # distinct tool calls are not dropped from consolidation history.
+        recent_keys = {
+            (m.role, m.content or "", m.tool_call_id or "")
+            for m in state.full_messages[-20:]
+        }
         for m in messages:
-            key = (m.role, m.content or "")
+            key = (m.role, m.content or "", m.tool_call_id or "")
             if key not in recent_keys:
                 state.full_messages.append(m)
                 recent_keys.add(key)
@@ -171,9 +176,14 @@ class BaseAgent(ABC):
         # id() differs from the originals already in full_messages, which
         # would otherwise produce duplicates. Only check the last 20
         # messages to allow genuinely repeated content (e.g., "continue").
-        recent_keys = {(m.role, m.content or "") for m in state.full_messages[-20:]}
+        # Include tool_call_id so tool results with identical output text but
+        # distinct tool calls are not dropped from consolidation history.
+        recent_keys = {
+            (m.role, m.content or "", m.tool_call_id or "")
+            for m in state.full_messages[-20:]
+        }
         for m in messages:
-            key = (m.role, m.content or "")
+            key = (m.role, m.content or "", m.tool_call_id or "")
             if key not in recent_keys:
                 state.full_messages.append(m)
                 recent_keys.add(key)
