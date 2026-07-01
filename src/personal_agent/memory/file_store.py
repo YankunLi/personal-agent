@@ -113,7 +113,7 @@ class FileMemoryStore:
             if f.name == "MEMORY.md":
                 continue
             try:
-                text = await asyncio.to_thread(f.read_text)
+                text = await asyncio.to_thread(f.read_text, encoding="utf-8")
                 meta, _ = _parse_frontmatter(text)
                 name = meta.get("name", f.stem)
                 cache[name] = f
@@ -157,7 +157,7 @@ class FileMemoryStore:
             # destroy the existing memory.
             if filepath.exists():
                 try:
-                    existing_text = await asyncio.to_thread(filepath.read_text)
+                    existing_text = await asyncio.to_thread(filepath.read_text, encoding="utf-8")
                     existing_meta, _ = _parse_frontmatter(existing_text)
                     existing_name = existing_meta.get("name", "")
                 except Exception:
@@ -169,7 +169,7 @@ class FileMemoryStore:
                     )
             # Preserve existing body if content is empty (shouldn't happen, but safe)
             if filepath.exists() and not content:
-                text = await asyncio.to_thread(filepath.read_text)
+                text = await asyncio.to_thread(filepath.read_text, encoding="utf-8")
                 _, content = _parse_frontmatter(text)
 
             # Atomic write: a crash mid-write must not leave a truncated
@@ -188,7 +188,7 @@ class FileMemoryStore:
 
         fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
         try:
-            with os.fdopen(fd, "w") as f:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(text)
             os.replace(tmp_path, path)
         except Exception:
@@ -213,7 +213,7 @@ class FileMemoryStore:
                 return None
 
         try:
-            text = await asyncio.to_thread(filepath.read_text)
+            text = await asyncio.to_thread(filepath.read_text, encoding="utf-8")
         except FileNotFoundError:
             return None
         return _parse_frontmatter(text)
@@ -275,7 +275,7 @@ class FileMemoryStore:
                 if f.name == "MEMORY.md":
                     continue
                 try:
-                    text = await asyncio.to_thread(f.read_text)
+                    text = await asyncio.to_thread(f.read_text, encoding="utf-8")
                     meta, _ = _parse_frontmatter(text)
                     name = meta.get("name", f.stem)
                     desc = meta.get("description", name)
@@ -318,15 +318,15 @@ class FileMemoryStore:
     def load_index_text(self) -> str:
         """Read MEMORY.md as plain text for injection into system prompt."""
         try:
-            return self.index_path.read_text()
+            return self.index_path.read_text(encoding="utf-8")
         except FileNotFoundError:
             # Create atomically: if another process creates it first, just read theirs
             try:
-                with open(self.index_path, "x") as f:
+                with open(self.index_path, "x", encoding="utf-8") as f:
                     f.write("# Memory Index\n\nNo memories stored yet.\n")
             except FileExistsError:
                 pass
-            return self.index_path.read_text()
+            return self.index_path.read_text(encoding="utf-8")
 
     async def repair_index(self) -> int:
         """Remove stale index entries that point to non-existent files.
@@ -366,7 +366,7 @@ class FileMemoryStore:
                 dir=str(self.index_path.parent), suffix=".tmp"
             )
             os.close(fd)
-            Path(tmp_path).write_text(content)
+            Path(tmp_path).write_text(content, encoding="utf-8")
             os.replace(tmp_path, self.index_path)
         except Exception:
             if 'tmp_path' in locals() and Path(tmp_path).exists():
