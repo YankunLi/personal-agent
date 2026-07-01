@@ -226,6 +226,9 @@ def _python_fallback(
             # Determine context window
             ctx_before = context or before or 0
             ctx_after = context or after or 0
+            # Highest 0-based line index already emitted as context/match, so
+            # overlapping context windows from nearby matches don't duplicate.
+            last_emitted_idx = -1
 
             if multiline:
                 # Search the full content as a single string for cross-line patterns
@@ -254,7 +257,13 @@ def _python_fallback(
                                 # Show context lines around the match
                                 start = max(0, i - 1 - ctx_before)
                                 end = min(len(lines), i - 1 + ctx_after + 1)
+                                # Emit a separator if this block doesn't
+                                # overlap the previous emitted block.
+                                if last_emitted_idx >= 0 and start > last_emitted_idx:
+                                    results.append("--")
                                 for ctx_i in range(start, end):
+                                    if ctx_i <= last_emitted_idx:
+                                        continue
                                     ln = ctx_i + 1
                                     is_match = ln == i
                                     marker = ":" if is_match else "-"
@@ -266,7 +275,7 @@ def _python_fallback(
                                     else:
                                         prefix = f"{fpath}{marker} "
                                     results.append(f"{prefix}{lines[ctx_i].rstrip()}")
-                                results.append("--")
+                                    last_emitted_idx = ctx_i
                             else:
                                 prefix = f"{fpath}:{i}: " if show_line_numbers is not False else f"{fpath}: "
                                 results.append(f"{prefix}{line.rstrip()}")
