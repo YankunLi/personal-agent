@@ -84,17 +84,26 @@ class CompressionStrategy(ContextStrategy):
         if estimated <= self.threshold_tokens:
             return list(messages)
 
-        system_msgs = [m for m in messages if m.role.value == "system"]
-        non_system = [m for m in messages if m.role.value != "system"]
+        # Preserve only the leading system message as head (base prompt).
+        # Mid-conversation system messages (hints, cron prompts, tool context)
+        # stay in their relative positions so their temporal context is not
+        # destroyed by hoisting them to the front — consistent with
+        # SlidingWindowStrategy.
+        if messages and messages[0].role.value == "system":
+            head = [messages[0]]
+            rest = messages[1:]
+        else:
+            head = []
+            rest = list(messages)
 
-        if len(non_system) <= self.keep_recent:
+        if len(rest) <= self.keep_recent:
             return list(messages)
 
         # Choose a split that does not orphan tool results from their tool calls.
-        split = len(non_system) - self.keep_recent
-        split = _avoid_splitting_tool_group(non_system, split)
-        recent = non_system[split:]
-        older = non_system[:split]
+        split = len(rest) - self.keep_recent
+        split = _avoid_splitting_tool_group(rest, split)
+        recent = rest[split:]
+        older = rest[:split]
 
         try:
             summary = await self.compressor.summarize(older)
@@ -112,7 +121,7 @@ class CompressionStrategy(ContextStrategy):
             content=f"[Compressed conversation history]\n{summary}",
         )
 
-        return system_msgs + [summary_msg] + recent
+        return head + [summary_msg] + recent
 
     @staticmethod
     def _estimate_tokens(messages: list[Message]) -> int:
