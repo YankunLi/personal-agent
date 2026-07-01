@@ -225,6 +225,14 @@ class ContextBudgetManager:
                     role=Role.SYSTEM,
                     content=f"[Compressed conversation history]\n{summary}",
                 ))
+            # If even ``recent`` alone exceeds the budget, truncate it to the
+            # most recent messages that fit. Without this the returned list
+            # would be over budget and the downstream LLM call could fail
+            # with a context-length error. Preserve tool-result/tool-call
+            # pairing by never starting the tail on a ``tool`` message.
+            recent_tokens = estimate_message_tokens(recent)
+            if recent_tokens > max_tokens:
+                recent = self._truncate_recent(recent, max_tokens)
             return system_msgs + recent
 
         # Keep as many older messages as fit
@@ -254,6 +262,29 @@ class ContextBudgetManager:
                 ))
 
         return system_msgs + kept_older + recent
+
+    def _truncate_recent(self, recent: list[Message], max_tokens: int) -> list[Message]:
+        """Keep the most recent messages that fit within ``max_tokens``.
+
+        Walks ``recent`` from the end backwards, accumulating tokens, and
+        stops when adding the next message would exceed the budget. The cut
+        is nudged forward if it would land on a ``tool`` message (whose
+        parent tool-call would then be orphaned).
+        """
+        if not recent:
+            return recent
+        kept: list[Message] = []
+        running = 0
+        for msg in reversed(recent):
+            t = estimate_message_tokens([msg])
+            if kept and running + t > max_tokens:
+                break
+            kept.insert(0, msg)
+            running += t
+        # Never start the truncated tail on a tool result.
+        while kept and kept[0].role.value == "tool":
+            kept.pop(0)
+        return kept if kept else [recent[-1]]
 
     def _summarize_older(self, messages: list[Message]) -> str:
         """Generate a simple summary of older messages, sampling from both ends."""
