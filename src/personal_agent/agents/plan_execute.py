@@ -115,12 +115,19 @@ class PlanAndExecuteAgent(BaseAgent):
         i = 0
         llm_calls = 1  # Plan generation already used 1 LLM call
         replan_count = 0
+        # Shared across steps so a tool failing repeatedly across plan steps
+        # still trips the consecutive-failure guard.
+        consecutive_failures: dict[str, int] = {}
         while i < len(plan) and llm_calls < self.max_steps:
             step = plan[i]
             logger.info("Executing step %d/%d: %s", i + 1, len(plan), step.get("description", str(step))[:80])
 
             remaining = self.max_steps - llm_calls
-            step_result = await self._execute_step(state, step, max_substeps=min(self._max_substeps, remaining))
+            step_result = await self._execute_step(
+                state, step,
+                max_substeps=min(self._max_substeps, remaining),
+                consecutive_failures=consecutive_failures,
+            )
             llm_calls += step_result.get("llm_calls", 0)
             step_results.append(step_result)
 
@@ -225,13 +232,18 @@ class PlanAndExecuteAgent(BaseAgent):
             {"step": 1, "description": "Complete the task directly", "depends_on": []}
         ]
 
-    async def _execute_step(self, state: AgentState, step: dict, max_substeps: int | None = None) -> dict:
+    async def _execute_step(self, state: AgentState, step: dict, max_substeps: int | None = None,
+                            consecutive_failures: dict[str, int] | None = None) -> dict:
         """Execute a single plan step using a mini ReAct loop.
 
         Returns a dict with step, description, result, error, and llm_calls keys.
         """
         if max_substeps is None:
             max_substeps = self._max_substeps
+        # When called without a shared dict, fall back to a step-local one so
+        # the guard still works within a single step.
+        if consecutive_failures is None:
+            consecutive_failures = {}
 
         step_prompt = (
             f"Execute step {step.get('step', '?')}: {step.get('description', '')}\n\n"
@@ -239,7 +251,6 @@ class PlanAndExecuteAgent(BaseAgent):
         )
         state.messages.append(self._make_message(Role.USER, step_prompt))
 
-        consecutive_failures: dict[str, int] = {}
         substep_count = 0
 
         for _ in range(max_substeps):
