@@ -48,6 +48,10 @@ class AgentTool(Tool):
 
     async def execute(self, task: str, **kwargs: Any) -> str:
         """Run the sub-agent on the given task and return its answer."""
+        if getattr(self._agent, "_closed", False):
+            raise RuntimeError(
+                f"Sub-agent '{self._spec.name}' is closed and cannot run tasks"
+            )
         result = await self._agent.run(task)
         return result.answer
 
