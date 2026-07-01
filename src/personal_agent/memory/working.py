@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 
@@ -24,8 +25,13 @@ class WorkingMemory:
         self._data.pop(key, None)
 
     def snapshot(self) -> dict[str, Any]:
-        """Return a copy of all data."""
-        return dict(self._data)
+        """Return a deep copy of all data.
+
+        A shallow copy would share mutable value references (lists, dicts),
+        letting callers mutate stored state via the snapshot. Deep copy
+        prevents that.
+        """
+        return copy.deepcopy(self._data)
 
     def clear(self) -> None:
         """Clear all data."""
