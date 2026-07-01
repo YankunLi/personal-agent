@@ -251,7 +251,7 @@ class CronScheduler:
             )
         # Validate cron expression (CPU-bound search, run in thread outside lock)
         if await asyncio.to_thread(_next_cron_match, cron) is None:
-            raise ValueError(f"Invalid cron expression: '{cron}' — no match in next 2 years")
+            raise ValueError(f"Invalid cron expression: '{cron}' — no match in next 4 years")
 
         async with self._jobs_lock:
             if len(self._jobs) >= self.MAX_JOBS:
