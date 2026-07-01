@@ -352,11 +352,21 @@ class PlanAndExecuteAgent(BaseAgent):
         step_results: list[dict],
     ) -> str:
         """Synthesize step results into a final answer."""
-        synthesize_prompt = (
-            "All steps have been completed. Here are the results:\n\n"
-            + json.dumps(step_results, ensure_ascii=False, indent=2)
-            + "\n\nPlease synthesize these results into a comprehensive final answer."
-        )
+        failed = [r for r in step_results if r.get("error")]
+        if failed:
+            synthesize_prompt = (
+                "The plan has finished, but some steps failed. Here are the results:\n\n"
+                + json.dumps(step_results, ensure_ascii=False, indent=2)
+                + "\n\nSteps marked with an \"error\" field did not complete successfully. "
+                "Account for those failures in your answer — note what could not be "
+                "done and why, and synthesize a final answer from what was actually accomplished."
+            )
+        else:
+            synthesize_prompt = (
+                "All steps have been completed. Here are the results:\n\n"
+                + json.dumps(step_results, ensure_ascii=False, indent=2)
+                + "\n\nPlease synthesize these results into a comprehensive final answer."
+            )
         state.messages.append(self._make_message(Role.USER, synthesize_prompt))
 
         response = await self._call_llm(state)
