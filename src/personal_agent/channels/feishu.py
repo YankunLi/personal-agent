@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import time
@@ -210,7 +212,7 @@ class FeishuChannel(Channel):
         for agent in self._conn_agents.values():
             try:
                 await agent.close()
-            except BaseException:
+            except Exception:
                 pass
         self._conn_agents.clear()
         self._conn_agent_times.clear()
@@ -219,7 +221,7 @@ class FeishuChannel(Channel):
         if self._api:
             try:
                 await self._api.close()
-            except BaseException:
+            except Exception:
                 pass
 
     # ── Webhook handlers ─────────────────────────────────────────────────────
@@ -239,15 +241,55 @@ class FeishuChannel(Channel):
 
     async def _handle_event(self, request: web.Request) -> web.Response:
         """Handle Feishu event callback (POST request with event data)."""
+        raw_body = await request.read()
+
+        # Verify request signature when encrypt_key is configured.
+        # Feishu computes X-Lark-Signature as HMAC-SHA256 over
+        # timestamp + nonce + raw_body using the SHA256 digest of encrypt_key
+        # as the HMAC key. Without this check any party able to POST can
+        # forge events.
+        if self._encrypt_key:
+            sig = request.headers.get("X-Lark-Signature", "")
+            ts = request.headers.get("X-Lark-Request-Timestamp", "")
+            nonce = request.headers.get("X-Lark-Request-Nonce", "")
+            key = hashlib.sha256(self._encrypt_key.encode("utf-8")).digest()
+            expected = hmac.new(
+                key,
+                (ts + nonce + raw_body.decode("utf-8", errors="replace")).encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            if not hmac.compare_digest(sig, expected):
+                logger.warning("Feishu signature verification failed")
+                return web.json_response({"code": 1, "msg": "Invalid signature"}, status=403)
+            # Reject replay: timestamp must be within 5 minutes.
+            try:
+                ts_int = int(ts)
+            except ValueError:
+                return web.json_response({"code": 1, "msg": "Invalid timestamp"}, status=400)
+            if abs(time.time() - ts_int) > 300:
+                logger.warning("Feishu event timestamp out of window: %s", ts)
+                return web.json_response({"code": 1, "msg": "Stale timestamp"}, status=403)
+
         try:
-            body = await request.json()
+            body = json.loads(raw_body)
         except Exception:
             return web.json_response({"code": 1, "msg": "Invalid JSON"}, status=400)
 
+        # Encrypted event payload — Feishu sends {"encrypt": "<base64>"} when
+        # encrypt_key is set. We fail closed (reject) rather than silently
+        # dropping, since processing an undecryptable body would only ever
+        # yield None header/event lookups.
+        if isinstance(body, dict) and body.get("encrypt"):
+            if not self._encrypt_key:
+                logger.warning("Received encrypted Feishu event but no encrypt_key configured")
+                return web.json_response({"code": 1, "msg": "Encryption not configured"}, status=500)
+            logger.warning("Feishu event encryption decryption not implemented; rejecting encrypted event")
+            return web.json_response({"code": 1, "msg": "Encrypted events not supported"}, status=501)
+
         # Feishu event format: {"schema": "2.0", "header": {...}, "event": {...}}
-        header = body.get("header")
+        header = body.get("header") if isinstance(body, dict) else None
         event_type = header.get("event_type", "") if header else ""
-        event = body.get("event", {})
+        event = body.get("event", {}) if isinstance(body, dict) else {}
 
         # Verify token for event callbacks
         if not self._verification_token:
@@ -259,9 +301,10 @@ class FeishuChannel(Channel):
                 return web.json_response({"code": 1, "msg": "Invalid token"}, status=403)
 
         if event_type == "im.message.receive_v1":
-            # Don't process messages if the server is shutting down
+            # Don't process messages if the server is shutting down.
+            # Return 5xx so Feishu retries delivery after restart.
             if self._stop_event.is_set():
-                return web.json_response({"code": 0, "msg": "Server shutting down"})
+                return web.json_response({"code": 1, "msg": "Server shutting down"}, status=503)
             # Process in background, respond immediately to Feishu
             task = asyncio.create_task(self._process_message(event))
             self._pending_tasks.add(task)
@@ -276,7 +319,7 @@ class FeishuChannel(Channel):
             # creation, cancel the task to prevent use-after-close on resources.
             if self._stop_event.is_set():
                 task.cancel()
-                return web.json_response({"code": 0, "msg": "Server shutting down"})
+                return web.json_response({"code": 1, "msg": "Server shutting down"}, status=503)
             return web.json_response({"code": 0})
 
         # Challenge event (old format, POST with challenge)
@@ -420,7 +463,7 @@ class FeishuChannel(Channel):
             if agent:
                 try:
                     await agent.close()
-                except BaseException:
+                except Exception:
                     pass
         if stale:
             logger.info("Evicted %d idle Feishu agent(s)", len(stale))
@@ -449,7 +492,7 @@ class FeishuChannel(Channel):
                         message_id,
                         "Sorry, an internal error occurred while processing your request. Please try again.",
                     )
-                except BaseException:
+                except Exception:
                     pass
         finally:
             # Persist session state even on error (partial progress may be useful)

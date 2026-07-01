@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from personal_agent.types import Message
+
+logger = logging.getLogger(__name__)
 
 
 class ShortTermMemory:
@@ -78,6 +82,10 @@ class ShortTermMemory:
                 try:
                     role = Role(m.get("role", "user"))
                 except (ValueError, TypeError):
+                    logger.warning(
+                        "Invalid role %r in persisted message, defaulting to USER",
+                        m.get("role"),
+                    )
                     role = Role.USER
                 tool_calls = None
                 raw_tcs = m.get("tool_calls")

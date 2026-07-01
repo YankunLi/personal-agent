@@ -97,11 +97,18 @@ async def _run_command(cmd: list[str], timeout: float = 30) -> tuple[str, str, i
             stderr_b.decode("utf-8", errors="replace"),
             rc,
         )
-    except BaseException:
+    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
         _kill_process_group(proc.pid)
         try:
             await asyncio.shield(proc.wait())
-        except BaseException:
+        except Exception:
+            pass
+        raise
+    except Exception:
+        _kill_process_group(proc.pid)
+        try:
+            await asyncio.shield(proc.wait())
+        except Exception:
             pass
         raise
 
@@ -117,7 +124,7 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
                     tmp = f.name
                     try:
                         f.write(code)
-                    except BaseException:
+                    except Exception:
                         try:
                             os.unlink(tmp)
                         except OSError:

@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 from personal_agent.core.agent import BaseAgent
+from personal_agent.exceptions import AgentError
 from personal_agent.types import AgentResult, AgentState, AgentStep, Role
 
 logger = logging.getLogger(__name__)
@@ -119,86 +120,102 @@ class PlanAndExecuteAgent(BaseAgent):
         # Shared across steps so a tool failing repeatedly across plan steps
         # still trips the consecutive-failure guard.
         consecutive_failures: dict[str, int] = {}
-        while i < len(plan) and llm_calls < self.max_steps:
-            step = plan[i]
-            logger.info("Executing step %d/%d: %s", i + 1, len(plan), step.get("description", str(step))[:80])
+        llm_failure: str | None = None
 
-            remaining = self.max_steps - llm_calls
-            step_result = await self._execute_step(
-                state, step,
-                max_substeps=min(self._max_substeps, remaining),
-                consecutive_failures=consecutive_failures,
-            )
-            llm_calls += step_result.get("llm_calls", 0)
-            step_results.append(step_result)
+        try:
+            while i < len(plan) and llm_calls < self.max_steps:
+                step = plan[i]
+                logger.info("Executing step %d/%d: %s", i + 1, len(plan), step.get("description", str(step))[:80])
 
-            if step_result.get("error"):
-                logger.warning("Step %d failed: %s", i + 1, step_result["error"])
-                if (
-                    i < len(plan) - 1
-                    and replan_count < self.MAX_REPLAN_ATTEMPTS
-                    and llm_calls < self.max_steps
-                ):
-                    msg_count_before_replan = len(state.messages)
-                    new_plan = await self._replan(state, plan, step_results, step)
-                    llm_calls += 1
-                    replan_count += 1
-                    state.messages = state.messages[:msg_count_before_replan]  # Prune replan messages
-                    if new_plan is plan:
-                        # Replan returned the same plan (fallback) — skip the failed step
-                        step_results.pop()  # Remove the failed step's result
-                        i += 1
-                        continue
-                    else:
-                        if not new_plan:
-                            # LLM returned an empty plan — fall back to skipping the failed step
-                            logger.warning("Replan returned empty plan, skipping failed step")
-                            step_results.pop()
+                remaining = self.max_steps - llm_calls
+                step_result = await self._execute_step(
+                    state, step,
+                    max_substeps=min(self._max_substeps, remaining),
+                    consecutive_failures=consecutive_failures,
+                )
+                llm_calls += step_result.get("llm_calls", 0)
+                step_results.append(step_result)
+
+                if step_result.get("error"):
+                    logger.warning("Step %d failed: %s", i + 1, step_result["error"])
+                    if (
+                        i < len(plan) - 1
+                        and replan_count < self.MAX_REPLAN_ATTEMPTS
+                        and llm_calls < self.max_steps
+                    ):
+                        msg_count_before_replan = len(state.messages)
+                        new_plan = await self._replan(state, plan, step_results, step)
+                        llm_calls += 1
+                        replan_count += 1
+                        state.messages = state.messages[:msg_count_before_replan]  # Prune replan messages
+                        if new_plan is plan:
+                            # Replan returned the same plan (fallback) — skip the failed step.
+                            # Keep the failed step's result in step_results so synthesis
+                            # can report what could not be done.
                             i += 1
                             continue
-                        plan = new_plan
-                        self.working.set("plan", plan)
-                        # Record descriptions of steps that already succeeded so
-                        # we can skip them if the replanned plan redundantly
-                        # re-lists them (avoids re-running side effects and
-                        # burning the LLM-call budget).
-                        completed_descs = {
-                            r.get("description", "").strip()
-                            for r in step_results
-                            if not r.get("error") and r.get("description")
-                        }
-                        # Preserve successful results for synthesis.
-                        step_results = [r for r in step_results if not r.get("error")]
-                        i = 0
-                        while (
-                            i < len(plan)
-                            and plan[i].get("description", "").strip() in completed_descs
-                            and completed_descs
-                        ):
-                            i += 1
-                        # NOTE: execution history in state.steps is intentionally
-                        # preserved (not pruned) so the audit trail of what
-                        # actually ran survives the replan.
-                    continue
-                else:
-                    logger.warning(
-                        "Cannot replan: %s. Proceeding with remaining steps.",
-                        "max replans reached" if replan_count >= self.MAX_REPLAN_ATTEMPTS else "last step failed",
-                    )
-            i += 1
+                        else:
+                            if not new_plan:
+                                # LLM returned an empty plan — fall back to skipping the failed step.
+                                logger.warning("Replan returned empty plan, skipping failed step")
+                                i += 1
+                                continue
+                            plan = new_plan
+                            self.working.set("plan", plan)
+                            # Record descriptions of steps that already succeeded so
+                            # we can skip them if the replanned plan redundantly
+                            # re-lists them (avoids re-running side effects and
+                            # burning the LLM-call budget).
+                            completed_descs = {
+                                r.get("description", "").strip()
+                                for r in step_results
+                                if not r.get("error") and r.get("description")
+                            }
+                            # Preserve all results (including failures) for synthesis
+                            # so the final answer can note what could not be done.
+                            i = 0
+                            while (
+                                i < len(plan)
+                                and plan[i].get("description", "").strip() in completed_descs
+                            ):
+                                i += 1
+                            # NOTE: execution history in state.steps is intentionally
+                            # preserved (not pruned) so the audit trail of what
+                            # actually ran survives the replan.
+                        continue
+                    else:
+                        logger.warning(
+                            "Cannot replan: %s. Proceeding with remaining steps.",
+                            "max replans reached" if replan_count >= self.MAX_REPLAN_ATTEMPTS else "last step failed",
+                        )
+                i += 1
+        except AgentError as e:
+            logger.warning("Plan execution LLM call failed: %s", e)
+            llm_failure = str(e)
 
         if llm_calls >= self.max_steps:
             logger.warning("Plan execution reached max_steps limit (%d LLM calls)", self.max_steps)
 
         # Phase 3: Synthesis (only if budget remains)
-        if llm_calls < self.max_steps:
-            final_answer = await self._synthesize(state, plan, step_results)
-            llm_calls += 1
+        if llm_calls < self.max_steps and not llm_failure:
+            try:
+                final_answer = await self._synthesize(state, plan, step_results)
+                llm_calls += 1
+            except AgentError as e:
+                logger.warning("Synthesis LLM call failed: %s", e)
+                llm_failure = str(e)
+                final_answer = None
         else:
             logger.warning(
                 "Skipping synthesis: max_steps reached (%d LLM calls)", self.max_steps
             )
-            final_answer = "Plan execution reached the step limit. Partial results: " + json.dumps(step_results)
+            final_answer = None
+
+        if llm_failure or final_answer is None:
+            partial = "Plan execution did not complete. Partial results: " + json.dumps(step_results, ensure_ascii=False, default=str)
+            if llm_failure:
+                partial = f"Plan execution failed: {llm_failure}\n\n" + partial
+            final_answer = partial
         state.final_answer = final_answer
         state.done = True
         await self._fire("on_answer", final_answer)

@@ -12,6 +12,7 @@ import logging
 import re
 from typing import Any
 
+from personal_agent.exceptions import ProviderError
 from personal_agent.memory.file_store import MEMORY_TYPES, FileMemoryStore
 from personal_agent.types import Message, Role
 
@@ -143,8 +144,11 @@ class MemoryConsolidator:
                     logger.warning("Failed to append agent learnings: %s", e)
 
             return applied
-        except Exception as e:
-            logger.exception("Consolidation failed: %s", e)
+        except asyncio.TimeoutError as e:
+            logger.warning("Consolidation timed out: %s", e)
+            return []
+        except (ProviderError, json.JSONDecodeError) as e:
+            logger.warning("Consolidation provider/parse error: %s", e)
             return []
 
     async def _extract(

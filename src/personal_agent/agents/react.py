@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from personal_agent.core.agent import BaseAgent
+from personal_agent.exceptions import AgentError
 from personal_agent.types import AgentResult, AgentState, AgentStep, Role
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ class ReActAgent(BaseAgent):
 
         step_count = 0
         consecutive_failures: dict[str, int] = {}  # Track per-tool consecutive failures
+        llm_failure: str | None = None
 
         while not state.done and step_count < self.max_steps:
             step_count += 1
@@ -60,7 +62,12 @@ class ReActAgent(BaseAgent):
             await self._fire("on_step_start", step_count, self.max_steps)
 
             # 1. Call the LLM
-            response = await self._call_llm(state)
+            try:
+                response = await self._call_llm(state)
+            except AgentError as e:
+                logger.warning("ReAct LLM call failed at step %d: %s", step_count, e)
+                llm_failure = str(e)
+                break
 
             # 2. Add assistant message to history
             self._add_assistant_message(state.messages, response)
@@ -137,6 +144,19 @@ class ReActAgent(BaseAgent):
                         break
             state.final_answer = (
                 "I was unable to complete the task within the maximum number of steps. "
+                "Here is what I have so far:\n\n" + last_answer
+            )
+            state.done = True
+            await self._fire("on_answer", state.final_answer)
+
+        if llm_failure and not state.done:
+            last_answer = "No output produced."
+            for msg in reversed(state.messages):
+                if msg.role == Role.ASSISTANT and msg.content:
+                    last_answer = msg.content
+                    break
+            state.final_answer = (
+                f"I encountered an error while processing the task: {llm_failure}\n\n"
                 "Here is what I have so far:\n\n" + last_answer
             )
             state.done = True

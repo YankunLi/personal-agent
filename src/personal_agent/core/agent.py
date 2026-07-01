@@ -17,7 +17,7 @@ from personal_agent.providers.base import ChatResponse, Provider
 from personal_agent.skills import SkillManager
 from personal_agent.tools.executor import ToolExecutor
 from personal_agent.tools.registry import ToolRegistry
-from personal_agent.exceptions import AgentError, PersonalAgentError, ToolNotFoundError
+from personal_agent.exceptions import AgentError, PersonalAgentError, ProviderTimeoutError, ToolNotFoundError
 from personal_agent.types import (
     AgentCallbacks,
     AgentResult,
@@ -53,6 +53,7 @@ class BaseAgent(ABC):
         system_prompt: str = "",
         temperature: float = 0.7,
         max_tokens: int = 8192,
+        llm_timeout: float | None = None,
         consolidation_max_messages: int = 40,
         callbacks: AgentCallbacks | None = None,
         owns_consolidation_provider: bool = True,
@@ -77,6 +78,7 @@ class BaseAgent(ABC):
         self._base_system_prompt = system_prompt
         self._temperature = temperature
         self._max_tokens = max_tokens
+        self._llm_timeout = llm_timeout
         self._callbacks = callbacks or AgentCallbacks()
         self._mcp_source = None  # Set by factory if MCP is enabled
         self._total_usage: dict[str, int] = {}
@@ -149,11 +151,25 @@ class BaseAgent(ABC):
 
         specs = self.tools.list_specs() if len(self.tools) > 0 else None
         try:
-            response = await self.provider.chat(
-                messages, tools=specs,
-                temperature=self._temperature,
-                max_tokens=self._max_tokens,
-            )
+            if self._llm_timeout is not None:
+                response = await asyncio.wait_for(
+                    self.provider.chat(
+                        messages, tools=specs,
+                        temperature=self._temperature,
+                        max_tokens=self._max_tokens,
+                    ),
+                    timeout=self._llm_timeout,
+                )
+            else:
+                response = await self.provider.chat(
+                    messages, tools=specs,
+                    temperature=self._temperature,
+                    max_tokens=self._max_tokens,
+                )
+        except asyncio.TimeoutError as e:
+            raise ProviderTimeoutError(
+                f"LLM call timed out after {self._llm_timeout}s"
+            ) from e
         except PersonalAgentError:
             raise
         except Exception as e:
@@ -201,11 +217,22 @@ class BaseAgent(ABC):
         last_finish_reason = "stop"
 
         try:
-            async for chunk in self.provider.chat_stream(
+            aiter = self.provider.chat_stream(
                 messages, tools=specs,
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
-            ):
+            )
+            while True:
+                if self._llm_timeout is not None:
+                    try:
+                        chunk = await asyncio.wait_for(aiter.__anext__(), timeout=self._llm_timeout)
+                    except StopAsyncIteration:
+                        break
+                else:
+                    try:
+                        chunk = await aiter.__anext__()
+                    except StopAsyncIteration:
+                        break
                 if chunk.content:
                     accumulated_content += chunk.content
                     await self._fire("on_text_delta", chunk.content)
@@ -225,6 +252,10 @@ class BaseAgent(ABC):
                 if chunk.usage:
                     for key, val in chunk.usage.items():
                         call_usage[key] = val  # Final chunk has cumulative total
+        except asyncio.TimeoutError as e:
+            raise ProviderTimeoutError(
+                f"LLM streaming call timed out after {self._llm_timeout}s"
+            ) from e
         except PersonalAgentError:
             raise
         except Exception as e:
@@ -567,8 +598,10 @@ class BaseAgent(ABC):
                 task.cancel()
                 try:
                     await task
-                except BaseException:
+                except asyncio.CancelledError:
                     pass
+                except Exception as e:
+                    logger.warning("Consolidation task error during close: %s", e)
         self._consolidation_tasks.clear()
 
         # Close sub-agent tools first (they hold their own MCP/provider resources)
@@ -577,25 +610,25 @@ class BaseAgent(ABC):
                 tool = self.tools.get(tool_name)
                 if hasattr(tool, "close"):
                     await tool.close()
-            except BaseException as e:
+            except Exception as e:
                 logger.warning("Error closing tool '%s': %s", tool_name, e)
 
         if self._mcp_source:
             try:
                 await self._mcp_source.disconnect_all()
-            except BaseException as e:
+            except Exception as e:
                 logger.warning("Error disconnecting MCP: %s", e)
 
         if self._cron_scheduler:
             try:
                 await self._cron_scheduler.stop()
-            except BaseException as e:
+            except Exception as e:
                 logger.warning("Error stopping cron scheduler: %s", e)
 
         if hasattr(self.provider, "close"):
             try:
                 await self.provider.close()
-            except BaseException as e:
+            except Exception as e:
                 logger.warning("Error closing provider: %s", e)
 
         if (
@@ -606,7 +639,7 @@ class BaseAgent(ABC):
             if hasattr(self.consolidation_provider, "close"):
                 try:
                     await self.consolidation_provider.close()
-                except BaseException as e:
+                except Exception as e:
                     logger.warning("Error closing consolidation provider: %s", e)
 
     async def __aenter__(self) -> BaseAgent:

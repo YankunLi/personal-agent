@@ -356,9 +356,16 @@ class WebSocketChannel(Channel):
 
         self._conn_sessions[conn_id] = target
         if conn_id in self._conn_agents:
-            async with target.memory_lock:
+            # Avoid deadlock when switching to the currently-active session:
+            # asyncio.Lock is non-reentrant, so acquiring target.memory_lock
+            # while current.memory_lock is still held (same object) would hang.
+            if current is target:
                 self._conn_agents[conn_id].short_term = target.short_term
                 self._conn_agents[conn_id].working = target.working
+            else:
+                async with target.memory_lock:
+                    self._conn_agents[conn_id].short_term = target.short_term
+                    self._conn_agents[conn_id].working = target.working
         await self._send(websocket, {
             "type": "session_info",
             "id": target.id,

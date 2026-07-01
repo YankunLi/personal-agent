@@ -6,12 +6,14 @@ high-quality answers through self-improvement.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
 from typing import Any
 
 from personal_agent.core.agent import BaseAgent
+from personal_agent.exceptions import AgentError
 from personal_agent.types import AgentResult, AgentState, AgentStep, Role
 
 logger = logging.getLogger(__name__)
@@ -91,6 +93,7 @@ class ReflectionAgent(BaseAgent):
 
         current_response = ""
         critique = None
+        llm_failure: str | None = None
 
         for iteration in range(self._max_iterations):
             logger.info("Reflection iteration %d/%d", iteration + 1, self._max_iterations)
@@ -101,7 +104,12 @@ class ReflectionAgent(BaseAgent):
             msg_count_before = len(state.messages)
 
             # Phase 1: Generate
-            current_response = await self._generate(state, task, critique)
+            try:
+                current_response = await self._generate(state, task, critique)
+            except AgentError as e:
+                logger.warning("Reflection generate failed at iteration %d: %s", iteration + 1, e)
+                llm_failure = str(e)
+                break
             state.steps.append(
                 AgentStep(thought=f"Iteration {iteration + 1} generation")
             )
@@ -136,12 +144,19 @@ class ReflectionAgent(BaseAgent):
                     last_assistant = m
                     break
             state.messages = state.messages[:msg_count_before]
+            # Prune full_messages in lockstep so consolidation input does not
+            # grow unbounded across iterations.
+            if hasattr(state, "full_messages") and len(state.full_messages) > msg_count_before:
+                state.full_messages = state.full_messages[:msg_count_before]
             if last_assistant is not None:
                 state.messages.append(last_assistant)
 
-        state.final_answer = current_response
+        state.final_answer = current_response if not llm_failure else (
+            f"I encountered an error while refining the response: {llm_failure}\n\n"
+            "Here is what I have so far:\n\n" + current_response
+        )
         state.done = True
-        await self._fire("on_answer", current_response)
+        await self._fire("on_answer", state.final_answer)
 
         return await self._finalize(state, start_time, task=task)
 
@@ -184,11 +199,42 @@ class ReflectionAgent(BaseAgent):
         # This intentionally bypasses _call_llm to avoid the overhead of state
         # management, streaming, and hooks for a simple JSON-structured critique.
         # Token usage is manually accumulated below.
-        result = await self.provider.chat(
-            critique_messages,
-            temperature=0.3,
-            max_tokens=4096,
-        )
+        try:
+            if self._llm_timeout is not None:
+                result = await asyncio.wait_for(
+                    self.provider.chat(
+                        critique_messages,
+                        temperature=0.3,
+                        max_tokens=4096,
+                    ),
+                    timeout=self._llm_timeout,
+                )
+            else:
+                result = await self.provider.chat(
+                    critique_messages,
+                    temperature=0.3,
+                    max_tokens=4096,
+                )
+        except asyncio.TimeoutError:
+            logger.warning("Critique LLM call timed out after %ss", self._llm_timeout)
+            return {
+                "scores": {"accuracy": 7, "completeness": 7, "clarity": 7, "logic": 7},
+                "overall": 7.0,
+                "strengths": ["Response generated"],
+                "weaknesses": ["Critique timed out — unable to evaluate in detail"],
+                "improvement_suggestions": ["Review the response for accuracy"],
+                "is_satisfactory": False,
+            }
+        except Exception as e:
+            logger.warning("Critique LLM call failed: %s", e)
+            return {
+                "scores": {"accuracy": 7, "completeness": 7, "clarity": 7, "logic": 7},
+                "overall": 7.0,
+                "strengths": ["Response generated"],
+                "weaknesses": [f"Critique failed: {e}"],
+                "improvement_suggestions": ["Review the response for accuracy"],
+                "is_satisfactory": False,
+            }
 
         # Accumulate token usage from critique calls (bypasses _call_llm)
         if result.usage:
