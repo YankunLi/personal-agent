@@ -7,7 +7,7 @@ import os
 import re
 from typing import Any
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.tools.builtin._workspace_utils import (
@@ -199,13 +199,15 @@ def _python_fallback(
         for fname in files:
             fpath = os.path.join(root, fname)
             if glob_filter:
-                # Match against the full relative path (like rg), not just the
-                # filename. Use PurePath.match() which supports ** patterns.
+                # Path.match() does NOT support ** recursive patterns (per
+                # Python docs, ** is only special in glob.glob), so the most
+                # common pattern "**/*.py" matched nothing. Use a translator
+                # that handles ** as a recursive wildcard.
                 try:
                     rel = os.path.relpath(fpath, search_root)
                 except ValueError:
                     rel = fpath
-                if not Path(rel).match(glob_filter):
+                if not _glob_match(rel, glob_filter):
                     continue
             # Skip symlinks to prevent workspace traversal
             if os.path.islink(fpath):
@@ -294,6 +296,41 @@ def _python_fallback(
             f"showing first {max_result_chars}]"
         )
     return result
+
+
+def _glob_match(path: str, pattern: str) -> bool:
+    """Match a path against a glob pattern supporting ``**``.
+
+    Unlike PurePath.match, this treats ``**`` as a recursive wildcard that
+    crosses directory separators, so ``**/*.py`` matches ``src/foo/bar.py``.
+    A single ``*`` does not cross ``/``, and ``?`` matches one non-slash char.
+    """
+    # Build a regex from the glob pattern.
+    i = 0
+    regex: list[str] = ["^"]
+    while i < len(pattern):
+        c = pattern[i]
+        if c == "*":
+            if i + 1 < len(pattern) and pattern[i + 1] == "*":
+                # ** — match across separators. Consume an optional trailing /.
+                regex.append(".*")
+                i += 2
+                if i < len(pattern) and pattern[i] == "/":
+                    i += 1
+            else:
+                regex.append("[^/]*")
+                i += 1
+        elif c == "?":
+            regex.append("[^/]")
+            i += 1
+        elif c in ".+^$()[]{}|\\":
+            regex.append("\\" + c)
+            i += 1
+        else:
+            regex.append(c)
+            i += 1
+    regex.append("$")
+    return re.match("".join(regex), path) is not None
 
 
 def create_grep_tool(
