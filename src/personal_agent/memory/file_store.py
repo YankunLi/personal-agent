@@ -145,6 +145,23 @@ class FileMemoryStore:
         })
 
         async with self._lock:
+            # Detect slug collisions: two distinct names that slugify to the
+            # same filename (e.g. "User Role!" and "user role") would silently
+            # overwrite each other. If the target file exists but its stored
+            # name differs from the one being written, refuse rather than
+            # destroy the existing memory.
+            if filepath.exists():
+                try:
+                    existing_text = await asyncio.to_thread(filepath.read_text)
+                    existing_meta, _ = _parse_frontmatter(existing_text)
+                    existing_name = existing_meta.get("name", "")
+                except Exception:
+                    existing_name = ""
+                if existing_name and existing_name != name:
+                    raise ValueError(
+                        f"Memory name '{name}' collides with existing memory "
+                        f"'{existing_name}' (same slug '{slug}'). Choose a distinct name."
+                    )
             # Preserve existing body if content is empty (shouldn't happen, but safe)
             if filepath.exists() and not content:
                 text = await asyncio.to_thread(filepath.read_text)
