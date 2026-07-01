@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any
 
 from personal_agent.memory.file_store import MEMORY_TYPES, FileMemoryStore
@@ -170,17 +171,18 @@ class MemoryConsolidator:
             lines = [f"- {m.get('name', '?')}: {m.get('description', '')}" for m in existing_memories]
             existing_text = "\n".join(lines)
 
-        # Call LLM
+        # Single-pass substitution: chained .replace() would corrupt the
+        # conversation if it contained the literal "{existing_memories}"
+        # (the second replace would substitute inside the already-inserted
+        # conversation text).
+        def _substitute(match: re.Match) -> str:
+            if match.group(0) == "{conversation}":
+                return conversation
+            return existing_text
+        prompt = re.sub(r"\{conversation\}|\{existing_memories\}", _substitute, CONSOLIDATION_USER_PROMPT)
         llm_messages = [
             Message(role=Role.SYSTEM, content=CONSOLIDATION_SYSTEM_PROMPT),
-            Message(
-                role=Role.USER,
-                content=CONSOLIDATION_USER_PROMPT.replace(
-                    "{conversation}", conversation
-                ).replace(
-                    "{existing_memories}", existing_text
-                ),
-            ),
+            Message(role=Role.USER, content=prompt),
         ]
 
         response = await self._provider.chat(llm_messages, temperature=0.1, max_tokens=4096)
