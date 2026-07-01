@@ -147,7 +147,9 @@ class ParallelJudgeAgent(BaseAgent):
         finally:
             try:
                 await agent.close()
-            except BaseException as e:
+            except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as e:
                 logger.warning("Error closing agent for '%s': %s", cfg.name, e)
 
     async def _run_judge(self, task: str, answers: dict[str, str]) -> str:
