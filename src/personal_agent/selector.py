@@ -79,7 +79,12 @@ def classify(task: str) -> AgentPattern:
         plan_score += 1
 
     scores = {"react": react_score, "plan_execute": plan_score, "reflection": reflection_score}
-    best = max(scores, key=lambda k: scores[k])
+    # Break ties by complexity priority: reflection > plan_execute > react.
+    # Using dict insertion order (max returns the first max) would always
+    # favor "react", misclassifying tasks that matched both a simple keyword
+    # and a complex signal.
+    priority = {"reflection": 3, "plan_execute": 2, "react": 1}
+    best = max(scores, key=lambda k: (scores[k], priority[k]))
 
     if scores[best] == 0:
         # No patterns matched, fall back to complexity heuristic
