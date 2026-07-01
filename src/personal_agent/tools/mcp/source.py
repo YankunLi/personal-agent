@@ -90,16 +90,21 @@ class MCPToolSource:
                 timeout=config.timeout,
             )
         except asyncio.TimeoutError:
+            # __aenter__ may have partially initialized the session before
+            # timing out — clean it up so transports/state don't leak.
+            await self._cleanup_session(session)
             await self._cleanup_context(ctx)
             raise MCPConnectionError(
                 f"MCP server '{config.name}' initialization timed out after {config.timeout}s"
             )
         except Exception as e:
+            await self._cleanup_session(session)
             await self._cleanup_context(ctx)
             raise MCPConnectionError(
                 f"Failed to initialize MCP server '{config.name}': {e}"
             ) from e
         except BaseException:
+            await self._cleanup_session(session)
             await self._cleanup_context(ctx)
             raise
 
