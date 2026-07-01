@@ -141,6 +141,7 @@ async def create_sub_agent(
         "cron_scheduler": None,  # Sub-agents don't get their own cron scheduler
         "budget_manager": budget_manager,
         "consolidation_provider": consolidation_provider,
+        "owns_consolidation_provider": False,  # parent owns it; don't double-close
         "max_steps": sub_cfg.max_steps,
         "system_prompt": sub_cfg.system_prompt,
         "temperature": sub_cfg.temperature,

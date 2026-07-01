@@ -55,6 +55,7 @@ class BaseAgent(ABC):
         max_tokens: int = 8192,
         consolidation_max_messages: int = 40,
         callbacks: AgentCallbacks | None = None,
+        owns_consolidation_provider: bool = True,
     ):
         self.provider = provider
         self.tools = tools or ToolRegistry()
@@ -64,6 +65,7 @@ class BaseAgent(ABC):
         self.memory_store = memory_store
         self.long_term = long_term_memory
         self.consolidation_provider = consolidation_provider
+        self._owns_consolidation_provider = owns_consolidation_provider
         self.agent_knowledge = agent_knowledge
         self.budget_manager = budget_manager
         self.context_manager = context_manager
@@ -596,7 +598,11 @@ class BaseAgent(ABC):
             except Exception as e:
                 logger.warning("Error closing provider: %s", e)
 
-        if self.consolidation_provider is not None and self.consolidation_provider is not self.provider:
+        if (
+            self._owns_consolidation_provider
+            and self.consolidation_provider is not None
+            and self.consolidation_provider is not self.provider
+        ):
             if hasattr(self.consolidation_provider, "close"):
                 try:
                     await self.consolidation_provider.close()
