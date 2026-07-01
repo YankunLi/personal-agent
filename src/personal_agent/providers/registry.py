@@ -117,6 +117,7 @@ def create_provider(
         return AnthropicProvider(
             model=model,
             api_key=api_key,
+            base_url=base_url,
             timeout=timeout,
             max_retries=max_retries,
         )
