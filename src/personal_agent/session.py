@@ -168,15 +168,23 @@ class SessionManager:
             self._current_id = target.id
             return target
 
-    def delete(self, session_id_or_name: str) -> bool:
-        """Delete a session. Cannot delete the current session."""
+    def delete(self, session_id_or_name: str, force: bool = False) -> bool:
+        """Delete a session. Cannot delete the current session unless force=True.
+
+        ``force`` is intended for rollback paths (e.g. ``cmd_init`` undoing a
+        session it just created): the session became current on creation, so
+        the default guard would silently no-op and leave an orphan session.
+        """
         with self._lock:
             target = self._find_locked(session_id_or_name)
             if target is None:
                 return False
 
-            if target.id == self._current_id:
+            if target.id == self._current_id and not force:
                 return False  # Can't delete active session
+
+            if target.id == self._current_id:
+                self._current_id = None  # Clear current pointer when force-deleting
 
             self._sessions.pop(target.id, None)
             session_file = self._storage_dir / f"{target.id}.json"

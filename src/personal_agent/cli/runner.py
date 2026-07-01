@@ -249,10 +249,13 @@ def cmd_init(args, workdir: Path) -> None:
         )
     except Exception as e:
         # init_project failed (e.g. disk/permission error). Roll back the
-        # session so a retry doesn't accumulate orphan sessions.
+        # session so a retry doesn't accumulate orphan sessions. force=True is
+        # required because create() made this session current, and delete()
+        # otherwise refuses to delete the active session — silently leaving
+        # the orphan behind.
         logger.exception("init_project failed: %s", e)
         try:
-            session_mgr.delete(session.name)
+            session_mgr.delete(session.name, force=True)
         except Exception:
             logger.warning("Failed to roll back orphan session", exc_info=True)
         console.print(Text.assemble(("Failed to initialize project: ", "error"), (str(e), "error")))
