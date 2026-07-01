@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -44,6 +45,10 @@ class MCPToolWrapper(Tool):
                     return "\n".join(texts)
                 return str(result.content)
             return str(result)
+        except asyncio.CancelledError:
+            # On Python < 3.11 CancelledError inherits from Exception and
+            # would be caught below, breaking the async cancellation protocol.
+            raise
         except Exception as e:
             raise MCPError(
                 f"MCP tool '{self._tool_info.name}' failed: {e}"
