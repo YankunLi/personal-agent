@@ -83,7 +83,14 @@ async def _run_command(cmd: list[str], timeout: float = 30) -> tuple[str, str, i
             _kill_process_group(proc.pid)
             await proc.wait()
             return "", f"Timeout: execution exceeded {timeout} seconds", -1
-        await proc.wait()
+        # Streams reached EOF, but the process may still be running (e.g.,
+        # a daemon that closed stdout/stderr). Bound proc.wait() so we
+        # don't hang forever.
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            _kill_process_group(proc.pid)
+            await proc.wait()
         rc = proc.returncode if proc.returncode is not None else -1
         return (
             stdout_b.decode("utf-8", errors="replace"),
