@@ -140,8 +140,7 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
             else:
                 suffix = ""
             items.append(f"  {entry.name}{suffix}")
-            if len(items) > DEFAULT_MAX_LIST_ENTRIES:
-                items.pop()  # Remove the excess entry
+            if len(items) >= DEFAULT_MAX_LIST_ENTRIES:
                 items.append(
                     f"  ... (truncated, {DEFAULT_MAX_LIST_ENTRIES} entries shown)"
                 )
