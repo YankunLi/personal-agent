@@ -195,19 +195,28 @@ class ContextBudgetManager:
     def compress(self, messages: list[Message], max_tokens: int) -> list[Message]:
         """Compress conversation to fit within budget.
 
-        Strategy: keep system messages, keep last N messages, compress middle.
+        Strategy: keep the leading system message, keep last N messages,
+        compress the middle. Mid-conversation system messages (hints,
+        cron prompts, memory injections) stay in their relative positions
+        so their temporal context is not destroyed by hoisting —
+        consistent with SlidingWindowStrategy and CompressionStrategy.
         """
-        # Always keep system messages and the last 6 messages
-        system_msgs = [m for m in messages if m.role == Role.SYSTEM]
-        non_system = [m for m in messages if m.role != Role.SYSTEM]
-        keep_recent = min(10, len(non_system))
+        # Preserve only the leading system message as head (base prompt).
+        if messages and messages[0].role == Role.SYSTEM:
+            system_msgs = [messages[0]]
+            rest = messages[1:]
+        else:
+            system_msgs = []
+            rest = list(messages)
+
+        keep_recent = min(10, len(rest))
 
         # Choose a split that does not orphan tool results from their tool calls.
-        split = len(non_system) - keep_recent
-        while split > 0 and non_system[split].role.value == "tool":
+        split = len(rest) - keep_recent
+        while split > 0 and rest[split].role.value == "tool":
             split -= 1
-        recent = non_system[split:]
-        older = non_system[:split]
+        recent = rest[split:]
+        older = rest[:split]
 
         if not older:
             return messages
