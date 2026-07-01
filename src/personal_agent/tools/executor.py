@@ -235,6 +235,9 @@ class ToolExecutor:
         max_retries = self._get_retry_count(tool_call.name)
         last_error: str | None = None
         last_error_is_transient = False
+        # Initialize tool so exception handlers can safely read tool.spec.mutating
+        # even if self._registry.get() raises a non-ToolNotFoundError exception.
+        tool = None
 
         for attempt in range(max_retries + 1):
             try:
@@ -279,7 +282,7 @@ class ToolExecutor:
                 )
                 # Mutating tools may have completed the side effect server-side
                 # before the timeout — retrying risks duplicate writes/edits.
-                if tool.spec.mutating:
+                if tool is not None and tool.spec.mutating:
                     logger.warning(
                         "Not retrying mutating tool '%s' after timeout", tool_call.name,
                     )
@@ -297,7 +300,7 @@ class ToolExecutor:
                     )
                     # Same hazard as timeout: the operation may have partially
                     # or fully applied before the error surfaced.
-                    if tool.spec.mutating:
+                    if tool is not None and tool.spec.mutating:
                         logger.warning(
                             "Not retrying mutating tool '%s' after transient error",
                             tool_call.name,
