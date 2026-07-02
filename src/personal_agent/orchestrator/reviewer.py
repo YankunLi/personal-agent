@@ -187,6 +187,12 @@ def _parse_report(data: dict, raw: str) -> BugReport:
                 suggested_fix=str(item.get("suggested_fix", "")).strip(),
             )
         )
+    if raw_bugs and not bugs:
+        # The reviewer returned a non-empty `bugs` list, but every entry
+        # was malformed (non-dict, or missing location/description). Don't
+        # treat as "zero bugs" — the reviewer tried to report bugs but in
+        # a format we couldn't parse. Flag as error to avoid false CLEAN.
+        return BugReport(bugs=[], raw_output=raw, error=True)
     return BugReport(bugs=bugs, raw_output=raw)
 
 
