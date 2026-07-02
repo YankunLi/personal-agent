@@ -350,6 +350,10 @@ class DevReviewLoop:
                 )
                 if not await self._blocked_flow(reviewer_bug, bug_attempts, round_num):
                     return False, None
+                # blocked_flow's "retry" may have committed a manual fix and
+                # bumped the persisted counter — refresh local round_num so
+                # the next _fix_bugs doesn't reuse the same round number.
+                round_num = self.round_counter.load()
                 continue
 
             # Review succeeded (even if it found bugs) — reset the streak.
@@ -400,6 +404,10 @@ class DevReviewLoop:
                 )
                 if not await self._blocked_flow(last_bug, bug_attempts, round_num):
                     return False, None
+                # blocked_flow's "retry" may have committed a manual fix and
+                # bumped the persisted counter — refresh local round_num so
+                # the next _fix_bugs doesn't reuse the same round number.
+                round_num = self.round_counter.load()
                 # Reset the global cap so the user's skip/retry actually buys
                 # a fresh budget — without this, total_rounds stays >= cap
                 # and every subsequent round re-triggers BLOCKED, trapping the
