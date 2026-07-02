@@ -581,6 +581,17 @@ class DevReviewLoop:
                     console.print(Text(
                         f"fix round {round_num - 1} 导致 gate 回归，回滚该 commit…", "error",
                     ))
+                    # The fix is bad — pop from applied_fixes BEFORE the
+                    # revert attempt. Previously pop() was only called on
+                    # revert success, so a failed revert left the bug in
+                    # applied_fixes, which tells the reviewer "don't
+                    # re-report this" — the loop then ran forever without
+                    # ever re-attacking the bug, while its bad fix stayed
+                    # in the worktree. Popping unconditionally means the
+                    # next review round re-reports the bug so the fixer
+                    # gets another attempt (whether or not the bad commit
+                    # was successfully reverted).
+                    applied_fixes.pop()
                     reverted = await revert_last_commit(wt_path)
                     if not reverted:
                         # Revert conflicted — the bad commit is still in place.
@@ -592,7 +603,6 @@ class DevReviewLoop:
                             return round_num, True
                         round_num = self.round_counter.load()
                         continue
-                    applied_fixes.pop()
                     if not await self._blocked_flow(bug, bug_attempts, round_num):
                         return round_num, True
                     round_num = self.round_counter.load()
