@@ -16,6 +16,7 @@ from personal_agent.cli.runner import (
     build_overrides,
     cmd_init,
     interactive_loop,
+    run_dev_review_loop,
     run_one_shot,
 )
 from personal_agent.cli.theme import console
@@ -63,6 +64,14 @@ def main() -> None:
     parser.add_argument(
         "--feishu-path", default="/feishu/webhook", help="Feishu webhook path (default: /feishu/webhook)"
     )
+    parser.add_argument(
+        "--loop", action="store_true",
+        help="Autonomous dev-review loop: develop → review → fix → review → ... until zero bugs",
+    )
+    parser.add_argument(
+        "--req", default="requirements.md",
+        help="Path to requirements file for --loop mode (default: requirements.md in workdir)",
+    )
 
     args = parser.parse_args()
 
@@ -94,6 +103,11 @@ def main() -> None:
                 feishu_path=args.feishu_path,
             )
         )
+    elif args.loop:
+        req_path = Path(args.req)
+        if not req_path.is_absolute():
+            req_path = workdir / req_path
+        asyncio.run(run_dev_review_loop(args.config, overrides, workdir, req_path))
     elif args.task:
         asyncio.run(run_one_shot(args.task, args.config, workdir, overrides))
     else:

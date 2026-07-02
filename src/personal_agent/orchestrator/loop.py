@@ -1,0 +1,475 @@
+"""DevReviewLoop — the two-loop autonomous dev-review orchestrator.
+
+Outer loop (requirement evolution):
+    hash(requirements.md) changed → develop → inner loop → CLEAN → ask user
+    → new req? yes → outer loop again; no → exit.
+
+Inner loop (review-fix):
+    review → bugs? → fix each → review → ... → zero bugs ∧ gates pass → CLEAN.
+
+Per-bug retry cap (3) and global round cap (15) escalate to BLOCKED, which
+hands control to the user via interactive diagnostics. Test/lint/typecheck
+regression after a fix reverts that fix and escalates the bug.
+
+All development happens in a git worktree; main is fast-forwarded only on
+CLEAN. Each fix is a separate commit ``fix: round N — <desc>`` where N
+continues the persistent round counter.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import logging
+from pathlib import Path
+
+from personal_agent.cli.theme import console
+from personal_agent.config import Settings, load_config
+from personal_agent.factory import create_agent
+from personal_agent.orchestrator.diagnostics import await_req_update, blocked_diagnostic
+from personal_agent.orchestrator.gates import all_gates
+from personal_agent.orchestrator.reviewer import review_tree
+from personal_agent.orchestrator.state import Bug, BugReport, LastCleanHash, LoopState, RoundCounter
+from personal_agent.orchestrator.worktree_isolation import (
+    commit_all,
+    create_worktree,
+    delete_branch,
+    merge_worktree,
+    remove_worktree,
+    revert_last_commit,
+)
+from personal_agent.providers.registry import ProviderCredentials, create_provider
+from rich.panel import Panel
+from rich.text import Text
+
+logger = logging.getLogger(__name__)
+
+# Tunable caps
+MAX_BUG_ATTEMPTS = 3
+MAX_GLOBAL_ROUNDS = 15
+
+
+class DevReviewLoop:
+    """Two-loop dev-review orchestrator.
+
+    Args:
+        workdir: Repository root (must be a git repo).
+        req_path: Path to requirements.md (the requirement source of truth).
+        config_path: Optional config file path for agent settings.
+        overrides: Optional provider/model overrides from CLI.
+    """
+
+    def __init__(
+        self,
+        workdir: Path,
+        req_path: Path,
+        config_path: str | None = None,
+        overrides: dict | None = None,
+    ):
+        self.workdir = self._resolve_repo_root(workdir)
+        # Re-resolve req_path against the repo root if it was relative
+        if not req_path.is_absolute():
+            req_path = self.workdir / req_path
+        self.req_path = req_path
+        self.overrides = overrides or {}
+        self.settings: Settings = load_config(config_path)
+        self.round_counter = RoundCounter(repo_dir=self.workdir)
+        self.last_clean = LastCleanHash(repo_dir=self.workdir)
+        self.state = LoopState.IDLE
+        self._stopped = False
+
+    @staticmethod
+    def _resolve_repo_root(workdir: Path) -> Path:
+        """Resolve ``workdir`` to the git repo root.
+
+        Ensures ``.pa/`` always lands at the repo root regardless of which
+        subdirectory ``pa --loop`` was invoked from. Falls back to the given
+        workdir if not in a git repo.
+        """
+        import subprocess
+        try:
+            out = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                cwd=str(workdir),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if out.returncode == 0:
+                root = out.stdout.strip()
+                if root:
+                    return Path(root)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        return workdir
+
+    # ── public API ────────────────────────────────────────────────────────
+
+    async def run(self) -> None:
+        """Top-level entry: run the outer loop until user exits."""
+        try:
+            await self._outer_loop()
+        except KeyboardInterrupt:
+            console.print(Text("\n中断，清理 worktree…", "warning"))
+        except Exception as e:
+            logger.exception("DevReviewLoop crashed: %s", e)
+            console.print(Text.assemble(("DevReviewLoop 失败: ", "error"), (str(e), "error")))
+        finally:
+            await self._cleanup_worktree()
+
+    def stop(self) -> None:
+        """Signal the loop to stop at the next checkpoint."""
+        self._stopped = True
+
+    # ── outer loop ────────────────────────────────────────────────────────
+
+    async def _outer_loop(self) -> None:
+        # Initial requirement must exist
+        if not self.req_path.exists():
+            console.print(Text.assemble(
+                ("需求文件不存在: ", "error"), (str(self.req_path), "value"),
+            ))
+            console.print(Text("请先创建需求文件再启动 --loop 模式。", "dim"))
+            return
+
+        # Cross-invocation idempotency gate: if requirements.md hasn't changed
+        # since the last CLEAN pass, no-op. This makes `pa --loop` safe to
+        # re-run — the second invocation exits immediately without spinning
+        # up a worktree or agent.
+        current_hash = hashlib.sha256(
+            self.req_path.read_text(encoding="utf-8").encode("utf-8")
+        ).hexdigest()
+        last_clean = self.last_clean.load()
+        if last_clean is not None and last_clean == current_hash:
+            console.print(Text.assemble(
+                ("需求未变化（自上次 CLEAN），跳过。", "success"),
+                (f"  修改 {self.req_path.name} 后重跑即可。", "dim"),
+            ))
+            return
+
+        last_req_hash: str | None = last_clean
+
+        while not self._stopped:
+            req_content = self.req_path.read_text(encoding="utf-8")
+            req_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
+
+            if last_req_hash is not None and req_hash == last_req_hash:
+                # Requirement unchanged since last iteration — ask user
+                if not await await_req_update():
+                    console.print(Text("退出 dev-review 循环。", "success"))
+                    return
+                # User said "yes" — but they need to edit the file. Wait for change.
+                last_req_hash = await self._wait_for_req_change(req_hash)
+                continue
+
+            last_req_hash = req_hash
+            await self._run_iteration(req_content)
+
+            if self._stopped:
+                break
+
+    async def _wait_for_req_change(self, old_hash: str) -> str:
+        """Block until requirements.md hash changes; return new hash."""
+        console.print(Text(f"等待 {self.req_path} 变更后继续（Ctrl+C 退出）…", "dim"))
+        while not self._stopped:
+            await asyncio.sleep(2.0)
+            try:
+                content = self.req_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            new_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            if new_hash != old_hash:
+                return new_hash
+        return old_hash
+
+    # ── single iteration: develop + inner review-fix loop ────────────────
+
+    async def _run_iteration(self, req_content: str) -> None:
+        """One outer iteration: setup worktree → develop → review-fix loop → merge."""
+        # Create worktree
+        try:
+            wt_path, branch = await create_worktree(self.workdir)
+        except Exception as e:
+            console.print(Text.assemble(("无法创建 worktree: ", "error"), (str(e), "error")))
+            return
+
+        self._wt_path = wt_path
+        self._wt_branch = branch
+
+        # Develop
+        self.state = LoopState.DEVELOPING
+        console.print(Panel(Text("阶段 1: 开发", "label"), border_style="dim", expand=False))
+        await self._develop(req_content, wt_path)
+        await commit_all(wt_path, f"feat: implement requirement per {self.req_path.name}")
+
+        # Inner loop: review-fix
+        self.state = LoopState.REVIEWING
+        if await self._inner_loop(wt_path):
+            # CLEAN — merge to main
+            console.print(Panel(Text("阶段 3: 合并到主分支", "label"), border_style="success", expand=False))
+            try:
+                await merge_worktree(self.workdir, branch)
+                console.print(Text(f"✓ 已合并 {branch} 到主分支", "success"))
+                # Record last-clean hash so the next `pa --loop` no-ops if
+                # requirements.md hasn't changed since.
+                clean_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
+                self.last_clean.save(clean_hash, self.round_counter.load() - 1)
+            except Exception as e:
+                console.print(Text.assemble(
+                    ("合并失败（worktree 保留以供检查）: ", "error"), (str(e), "error"),
+                ))
+                return  # keep worktree for inspection
+        else:
+            console.print(Text("内层循环未到 CLEAN，worktree 保留以供检查。", "warning"))
+
+    async def _inner_loop(self, wt_path: Path) -> bool:
+        """Run review-fix until CLEAN or BLOCKED-not-resolved.
+
+        Returns True if CLEAN (and merges), False if aborted/blocked.
+        """
+        round_num = self.round_counter.load()
+        bug_attempts: dict[str, int] = {}
+        prev_bugs: list[Bug] = []
+        applied_fixes: list[Bug] = []
+        total_rounds = 0
+
+        while not self._stopped:
+            self.state = LoopState.REVIEWING
+            console.print(Panel(
+                Text(f"阶段 2: 审查 (round {round_num})", "label"),
+                border_style="dim", expand=False,
+            ))
+
+            report = await review_tree(
+                self._reviewer_provider(),
+                wt_path / "src" if (wt_path / "src").exists() else wt_path,
+                wt_path,
+                prev_bugs=prev_bugs,
+                applied_fixes=applied_fixes,
+            )
+
+            if not report.has_bugs:
+                # Zero bugs — run gates
+                gates_ok, results = await all_gates(wt_path)
+                if gates_ok:
+                    self.state = LoopState.CLEAN
+                    console.print(Text("✓ 审查零 bug 且全部 gate 通过", "success"))
+                    self.round_counter.save(round_num)
+                    return True
+                else:
+                    console.print(Text("审查零 bug 但 gate 失败，转为 fix 任务:", "warning"))
+                    for r in results:
+                        if not r.passed:
+                            console.print(Text(f"  {r.name} 失败", "warning"))
+                            # Synthesize a bug from the gate failure so the fixer addresses it
+                            report.bugs.append(Bug(
+                                location="tests/lint/typecheck",
+                                severity="major",
+                                description=f"{r.name} gate failed",
+                                suggested_fix=f"修复 {r.name} 失败:\n{r.output[:2000]}",
+                            ))
+            else:
+                console.print(Text(f"审查发现 {len(report.bugs)} 个 bug:", "warning"))
+                for b in report.bugs:
+                    console.print(Text(f"  [{b.severity}] {b.location}: {b.description}", "dim"))
+
+            # Fix phase
+            self.state = LoopState.FIXING
+            round_num, aborted = await self._fix_bugs(
+                report, wt_path, round_num, bug_attempts, applied_fixes,
+            )
+            if aborted:
+                return False
+
+            prev_bugs = report.bugs
+            total_rounds += 1
+
+            if total_rounds >= MAX_GLOBAL_ROUNDS:
+                console.print(Text(
+                    f"达到全局回合上限 {MAX_GLOBAL_ROUNDS}，进入 BLOCKED 诊断。", "error",
+                ))
+                last_bug = report.bugs[-1] if report.bugs else Bug(
+                    "?", "major", "global round cap reached"
+                )
+                if not await self._blocked_flow(last_bug, bug_attempts, round_num):
+                    return False
+
+        return False
+
+    async def _fix_bugs(
+        self,
+        report: BugReport,
+        wt_path: Path,
+        round_num: int,
+        bug_attempts: dict[str, int],
+        applied_fixes: list[Bug],
+    ) -> tuple[int, bool]:
+        """Fix each bug in the report, committing individually.
+
+        Returns (next_round_num, aborted). When aborted is True the caller
+        should stop the loop — ``self._stopped`` is also set.
+        """
+        for bug in report.bugs:
+            if self._stopped:
+                return round_num, True
+            h = bug.identity_hash()
+            bug_attempts[h] = bug_attempts.get(h, 0) + 1
+
+            if bug_attempts[h] > MAX_BUG_ATTEMPTS:
+                # Escalate
+                if not await self._blocked_flow(bug, bug_attempts, round_num):
+                    return round_num, True  # user aborted
+                # User chose skip/retry — reset attempt counter
+                bug_attempts[h] = 0
+                continue
+
+            # Run the fix
+            console.print(Text(f"  → 修复 round {round_num}: {bug.location}", "dim"))
+            await self._fix_one_bug(bug, wt_path)
+
+            # Commit the fix
+            committed = await commit_all(
+                wt_path, f"fix: round {round_num} — {bug.description[:60]}"
+            )
+            if committed:
+                round_num += 1
+                self.round_counter.save(round_num)
+                applied_fixes.append(bug)
+
+                # Test regression gate
+                gates_ok, _ = await all_gates(wt_path)
+                if not gates_ok:
+                    console.print(Text(
+                        f"fix round {round_num - 1} 导致 gate 回归，回滚该 commit…", "error",
+                    ))
+                    await revert_last_commit(wt_path)
+                    applied_fixes.pop()
+                    if not await self._blocked_flow(bug, bug_attempts, round_num):
+                        return round_num, True
+        return round_num, False
+
+    async def _blocked_flow(self, bug: Bug, bug_attempts: dict[str, int], round_num: int) -> bool:
+        """Enter BLOCKED diagnostics. Returns True if user chose skip, False if abort."""
+        self.state = LoopState.BLOCKED
+        h = bug.identity_hash()
+        attempts = bug_attempts.get(h, 0)
+        action = await blocked_diagnostic(bug, attempts, round_num)
+        if action == "skip":
+            console.print(Text(f"跳过 bug: {bug.location}", "dim"))
+            return True
+        if action == "retry":
+            # User claims to have fixed it manually — reset attempts so next review verifies
+            bug_attempts[h] = 0
+            return True
+        if action == "abort":
+            console.print(Text("用户中止。", "warning"))
+            self._stopped = True
+            return False
+        return False
+
+    # ── agent creation & execution ────────────────────────────────────────
+
+    def _dev_settings(self, wt_path: Path, pattern: str = "plan_execute") -> Settings:
+        """Create a settings copy scoped to the worktree."""
+        s = self.settings.model_copy(deep=True)
+        s.agent.workspace = str(wt_path)
+        s.agent.pattern = pattern
+        return s
+
+    def _reviewer_provider(self):
+        """Create a provider for the reviewer (same as dev). Cached."""
+        if not hasattr(self, "_reviewer_prov"):
+            agent_cfg = self.settings.agent
+            provider_name = self.overrides.get("provider", agent_cfg.provider)
+            model = self.overrides.get("model", agent_cfg.model)
+            creds = self.settings.get_provider_credentials()
+            if "api_key" in self.overrides:
+                creds = creds.model_copy()
+                creds.api_key = self.overrides["api_key"]
+            self._reviewer_prov = create_provider(
+                provider_name=provider_name,
+                model=model,
+                credentials=creds,
+            )
+        return self._reviewer_prov
+
+    async def _develop(self, req_content: str, wt_path: Path) -> None:
+        """Run the developer agent on the requirement."""
+        settings = self._dev_settings(wt_path, pattern="plan_execute")
+        agent = None
+        try:
+            agent = await create_agent(
+                settings,
+                task=f"实现以下需求:\n\n{req_content}",
+                **self._agent_overrides(),
+            )
+            task = (
+                f"在当前 worktree ({wt_path}) 中实现以下需求。"
+                f" 需求文件 {self.req_path.name} 内容:\n\n{req_content}\n\n"
+                f"完成后简述你做了什么。"
+            )
+            result = await agent.run(task)
+            console.print(Text("开发完成:", "success"))
+            console.print(Text(result.answer[:500], "dim"))
+        finally:
+            if agent is not None:
+                await agent.close()
+
+    async def _fix_one_bug(self, bug: Bug, wt_path: Path) -> None:
+        """Run a fix agent on a single bug."""
+        settings = self._dev_settings(wt_path, pattern="react")
+        agent = None
+        try:
+            agent = await create_agent(
+                settings,
+                task=f"修复 bug: {bug.description}",
+                **self._agent_overrides(),
+            )
+            task = (
+                f"修复以下 bug:\n"
+                f"位置: {bug.location}\n"
+                f"严重度: {bug.severity}\n"
+                f"描述: {bug.description}\n"
+                f"建议: {bug.suggested_fix}\n\n"
+                f"在 worktree ({wt_path}) 中定位并修复。不要改动无关代码。"
+            )
+            result = await agent.run(task)
+            console.print(Text(f"  修复结果: {result.answer[:200]}", "dim"))
+        finally:
+            if agent is not None:
+                await agent.close()
+
+    def _agent_overrides(self) -> dict:
+        """Project CLI overrides onto agent factory kwargs."""
+        ov: dict = {}
+        if "provider" in self.overrides:
+            ov["provider"] = self.overrides["provider"]
+        if "model" in self.overrides:
+            ov["model"] = self.overrides["model"]
+        if "api_key" in self.overrides:
+            ov["api_key"] = self.overrides["api_key"]
+        return ov
+
+    # ── cleanup ───────────────────────────────────────────────────────────
+
+    async def _cleanup_worktree(self) -> None:
+        """Remove the worktree if the loop exits without merging."""
+        wt = getattr(self, "_wt_path", None)
+        branch = getattr(self, "_wt_branch", None)
+        if wt is None:
+            return
+        # If we got here without merging, the worktree is leftover — remove it
+        # unless the user explicitly wants to keep it for inspection.
+        try:
+            from personal_agent.orchestrator.diagnostics import _prompt_async
+            keep = (await _prompt_async(
+                f"是否保留 worktree {wt} 以供检查? [y/N]: "
+            )).strip().lower() in ("y", "yes")
+        except Exception:
+            keep = False
+        if not keep:
+            await remove_worktree(self.workdir, wt, force=True)
+            if branch:
+                await delete_branch(self.workdir, branch, force=True)
+            console.print(Text(f"已清理 worktree {wt}", "dim"))

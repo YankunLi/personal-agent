@@ -215,6 +215,23 @@ async def interactive_loop(
         await server.stop()
 
 
+async def run_dev_review_loop(
+    config_path: str | None,
+    overrides: dict,
+    workdir: Path,
+    req_path: Path,
+) -> None:
+    """Run the autonomous dev-review loop.
+
+    See ``orchestrator/README.md`` for the two-loop design. Entry point for
+    the ``pa --loop`` CLI flag.
+    """
+    from personal_agent.orchestrator import DevReviewLoop
+
+    loop = DevReviewLoop(workdir=workdir, req_path=req_path, config_path=config_path, overrides=overrides)
+    await loop.run()
+
+
 # ── Init helpers (moved from __main__.py) ────────────────────────────────────
 
 

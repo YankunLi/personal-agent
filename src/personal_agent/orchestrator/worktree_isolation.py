@@ -1,0 +1,114 @@
+"""Git worktree isolation for the dev-review loop.
+
+The loop creates a worktree at ``.pa/worktrees/<timestamp>`` on a throwaway
+branch so that the main branch is never polluted by half-finished fixes. On
+CLEAN, the branch is fast-forwarded into main; on abort, the worktree is
+force-removed.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+async def _git(*args: str, cwd: Path, check: bool = True) -> tuple[int, str]:
+    """Run a git command, return (returncode, combined output)."""
+    proc = await asyncio.create_subprocess_exec(
+        "git", *args,
+        cwd=str(cwd),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=60.0)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return 124, "git timed out"
+    code = proc.returncode or 0
+    text = out.decode("utf-8", errors="replace")
+    if check and code != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed ({code}): {text}")
+    return code, text
+
+
+async def create_worktree(repo_root: Path, base_branch: str | None = None) -> tuple[Path, str]:
+    """Create a worktree on a new branch.
+
+    Returns (worktree_path, branch_name). The worktree lives at
+    ``<repo_root>/.pa/worktrees/<ts>`` on branch ``dev-review-<ts>``.
+    """
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    branch = f"dev-review-{ts}"
+    wt_path = repo_root / ".pa" / "worktrees" / ts
+
+    # Determine base: current HEAD if not specified
+    if base_branch is None:
+        _, head_ref = await _git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_root)
+        base_branch = head_ref.strip() or "HEAD"
+
+    # Create the worktree on a new branch off base
+    await _git(
+        "worktree", "add", "-b", branch, str(wt_path), base_branch,
+        cwd=repo_root,
+    )
+    logger.info("Created worktree at %s on branch %s (off %s)", wt_path, branch, base_branch)
+    return wt_path, branch
+
+
+async def merge_worktree(repo_root: Path, branch: str, target: str | None = None) -> None:
+    """Fast-forward ``target`` (default: current branch) to ``branch``.
+
+    Uses ``--ff-only`` so the merge is linear — no merge commit. If the ff
+    fails (divergent history), raises RuntimeError so the caller can fall
+    back to a diagnostic rather than silently creating a merge commit.
+    """
+    if target is None:
+        _, target_ref = await _git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_root)
+        target = target_ref.strip()
+
+    await _git("merge", "--ff-only", branch, cwd=repo_root, check=True)
+    logger.info("Fast-forwarded %s to %s", target, branch)
+
+
+async def remove_worktree(repo_root: Path, wt_path: Path, force: bool = False) -> None:
+    """Remove a worktree and delete its branch."""
+    flag = "--force" if force else None
+    args = ["worktree", "remove"]
+    if flag:
+        args.append(flag)
+    args.append(str(wt_path))
+    # Don't raise if worktree removal fails (may already be gone) — log and continue.
+    code, text = await _git(*args, cwd=repo_root, check=False)
+    if code != 0:
+        logger.warning("worktree remove failed (continuing): %s", text)
+
+
+async def delete_branch(repo_root: Path, branch: str, force: bool = False) -> None:
+    flag = "-D" if force else "-d"
+    await _git("branch", flag, branch, cwd=repo_root, check=False)
+
+
+async def commit_all(wt_path: Path, message: str) -> bool:
+    """Stage all changes and commit. Returns True if a commit was created.
+
+    Returns False (no-op) if there were no changes to commit.
+    """
+    code, _ = await _git("add", "-A", cwd=wt_path, check=False)
+    # Check if anything is staged
+    code, out = await _git("diff", "--cached", "--quiet", cwd=wt_path, check=False)
+    if code == 0:
+        # No staged changes — nothing to commit
+        return False
+    await _git("commit", "-m", message, cwd=wt_path, check=True)
+    return True
+
+
+async def revert_last_commit(wt_path: Path) -> None:
+    """Revert the last commit (used when a fix causes test regression)."""
+    await _git("revert", "--no-edit", "HEAD", cwd=wt_path, check=True)

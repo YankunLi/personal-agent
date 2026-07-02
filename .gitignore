@@ -32,6 +32,9 @@ workspace/
 # Project config (local)
 pa.json
 
+# personal-agent project state (dev-review loop counters, last-clean hash, worktrees)
+.pa/
+
 # MyPy
 .mypy_cache/
 
