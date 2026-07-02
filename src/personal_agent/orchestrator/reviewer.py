@@ -325,7 +325,7 @@ async def review_tree(
             scoped_applied = [b for b in (applied_fixes or []) if any(
                 b.location.startswith(str(f[0])) for f in files
             )]
-            report = await review_files(provider, files, scoped_prev, scoped_applied)
+            report = await review_files(provider, files, scoped_prev, scoped_applied, guide)
             all_bugs.extend(report.bugs)
             if report.raw_output:
                 raw_chunks.append(f"## top-level\n{report.raw_output}")
