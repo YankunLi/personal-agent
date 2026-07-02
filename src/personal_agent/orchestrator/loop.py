@@ -532,7 +532,22 @@ class DevReviewLoop:
                 committed = False
             if committed:
                 round_num += 1
-                self.round_counter.save(round_num)
+                # Persist the new round counter. save() can raise OSError on
+                # disk-full, permission, or a transient FS hiccup — the fix
+                # commit is already in git, so letting save() crash the loop
+                # here would waste the fix work and leave the worktree
+                # preserved-but-abandoned. The in-memory round_num is already
+                # advanced, so subsequent fixes in this iteration use the
+                # correct number; only a re-run would re-seed from git log
+                # (which sees the committed fix: round N messages and picks
+                # up the correct next number). Log and continue.
+                try:
+                    self.round_counter.save(round_num)
+                except Exception as e:
+                    logger.warning("round_counter.save failed (non-fatal): %s", e)
+                    console.print(Text(
+                        f"  ⚠ 无法持久化 round 计数（下次重跑可能重复 round 号）: {e}", "warning",
+                    ))
                 applied_fixes.append(bug)
 
                 # Test regression gate
