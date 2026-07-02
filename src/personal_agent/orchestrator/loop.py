@@ -444,7 +444,23 @@ class DevReviewLoop:
         Returns (next_round_num, aborted). When aborted is True the caller
         should stop the loop — ``self._stopped`` is also set.
         """
+        # Deduplicate bugs by identity_hash within this report. The reviewer
+        # (LLM) can emit the same bug twice in one JSON output; without
+        # dedup, each duplicate increments bug_attempts[h] for the same bug,
+        # so 4+ duplicates would trip the per-bug retry cap (MAX_BUG_ATTEMPTS)
+        # and falsely escalate to BLOCKED — even though the first fix
+        # succeeded. Cross-round duplicates (same bug re-reported next round)
+        # are NOT deduped here; those legitimately accumulate attempts.
+        seen: set[str] = set()
+        unique_bugs: list[Bug] = []
         for bug in report.bugs:
+            h = bug.identity_hash()
+            if h in seen:
+                continue
+            seen.add(h)
+            unique_bugs.append(bug)
+
+        for bug in unique_bugs:
             if self._stopped:
                 return round_num, True
             h = bug.identity_hash()
