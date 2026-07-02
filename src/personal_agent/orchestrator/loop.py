@@ -231,7 +231,17 @@ class DevReviewLoop:
             # Develop
             self.state = LoopState.DEVELOPING
             console.print(Panel(Text("阶段 1: 开发", "label"), border_style="dim", expand=False))
-            await self._develop(req_content, wt_path)
+            try:
+                await self._develop(req_content, wt_path)
+            except Exception as e:
+                # Develop agent failed (LLM network error, rate limit, etc.).
+                # Don't let a transient error crash the entire loop — abort
+                # this iteration (worktree preserved by finally) and let the
+                # outer loop prompt the user for next steps. The user can
+                # re-run pa --loop to retry.
+                logger.exception("Develop agent failed: %s", e)
+                console.print(Text(f"开发 agent 失败: {e}", "error"))
+                return
             developed = await commit_all(
                 wt_path, f"feat: implement requirement per {self.req_path.name}"
             )
