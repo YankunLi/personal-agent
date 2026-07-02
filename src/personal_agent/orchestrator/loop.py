@@ -427,6 +427,14 @@ class DevReviewLoop:
         self.state = LoopState.BLOCKED
         h = bug.identity_hash()
         attempts = bug_attempts.get(h, 0)
+        # Show the worktree path so the user knows where to edit for "retry".
+        # Without this, the BLOCKED panel only shows bug.location (a repo-relative
+        # path) and the user has no pointer to the actual worktree directory
+        # holding the code they need to fix.
+        if self._wt_path is not None:
+            console.print(Text.assemble(
+                ("worktree: ", "label"), (str(self._wt_path), "value"),
+            ))
         action = await blocked_diagnostic(bug, attempts, round_num)
         if action == "skip":
             console.print(Text(f"跳过 bug: {bug.location}", "dim"))
