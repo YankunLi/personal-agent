@@ -44,6 +44,12 @@ async def _run(cmd: list[str], cwd: Path, timeout: float = 300.0) -> tuple[int, 
 
 
 async def run_tests(workdir: Path) -> GateResult:
+    # Probe for a tests/ directory first. A project with no tests should
+    # not fail the gate forever — that would make CLEAN unreachable. Treat
+    # "no tests/" as a pass with a note, so the gate only fails when tests
+    # actually exist and one of them fails.
+    if not (workdir / "tests").is_dir():
+        return GateResult("tests", True, "no tests/ directory — skipped")
     code, out = await _run(["python3", "-m", "pytest", "tests/", "-x", "-q"], workdir)
     return GateResult("tests", code == 0, out)
 
