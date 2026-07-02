@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -44,8 +45,12 @@ async def create_worktree(repo_root: Path, base_branch: str | None = None) -> tu
     ``<repo_root>/.pa/worktrees/<ts>`` on branch ``dev-review-<ts>``.
     """
     ts = time.strftime("%Y%m%d-%H%M%S")
-    branch = f"dev-review-{ts}"
-    wt_path = repo_root / ".pa" / "worktrees" / ts
+    # Second-precision timestamp can collide if two worktrees are created
+    # within the same second (e.g. back-to-back outer iterations, or tests).
+    # Append a 4-char uuid suffix to guarantee uniqueness.
+    suffix = uuid.uuid4().hex[:4]
+    branch = f"dev-review-{ts}-{suffix}"
+    wt_path = repo_root / ".pa" / "worktrees" / f"{ts}-{suffix}"
 
     # Determine base: current HEAD if not specified
     if base_branch is None:
