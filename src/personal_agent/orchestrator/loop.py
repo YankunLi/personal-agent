@@ -119,10 +119,21 @@ class DevReviewLoop:
             console.print(Text.assemble(("DevReviewLoop 失败: ", "error"), (str(e), "error")))
         finally:
             await self._cleanup_worktree()
+            await self.close()
 
     def stop(self) -> None:
         """Signal the loop to stop at the next checkpoint."""
         self._stopped = True
+
+    async def close(self) -> None:
+        """Release cached resources (reviewer provider's httpx pool, etc.)."""
+        prov = getattr(self, "_reviewer_prov", None)
+        if prov is not None:
+            try:
+                await prov.close()
+            except Exception as e:
+                logger.warning("Failed to close reviewer provider: %s", e)
+            self._reviewer_prov = None
 
     # ── outer loop ────────────────────────────────────────────────────────
 
