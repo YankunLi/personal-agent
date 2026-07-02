@@ -126,7 +126,16 @@ class DevReviewLoop:
             logger.exception("DevReviewLoop crashed: %s", e)
             console.print(Text.assemble(("DevReviewLoop 失败: ", "error"), (str(e), "error")))
         finally:
-            await self._cleanup_worktree()
+            # close() must run even if _cleanup_worktree raises (e.g. the
+            # user hits Ctrl+C a second time during the "keep worktree?"
+            # prompt — KeyboardInterrupt is BaseException, not caught by
+            # the except above; or a subprocess PermissionError during
+            # remove_worktree). Without this guard the reviewer provider's
+            # httpx connection pool would leak on every non-clean exit.
+            try:
+                await self._cleanup_worktree()
+            except BaseException as e:
+                logger.warning("Worktree cleanup failed (continuing to close): %s", e)
             await self.close()
 
     def stop(self) -> None:
