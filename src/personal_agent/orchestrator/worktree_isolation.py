@@ -61,16 +61,45 @@ async def create_worktree(repo_root: Path, base_branch: str | None = None) -> tu
     return wt_path, branch
 
 
+class DirtyWorktreeError(RuntimeError):
+    """Raised when the main working tree has uncommitted changes that would
+    block a fast-forward merge. The caller should prompt the user to commit
+    or stash before retrying, rather than silently failing."""
+
+
+async def _working_tree_is_clean(repo_root: Path) -> tuple[bool, str]:
+    """Return (is_clean, dirty_description). ``git status --porcelain`` is
+    empty iff the working tree is clean."""
+    code, out = await _git("status", "--porcelain", cwd=repo_root, check=False)
+    if code != 0:
+        # git status itself failed — treat as not clean, surface the error
+        return False, f"git status failed: {out}"
+    if out.strip():
+        return False, out.strip()
+    return True, ""
+
+
 async def merge_worktree(repo_root: Path, branch: str, target: str | None = None) -> None:
     """Fast-forward ``target`` (default: current branch) to ``branch``.
 
     Uses ``--ff-only`` so the merge is linear — no merge commit. If the ff
     fails (divergent history), raises RuntimeError so the caller can fall
     back to a diagnostic rather than silently creating a merge commit.
+
+    Raises ``DirtyWorktreeError`` if the main working tree has uncommitted
+    changes — ``git merge`` would refuse to proceed and the resulting
+    RuntimeError message is cryptic. Pre-checking lets the caller surface a
+    clear "commit or stash your changes first" message.
     """
     if target is None:
         _, target_ref = await _git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_root)
         target = target_ref.strip()
+
+    clean, dirty_desc = await _working_tree_is_clean(repo_root)
+    if not clean:
+        raise DirtyWorktreeError(
+            f"主工作树有未提交改动，无法 fast-forward 合并。请先 commit 或 stash:\n{dirty_desc}"
+        )
 
     await _git("merge", "--ff-only", branch, cwd=repo_root, check=True)
     logger.info("Fast-forwarded %s to %s", target, branch)

@@ -31,6 +31,7 @@ from personal_agent.orchestrator.gates import all_gates
 from personal_agent.orchestrator.reviewer import review_tree
 from personal_agent.orchestrator.state import Bug, BugReport, LastCleanHash, LoopState, RoundCounter
 from personal_agent.orchestrator.worktree_isolation import (
+    DirtyWorktreeError,
     commit_all,
     create_worktree,
     delete_branch,
@@ -240,6 +241,12 @@ class DevReviewLoop:
                     clean_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
                     self.last_clean.save(clean_hash, self.round_counter.load() - 1)
                     merged = True
+                except DirtyWorktreeError as e:
+                    # Surface the dirty-tree reason clearly; worktree kept
+                    # for inspection so the user can retry after stashing.
+                    console.print(Text.assemble(
+                        ("合并失败: ", "error"), (str(e), "error"),
+                    ))
                 except Exception as e:
                     console.print(Text.assemble(
                         ("合并失败（worktree 保留以供检查）: ", "error"), (str(e), "error"),
