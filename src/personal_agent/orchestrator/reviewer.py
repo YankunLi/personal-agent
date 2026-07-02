@@ -80,31 +80,71 @@ def _build_user_prompt(
     return "\n".join(parts)
 
 
+def _extract_balanced_json(content: str, start: int) -> dict | None:
+    """Extract a brace-balanced JSON object starting at ``content[start]`` (must be ``{``).
+
+    Walks forward tracking depth, respecting ``"`` and ``\\`` escapes. Returns
+    the parsed dict, or None if no balanced object is found / parse fails.
+    """
+    if start >= len(content) or content[start] != "{":
+        return None
+    depth = 0
+    in_str = False
+    escape = False
+    for i in range(start, len(content)):
+        c = content[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(content[start : i + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
+
+
 def _extract_json(content: str) -> dict | None:
-    """Extract a JSON object from LLM output, handling code fences."""
-    # Try fenced ```json ... ``` first
-    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+    """Extract a JSON object from LLM output, handling code fences.
+
+    Two strategies:
+    1. If the output has a ```json ... ``` fence, parse the fenced body.
+    2. Otherwise, scan for the first ``{`` and extract a brace-balanced
+       object starting there. This handles nested objects (e.g. ``{"bugs":
+       [{"location": ...}]}``) correctly — a naive ``\\{[^{}]*\\}`` regex
+       would match the inner ``{"location": ...}`` and lose the ``bugs`` key.
+    """
+    # Strategy 1: fenced code block
+    m = re.search(r"```(?:json)?\s*(.+?)\s*```", content, re.DOTALL)
     if m:
-        try:
-            return json.loads(m.group(1))
-        except json.JSONDecodeError:
-            pass
-    # Try bare JSON object
-    m = re.search(r"\{[^{}]*\}", content, re.DOTALL)
-    if not m:
-        # Greedy attempt for the largest {...} block
-        start = content.find("{")
-        end = content.rfind("}")
-        if start != -1 and end > start:
-            try:
-                return json.loads(content[start : end + 1])
-            except json.JSONDecodeError:
-                return None
-        return None
-    try:
-        return json.loads(m.group(0))
-    except json.JSONDecodeError:
-        return None
+        body = m.group(1).strip()
+        # Find first { in the fenced body and extract balanced
+        brace_idx = body.find("{")
+        if brace_idx != -1:
+            parsed = _extract_balanced_json(body, brace_idx)
+            if parsed is not None:
+                return parsed
+
+    # Strategy 2: bare JSON — find first { and extract balanced
+    start = content.find("{")
+    while start != -1:
+        parsed = _extract_balanced_json(content, start)
+        if parsed is not None:
+            return parsed
+        # No balanced object at this { — try the next one
+        start = content.find("{", start + 1)
+    return None
 
 
 def _parse_report(data: dict, raw: str) -> BugReport:
