@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 # Tunable caps
 MAX_BUG_ATTEMPTS = 3
 MAX_GLOBAL_ROUNDS = 15
+MAX_REVIEWER_ERRORS = 3
 
 
 class DevReviewLoop:
@@ -304,6 +305,7 @@ class DevReviewLoop:
         prev_bugs: list[Bug] = []
         applied_fixes: list[Bug] = []
         total_rounds = 0
+        reviewer_error_streak = 0
 
         while not self._stopped:
             self.state = LoopState.REVIEWING
@@ -322,10 +324,20 @@ class DevReviewLoop:
             )
 
             if report.error:
-                # Reviewer itself failed (LLM exception or JSON unparseable).
-                # MUST NOT treat as "zero bugs → CLEAN" — that would merge
-                # unreviewed code to main. Escalate to BLOCKED so the user
-                # can retry (re-run review) or abort.
+                # Reviewer itself failed (LLM exception, JSON unparseable, or
+                # schema mismatch). MUST NOT treat as "zero bugs → CLEAN" —
+                # that would merge unreviewed code to main. Escalate to BLOCKED
+                # so the user can retry (re-run review) or abort.
+                reviewer_error_streak += 1
+                if reviewer_error_streak >= MAX_REVIEWER_ERRORS:
+                    # Don't trap the user in an infinite reviewer-error →
+                    # skip → reviewer-error loop. The global round cap doesn't
+                    # catch this because total_rounds isn't incremented in the
+                    # error path. After N consecutive errors, abort.
+                    console.print(Text(
+                        f"reviewer 连续失败 {reviewer_error_streak} 次，中止本轮（worktree 保留）。", "error",
+                    ))
+                    return False, None
                 console.print(Text(
                     "审查失败（LLM 调用或 JSON 解析错误），进入 BLOCKED 诊断。", "error",
                 ))
@@ -339,6 +351,9 @@ class DevReviewLoop:
                 if not await self._blocked_flow(reviewer_bug, bug_attempts, round_num):
                     return False, None
                 continue
+
+            # Review succeeded (even if it found bugs) — reset the streak.
+            reviewer_error_streak = 0
 
             if not report.has_bugs:
                 # Zero bugs — run gates
