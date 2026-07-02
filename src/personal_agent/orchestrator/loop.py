@@ -254,15 +254,6 @@ class DevReviewLoop:
                 console.print(Panel(Text("阶段 3: 合并到主分支", "label"), border_style="success", expand=False))
                 try:
                     await merge_worktree(self.workdir, branch)
-                    console.print(Text(f"✓ 已合并 {branch} 到主分支", "success"))
-                    # Record last-clean hash so the next `pa --loop` no-ops if
-                    # requirements.md hasn't changed since. last_fix_round is
-                    # None when CLEAN was reached without any fixes (reviewer
-                    # found zero bugs on first pass) — recorded as such so
-                    # the metadata isn't misleading.
-                    clean_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
-                    self.last_clean.save(clean_hash, last_fix_round)
-                    merged = True
                 except DirtyWorktreeError as e:
                     # Surface the dirty-tree reason clearly; worktree kept
                     # for inspection so the user can retry after stashing.
@@ -273,6 +264,29 @@ class DevReviewLoop:
                     console.print(Text.assemble(
                         ("合并失败（worktree 保留以供检查）: ", "error"), (str(e), "error"),
                     ))
+                else:
+                    # Merge succeeded — mark merged BEFORE recording state so a
+                    # save failure doesn't leave the worktree preserved (and
+                    # the user misinformed that the merge failed). The work is
+                    # already in main; the worktree can be cleaned up.
+                    merged = True
+                    console.print(Text(f"✓ 已合并 {branch} 到主分支", "success"))
+                    # Record last-clean hash so the next `pa --loop` no-ops if
+                    # requirements.md hasn't changed since. last_fix_round is
+                    # None when CLEAN was reached without any fixes (reviewer
+                    # found zero bugs on first pass) — recorded as such so
+                    # the metadata isn't misleading.
+                    clean_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
+                    try:
+                        self.last_clean.save(clean_hash, last_fix_round)
+                    except Exception as e:
+                        # Save failure is non-fatal — the merge already
+                        # succeeded. Log it so the user knows the next re-run
+                        # might re-develop (idempotency gate won't fire).
+                        logger.warning("last_clean.save failed: %s", e)
+                        console.print(Text(
+                            f"  ⚠ 无法记录 CLEAN 状态（下次重跑可能重复开发）: {e}", "warning",
+                        ))
             else:
                 console.print(Text("内层循环未到 CLEAN，worktree 保留以供检查。", "warning"))
         finally:
