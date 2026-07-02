@@ -23,6 +23,13 @@ from personal_agent.types import Message, Role
 
 logger = logging.getLogger(__name__)
 
+# Directory names that should never be reviewed. ``.git`` in particular
+# contains sample hooks (*.py.sample) and other files that would pollute
+# the review when src/ is absent and the reviewer falls back to the repo
+# root. ``.pa`` holds orchestrator state (worktrees, counters). Other
+# entries are common VCS/CI/build dirs that aren't source code.
+_EXCLUDED_DIRS = {".git", ".pa", ".hg", ".svn", "__pycache__", ".venv", "venv", "node_modules", "dist", "build", ".mypy_cache", ".ruff_cache", ".pytest_cache"}
+
 
 REVIEW_SYSTEM_PROMPT = """你是一个严格的代码审查员。审查给定源代码，找出实现逻辑错误、异常处理缺陷、语法/规范问题。
 
@@ -233,8 +240,8 @@ async def review_module(
     """
     files: list[tuple[Path, str]] = []
     for py in sorted(module_dir.rglob("*.py")):
-        # Skip __pycache__
-        if "__pycache__" in py.parts:
+        # Skip excluded dirs (.git, __pycache__, .pa, venvs, caches, etc.)
+        if any(part in _EXCLUDED_DIRS for part in py.parts):
             continue
         try:
             content = py.read_text(encoding="utf-8")
@@ -266,10 +273,14 @@ async def review_tree(
     """
     all_bugs: list[Bug] = []
     raw_chunks: list[str] = []
-    # Top-level module dirs + top-level .py files
-    top_dirs = sorted(d for d in src_root.iterdir() if d.is_dir() and d.name != "__pycache__")
+    # Top-level module dirs + top-level .py files. Skip excluded dirs so a
+    # fallback to the repo root (when src/ is absent) doesn't scan .git/.
+    top_dirs = sorted(
+        d for d in src_root.iterdir()
+        if d.is_dir() and d.name not in _EXCLUDED_DIRS
+    )
     top_files = sorted(
-        f for f in src_root.glob("*.py") if f.name != "__init__.py" and f.name != "__main__.py"
+        f for f in src_root.glob("*.py") if f.name not in ("__init__.py", "__main__.py")
     )
 
     for d in top_dirs:
