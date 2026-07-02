@@ -242,9 +242,21 @@ class DevReviewLoop:
                 logger.exception("Develop agent failed: %s", e)
                 console.print(Text(f"开发 agent 失败: {e}", "error"))
                 return
-            developed = await commit_all(
-                wt_path, f"feat: implement requirement per {self.req_path.name}"
-            )
+            try:
+                developed = await commit_all(
+                    wt_path, f"feat: implement requirement per {self.req_path.name}"
+                )
+            except Exception as e:
+                # commit_all raises on `git commit` failure (hook, lock file,
+                # disk full). Round 234 wrapped the _fix_bugs site; this is
+                # the develop-phase site. Without the wrap, a transient commit
+                # failure after a successful develop agent crashed the whole
+                # loop — wasting the agent's work and leaving the worktree
+                # in a half-committed state. Treat as "not developed" so the
+                # iteration aborts cleanly (worktree preserved by finally).
+                logger.exception("Develop commit failed: %s", e)
+                console.print(Text(f"开发提交失败: {e}", "error"))
+                developed = False
             if not developed:
                 # develop produced no changes — either the agent failed or the
                 # requirement was already implemented. Either way, proceeding to
