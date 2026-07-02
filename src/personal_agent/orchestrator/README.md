@@ -49,6 +49,7 @@ BLOCKED
 - Reviewer 每轮**无状态重读代码**（从磁盘），避免锚定自己的上轮结论
 - Reviewer 接收 `(上轮报告的 bug, 已应用的修复)` 作为上下文，从而验证修复是否生效、不重复报告已修复项
 - 输出结构化 `BugReport`：`bugs: list[Bug]`，每条含 `location / severity / description / suggested_fix`
+- 可选 `--review-guide`：用户提供的提示词文件，作为"本次审查重点"注入每次 review 的 user prompt 顶部，**补充而非替代** reviewer 的基础审查维度（实现逻辑 / 异常处理 / 语法规范）。`None` 或空文件表示不启用
 - 判断 `len(bugs) == 0` → 跑 gates → 全过即 CLEAN；否则进 FIXING
 
 ### 防卡死：三道闸
@@ -108,6 +109,9 @@ pa --loop --req /path/to/requirements.md
 
 # 配合 provider/model 覆盖
 pa --loop --provider deepseek --model deepseek-chat
+
+# 附加审查重点提示词（文件路径；内容会作为补充注入每次 review）
+pa --loop --review-guide ./review_focus.md
 ```
 
 ### Python API
@@ -123,6 +127,7 @@ async def main():
         req_path=Path("/path/to/repo/requirements.md"),
         config_path=None,        # 可选配置文件
         overrides={"provider": "deepseek", "model": "deepseek-chat"},
+        review_guide=None,       # 可选：审查重点提示词字符串
     )
     await loop.run()
 

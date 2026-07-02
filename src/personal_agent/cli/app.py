@@ -72,6 +72,12 @@ def main() -> None:
         "--req", default="requirements.md",
         help="Path to requirements file for --loop mode (default: requirements.md in workdir)",
     )
+    parser.add_argument(
+        "--review-guide",
+        help="Path to a file with supplementary review-focus guidance for --loop mode. "
+             "Contents are injected into every reviewer call as '本次审查重点', supplementing "
+             "(not replacing) the base review checklist. Optional.",
+    )
 
     args = parser.parse_args()
 
@@ -107,7 +113,21 @@ def main() -> None:
         req_path = Path(args.req)
         if not req_path.is_absolute():
             req_path = workdir / req_path
-        asyncio.run(run_dev_review_loop(args.config, overrides, workdir, req_path))
+        review_guide: str | None = None
+        if args.review_guide:
+            guide_path = Path(args.review_guide)
+            if not guide_path.is_absolute():
+                guide_path = workdir / guide_path
+            try:
+                review_guide = guide_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as e:
+                console.print(f"[error]无法读取 review guide 文件: {e}[/error]")
+                return
+        asyncio.run(
+            run_dev_review_loop(
+                args.config, overrides, workdir, req_path, review_guide=review_guide,
+            )
+        )
     elif args.task:
         asyncio.run(run_one_shot(args.task, args.config, workdir, overrides))
     else:

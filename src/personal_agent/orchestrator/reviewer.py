@@ -64,8 +64,17 @@ def _build_user_prompt(
     files: list[tuple[Path, str]],
     prev_bugs: list[Bug],
     applied_fixes: list[Bug],
+    guide: str | None = None,
 ) -> str:
     parts: list[str] = []
+
+    # Optional review guide: supplementary focus areas from the user, not a
+    # replacement for the base review dimensions in the system prompt. When
+    # present, the reviewer still applies its full checklist but pays extra
+    # attention to the listed aspects.
+    if guide and guide.strip():
+        parts.append("## 本次审查重点（用户指定，补充而非替代基础审查维度）")
+        parts.append(guide.strip())
 
     if prev_bugs:
         parts.append("## 上一轮报告的 bug")
@@ -182,6 +191,7 @@ async def review_files(
     files: list[tuple[Path, str]],
     prev_bugs: list[Bug] | None = None,
     applied_fixes: list[Bug] | None = None,
+    guide: str | None = None,
     *,
     temperature: float = 0.2,
     max_tokens: int = 4096,
@@ -191,8 +201,13 @@ async def review_files(
     ``files`` is a list of (relative_path, content) tuples. Caller is
     responsible for chunking if the total size would overflow the context
     window.
+
+    ``guide`` is optional supplementary review focus from the user. When
+    present, it's injected into the user prompt as "本次审查重点" — the
+    reviewer still applies its base checklist but pays extra attention to
+    the listed aspects. None or empty string means no guide.
     """
-    user_prompt = _build_user_prompt(files, prev_bugs or [], applied_fixes or [])
+    user_prompt = _build_user_prompt(files, prev_bugs or [], applied_fixes or [], guide)
     messages = [
         Message(role=Role.SYSTEM, content=REVIEW_SYSTEM_PROMPT),
         Message(role=Role.USER, content=user_prompt),
@@ -232,11 +247,14 @@ async def review_module(
     repo_root: Path,
     prev_bugs: list[Bug] | None = None,
     applied_fixes: list[Bug] | None = None,
+    guide: str | None = None,
 ) -> BugReport:
     """Review all .py files under ``module_dir`` in one batch.
 
     ``prev_bugs`` and ``applied_fixes`` are filtered to this module's path
     so the reviewer only sees context relevant to the code under review.
+    ``guide`` is the optional user-specified review focus, passed through
+    unchanged to review_files.
     """
     files: list[tuple[Path, str]] = []
     for py in sorted(module_dir.rglob("*.py")):
@@ -256,7 +274,7 @@ async def review_module(
     rel_module = str(module_dir.relative_to(repo_root))
     scoped_prev = _bugs_for_module(prev_bugs or [], rel_module)
     scoped_applied = _bugs_for_module(applied_fixes or [], rel_module)
-    return await review_files(provider, files, scoped_prev, scoped_applied)
+    return await review_files(provider, files, scoped_prev, scoped_applied, guide)
 
 
 async def review_tree(
@@ -265,11 +283,14 @@ async def review_tree(
     repo_root: Path,
     prev_bugs: list[Bug] | None = None,
     applied_fixes: list[Bug] | None = None,
+    guide: str | None = None,
 ) -> BugReport:
     """Review the entire src tree, module by module.
 
     Splits by top-level subdirectory under ``src_root`` so each LLM call
     covers one cohesive module. Merges all per-module reports into one.
+    ``guide`` is the optional user-specified review focus, applied to every
+    per-module review.
     """
     all_bugs: list[Bug] = []
     raw_chunks: list[str] = []

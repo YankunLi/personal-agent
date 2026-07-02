@@ -58,6 +58,10 @@ class DevReviewLoop:
         req_path: Path to requirements.md (the requirement source of truth).
         config_path: Optional config file path for agent settings.
         overrides: Optional provider/model overrides from CLI.
+        review_guide: Optional supplementary review-focus text. When present,
+            injected into every reviewer call as "本次审查重点" — supplements
+            (does not replace) the reviewer's base checklist. None or empty
+            string means no guide.
     """
 
     def __init__(
@@ -66,6 +70,7 @@ class DevReviewLoop:
         req_path: Path,
         config_path: str | None = None,
         overrides: dict | None = None,
+        review_guide: str | None = None,
     ):
         self.workdir = self._resolve_repo_root(workdir)
         # Re-resolve req_path against the repo root if it was relative
@@ -73,6 +78,7 @@ class DevReviewLoop:
             req_path = self.workdir / req_path
         self.req_path = req_path
         self.overrides = overrides or {}
+        self.review_guide = review_guide.strip() if review_guide and review_guide.strip() else None
         self.settings: Settings = load_config(config_path)
         self.round_counter = RoundCounter(repo_dir=self.workdir)
         self.last_clean = LastCleanHash(repo_dir=self.workdir)
@@ -300,6 +306,7 @@ class DevReviewLoop:
                 wt_path,
                 prev_bugs=prev_bugs,
                 applied_fixes=applied_fixes,
+                guide=self.review_guide,
             )
 
             if not report.has_bugs:

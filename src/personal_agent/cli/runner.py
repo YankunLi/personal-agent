@@ -220,15 +220,24 @@ async def run_dev_review_loop(
     overrides: dict,
     workdir: Path,
     req_path: Path,
+    review_guide: str | None = None,
 ) -> None:
     """Run the autonomous dev-review loop.
 
     See ``orchestrator/README.md`` for the two-loop design. Entry point for
-    the ``pa --loop`` CLI flag.
+    the ``pa --loop`` CLI flag. ``review_guide`` is optional supplementary
+    review-focus text (e.g. contents of a user-supplied file); None means no
+    guide.
     """
     from personal_agent.orchestrator import DevReviewLoop
 
-    loop = DevReviewLoop(workdir=workdir, req_path=req_path, config_path=config_path, overrides=overrides)
+    loop = DevReviewLoop(
+        workdir=workdir,
+        req_path=req_path,
+        config_path=config_path,
+        overrides=overrides,
+        review_guide=review_guide,
+    )
     await loop.run()
 
 
