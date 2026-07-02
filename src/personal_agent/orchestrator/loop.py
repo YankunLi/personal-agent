@@ -501,10 +501,23 @@ class DevReviewLoop:
                 console.print(Text(f"  ⚠ 修复 agent 失败（计入重试次数）: {e}", "warning"))
                 continue
 
-            # Commit the fix
-            committed = await commit_all(
-                wt_path, f"fix: round {round_num} — {bug.description[:60]}"
-            )
+            # Commit the fix. commit_all raises on `git commit` failure (hook,
+            # lock file, disk full) — round 233 wrapped the _blocked_flow retry
+            # path but this site (the most frequently hit: once per bug per
+            # round) was still bare. Without the wrap, a transient commit
+            # failure crashed the whole loop while bug_attempts[h] was already
+            # incremented and round_num not advanced — leaving inconsistent
+            # state. Treat as "not committed": the changes stay staged, the
+            # next bug's commit_all would sweep them up (mislabeling), so we
+            # also continue to the next bug rather than retrying in-place.
+            try:
+                committed = await commit_all(
+                    wt_path, f"fix: round {round_num} — {bug.description[:60]}"
+                )
+            except Exception as e:
+                logger.exception("Fix commit failed for %s: %s", bug.location, e)
+                console.print(Text(f"  ⚠ 修复提交失败（计入重试次数）: {e}", "warning"))
+                committed = False
             if committed:
                 round_num += 1
                 self.round_counter.save(round_num)
