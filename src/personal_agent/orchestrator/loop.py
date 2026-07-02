@@ -172,7 +172,32 @@ class DevReviewLoop:
         last_req_hash: str | None = last_clean
 
         while not self._stopped:
-            req_content = self.req_path.read_text(encoding="utf-8")
+            # Read the requirement. The initial exists() check at the top of
+            # _outer_loop only runs once; between iterations the file can be
+            # briefly unavailable (atomic-save editors that delete+recreate,
+            # sync tools, accidental deletion mid-edit). A bare read_text
+            # here would raise OSError and crash the loop, losing the
+            # iteration's work. Retry briefly, then surface a clear error
+            # rather than crashing.
+            try:
+                req_content = self.req_path.read_text(encoding="utf-8")
+            except OSError as e:
+                logger.warning("requirements read failed (retrying): %s", e)
+                console.print(Text(
+                    f"读取需求文件失败，等待重试（Ctrl+C 退出）: {e}", "warning",
+                ))
+                # Brief retry loop — the file may reappear (atomic save).
+                recovered = False
+                while not self._stopped:
+                    await asyncio.sleep(1.0)
+                    try:
+                        req_content = self.req_path.read_text(encoding="utf-8")
+                        recovered = True
+                        break
+                    except OSError:
+                        continue
+                if not recovered:
+                    continue
             req_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
 
             if last_req_hash is not None and req_hash == last_req_hash:
