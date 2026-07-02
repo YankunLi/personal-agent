@@ -522,21 +522,30 @@ class DevReviewLoop:
         return s
 
     def _reviewer_provider(self):
-        """Create a provider for the reviewer (same as dev). Cached."""
-        if not hasattr(self, "_reviewer_prov"):
-            agent_cfg = self.settings.agent
-            provider_name = self.overrides.get("provider", agent_cfg.provider)
-            model = self.overrides.get("model", agent_cfg.model)
-            creds = self.settings.get_provider_credentials()
-            if "api_key" in self.overrides:
-                creds = creds.model_copy()
-                creds.api_key = self.overrides["api_key"]
-            self._reviewer_prov = create_provider(
-                provider_name=provider_name,
-                model=model,
-                credentials=creds,
-            )
-        return self._reviewer_prov
+        """Create a provider for the reviewer (same as dev). Cached.
+
+        Re-creates after close(): close() sets ``_reviewer_prov = None``, so a
+        subsequent call (e.g. re-running run() on the same loop object) must
+        detect None and rebuild — hasattr alone returns True for a None value
+        and would hand back None, crashing review_tree on ``provider.chat()``.
+        """
+        prov = getattr(self, "_reviewer_prov", None)
+        if prov is not None:
+            return prov
+        agent_cfg = self.settings.agent
+        provider_name = self.overrides.get("provider", agent_cfg.provider)
+        model = self.overrides.get("model", agent_cfg.model)
+        creds = self.settings.get_provider_credentials()
+        if "api_key" in self.overrides:
+            creds = creds.model_copy()
+            creds.api_key = self.overrides["api_key"]
+        prov = create_provider(
+            provider_name=provider_name,
+            model=model,
+            credentials=creds,
+        )
+        self._reviewer_prov = prov
+        return prov
 
     async def _develop(self, req_content: str, wt_path: Path) -> None:
         """Run the developer agent on the requirement."""
