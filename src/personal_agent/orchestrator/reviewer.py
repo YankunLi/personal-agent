@@ -220,12 +220,12 @@ async def review_files(
         )
     except Exception as e:
         logger.exception("Reviewer LLM call failed: %s", e)
-        return BugReport(bugs=[], raw_output=f"reviewer error: {e}")
+        return BugReport(bugs=[], raw_output=f"reviewer error: {e}", error=True)
 
     data = _extract_json(resp.content)
     if data is None:
         logger.warning("Reviewer output not parseable as JSON; raw: %s", resp.content[:500])
-        return BugReport(bugs=[], raw_output=resp.content)
+        return BugReport(bugs=[], raw_output=resp.content, error=True)
     return _parse_report(data, resp.content)
 
 
@@ -294,6 +294,7 @@ async def review_tree(
     """
     all_bugs: list[Bug] = []
     raw_chunks: list[str] = []
+    any_error = False
     # Top-level module dirs + top-level .py files. Skip excluded dirs so a
     # fallback to the repo root (when src/ is absent) doesn't scan .git/.
     top_dirs = sorted(
@@ -306,6 +307,8 @@ async def review_tree(
 
     for d in top_dirs:
         report = await review_module(provider, d, repo_root, prev_bugs, applied_fixes, guide)
+        if report.error:
+            any_error = True
         all_bugs.extend(report.bugs)
         if report.raw_output:
             raw_chunks.append(f"## {d.name}\n{report.raw_output}")
@@ -326,8 +329,10 @@ async def review_tree(
                 b.location.startswith(str(f[0])) for f in files
             )]
             report = await review_files(provider, files, scoped_prev, scoped_applied, guide)
+            if report.error:
+                any_error = True
             all_bugs.extend(report.bugs)
             if report.raw_output:
                 raw_chunks.append(f"## top-level\n{report.raw_output}")
 
-    return BugReport(bugs=all_bugs, raw_output="\n\n".join(raw_chunks))
+    return BugReport(bugs=all_bugs, raw_output="\n\n".join(raw_chunks), error=any_error)

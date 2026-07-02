@@ -53,10 +53,17 @@ class Bug:
 
 @dataclass
 class BugReport:
-    """Structured output of one review round."""
+    """Structured output of one review round.
+
+    ``error`` is True when the review itself failed (LLM call exception or
+    JSON unparseable). An errored report MUST NOT be treated as "zero bugs →
+    CLEAN" — that would merge unreviewed code to main. Callers must check
+    ``error`` before relying on ``has_bugs``.
+    """
 
     bugs: list[Bug] = field(default_factory=list)
     raw_output: str = ""
+    error: bool = False
 
     @property
     def has_bugs(self) -> bool:

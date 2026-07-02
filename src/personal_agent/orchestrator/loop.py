@@ -309,6 +309,25 @@ class DevReviewLoop:
                 guide=self.review_guide,
             )
 
+            if report.error:
+                # Reviewer itself failed (LLM exception or JSON unparseable).
+                # MUST NOT treat as "zero bugs → CLEAN" — that would merge
+                # unreviewed code to main. Escalate to BLOCKED so the user
+                # can retry (re-run review) or abort.
+                console.print(Text(
+                    "审查失败（LLM 调用或 JSON 解析错误），进入 BLOCKED 诊断。", "error",
+                ))
+                console.print(Text(f"  raw: {report.raw_output[:500]}", "dim"))
+                reviewer_bug = Bug(
+                    location="reviewer",
+                    severity="critical",
+                    description=f"reviewer error: {report.raw_output[:200]}",
+                    suggested_fix="检查 reviewer provider 配置或重试",
+                )
+                if not await self._blocked_flow(reviewer_bug, bug_attempts, round_num):
+                    return False, None
+                continue
+
             if not report.has_bugs:
                 # Zero bugs — run gates
                 gates_ok, results = await all_gates(wt_path)
