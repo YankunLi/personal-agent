@@ -370,7 +370,17 @@ class DevReviewLoop:
                     console.print(Text(
                         f"fix round {round_num - 1} 导致 gate 回归，回滚该 commit…", "error",
                     ))
-                    await revert_last_commit(wt_path)
+                    reverted = await revert_last_commit(wt_path)
+                    if not reverted:
+                        # Revert conflicted — the bad commit is still in place.
+                        # Escalate: the fixer can't auto-recover from this.
+                        console.print(Text(
+                            "回滚失败（冲突），进入 BLOCKED 诊断。", "error",
+                        ))
+                        if not await self._blocked_flow(bug, bug_attempts, round_num):
+                            return round_num, True
+                        # User chose skip/retry — continue to next bug
+                        continue
                     applied_fixes.pop()
                     if not await self._blocked_flow(bug, bug_attempts, round_num):
                         return round_num, True

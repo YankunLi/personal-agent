@@ -109,6 +109,20 @@ async def commit_all(wt_path: Path, message: str) -> bool:
     return True
 
 
-async def revert_last_commit(wt_path: Path) -> None:
-    """Revert the last commit (used when a fix causes test regression)."""
-    await _git("revert", "--no-edit", "HEAD", cwd=wt_path, check=True)
+async def revert_last_commit(wt_path: Path) -> bool:
+    """Revert the last commit (used when a fix causes test regression).
+
+    Returns True on success, False if the revert conflicted or otherwise
+    failed. The caller must check the return value and escalate to BLOCKED
+    on False — a failed revert leaves the worktree with the bad commit
+    still in place, which is not a state the loop can recover from
+    automatically.
+    """
+    code, text = await _git("revert", "--no-edit", "HEAD", cwd=wt_path, check=False)
+    if code != 0:
+        logger.warning("revert HEAD failed (code=%s): %s", code, text)
+        # Abort any in-progress revert so the worktree isn't left in a
+        # conflicted state — the next git operation would otherwise fail.
+        await _git("revert", "--abort", cwd=wt_path, check=False)
+        return False
+    return True
