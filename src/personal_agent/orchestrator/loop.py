@@ -373,6 +373,12 @@ class DevReviewLoop:
                 )
                 if not await self._blocked_flow(last_bug, bug_attempts, round_num):
                     return False, None
+                # Reset the global cap so the user's skip/retry actually buys
+                # a fresh budget — without this, total_rounds stays >= cap
+                # and every subsequent round re-triggers BLOCKED, trapping the
+                # user until they abort. Mirrors the per-bug bug_attempts[h]=0
+                # reset in _blocked_flow.
+                total_rounds = 0
 
         return False, None
 
