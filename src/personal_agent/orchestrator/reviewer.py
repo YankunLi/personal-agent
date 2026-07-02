@@ -207,6 +207,18 @@ async def review_files(
     return _parse_report(data, resp.content)
 
 
+def _bugs_for_module(bugs: list[Bug], module_prefix: str) -> list[Bug]:
+    """Filter bugs to those whose location is within ``module_prefix``.
+
+    A bug's location is a repo-relative path like ``src/personal_agent/foo/bar.py:12``.
+    For a module review of ``src/personal_agent/foo``, only bugs in that
+    directory are relevant — passing bugs from other modules adds noise and
+    risks the reviewer "verifying" fixes in code it isn't looking at.
+    """
+    prefix = module_prefix.rstrip("/") + "/"
+    return [b for b in bugs if b.location.startswith(prefix) or b.location == module_prefix]
+
+
 async def review_module(
     provider: Provider,
     module_dir: Path,
@@ -214,7 +226,11 @@ async def review_module(
     prev_bugs: list[Bug] | None = None,
     applied_fixes: list[Bug] | None = None,
 ) -> BugReport:
-    """Review all .py files under ``module_dir`` in one batch."""
+    """Review all .py files under ``module_dir`` in one batch.
+
+    ``prev_bugs`` and ``applied_fixes`` are filtered to this module's path
+    so the reviewer only sees context relevant to the code under review.
+    """
     files: list[tuple[Path, str]] = []
     for py in sorted(module_dir.rglob("*.py")):
         # Skip __pycache__
@@ -228,7 +244,12 @@ async def review_module(
         files.append((py.relative_to(repo_root), content))
     if not files:
         return BugReport()
-    return await review_files(provider, files, prev_bugs, applied_fixes)
+    # Scope bug context to this module so the reviewer isn't distracted by
+    # unrelated bugs from other modules.
+    rel_module = str(module_dir.relative_to(repo_root))
+    scoped_prev = _bugs_for_module(prev_bugs or [], rel_module)
+    scoped_applied = _bugs_for_module(applied_fixes or [], rel_module)
+    return await review_files(provider, files, scoped_prev, scoped_applied)
 
 
 async def review_tree(
@@ -247,7 +268,9 @@ async def review_tree(
     raw_chunks: list[str] = []
     # Top-level module dirs + top-level .py files
     top_dirs = sorted(d for d in src_root.iterdir() if d.is_dir() and d.name != "__pycache__")
-    top_files = sorted(f for f in src_root.glob("*.py") if f.name != "__init__.py")
+    top_files = sorted(
+        f for f in src_root.glob("*.py") if f.name != "__init__.py" and f.name != "__main__.py"
+    )
 
     for d in top_dirs:
         report = await review_module(provider, d, repo_root, prev_bugs, applied_fixes)
@@ -263,7 +286,14 @@ async def review_tree(
             except (OSError, UnicodeDecodeError):
                 continue
         if files:
-            report = await review_files(provider, files, prev_bugs, applied_fixes)
+            # Top-level .py files: scope to bugs whose location matches the file exactly
+            scoped_prev = [b for b in (prev_bugs or []) if any(
+                b.location.startswith(str(f[0])) for f in files
+            )]
+            scoped_applied = [b for b in (applied_fixes or []) if any(
+                b.location.startswith(str(f[0])) for f in files
+            )]
+            report = await review_files(provider, files, scoped_prev, scoped_applied)
             all_bugs.extend(report.bugs)
             if report.raw_output:
                 raw_chunks.append(f"## top-level\n{report.raw_output}")
