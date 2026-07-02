@@ -164,10 +164,14 @@ def _extract_json(content: str) -> dict | None:
 
 
 def _parse_report(data: dict, raw: str) -> BugReport:
-    bugs: list[Bug] = []
-    raw_bugs = data.get("bugs", [])
+    raw_bugs = data.get("bugs")
     if not isinstance(raw_bugs, list):
-        raw_bugs = []
+        # Schema mismatch — `bugs` key missing or not a list (e.g.
+        # `{"issues": [...]}`, `{"bugs": null}`). Don't silently treat as
+        # "zero bugs" — that would yield a false CLEAN, merging unreviewed
+        # code to main. Flag as error so the caller escalates.
+        return BugReport(bugs=[], raw_output=raw, error=True)
+    bugs: list[Bug] = []
     for item in raw_bugs:
         if not isinstance(item, dict):
             continue
