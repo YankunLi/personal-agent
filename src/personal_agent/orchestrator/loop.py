@@ -358,8 +358,10 @@ class DevReviewLoop:
                 # Escalate
                 if not await self._blocked_flow(bug, bug_attempts, round_num):
                     return round_num, True  # user aborted
-                # User chose skip/retry — reset attempt counter
-                bug_attempts[h] = 0
+                # _blocked_flow may have committed a manual fix and bumped the
+                # persisted counter — refresh local round_num so the next bug
+                # doesn't reuse a round number.
+                round_num = self.round_counter.load()
                 continue
 
             # Run the fix
@@ -390,11 +392,12 @@ class DevReviewLoop:
                         ))
                         if not await self._blocked_flow(bug, bug_attempts, round_num):
                             return round_num, True
-                        # User chose skip/retry — continue to next bug
+                        round_num = self.round_counter.load()
                         continue
                     applied_fixes.pop()
                     if not await self._blocked_flow(bug, bug_attempts, round_num):
                         return round_num, True
+                    round_num = self.round_counter.load()
         return round_num, False
 
     async def _blocked_flow(self, bug: Bug, bug_attempts: dict[str, int], round_num: int) -> bool:
@@ -405,9 +408,20 @@ class DevReviewLoop:
         action = await blocked_diagnostic(bug, attempts, round_num)
         if action == "skip":
             console.print(Text(f"跳过 bug: {bug.location}", "dim"))
+            # Reset so a re-report next round gets a fresh attempt budget
+            bug_attempts[h] = 0
             return True
         if action == "retry":
-            # User claims to have fixed it manually — reset attempts so next review verifies
+            # User claims to have fixed it manually in the worktree. Commit
+            # those edits with a clear label so they aren't swept into the
+            # next bug's commit (which would mislabel the manual fix).
+            committed = await commit_all(
+                self._wt_path,
+                f"fix: round {round_num} — manual fix for {bug.location}: {bug.description[:40]}",
+            )
+            if committed:
+                self.round_counter.save(round_num + 1)
+                console.print(Text(f"  ✓ 已提交手动修复 (round {round_num})", "dim"))
             bug_attempts[h] = 0
             return True
         if action == "abort":
