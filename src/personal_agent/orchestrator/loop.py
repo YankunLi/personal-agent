@@ -611,7 +611,20 @@ class DevReviewLoop:
                 console.print(Text(f"  ⚠ 手动修复提交失败: {e}", "warning"))
                 committed = False
             if committed:
-                self.round_counter.save(round_num + 1)
+                # Same rationale as round 236: save() can raise OSError on
+                # disk-full or permission. The manual fix commit is already
+                # in git; don't let a save failure crash the loop while the
+                # user is mid-BLOCKED. The next iteration's _fix_bugs will
+                # still call round_counter.load() and re-seed from git log
+                # if the file is missing/corrupt, so the round number stays
+                # correct.
+                try:
+                    self.round_counter.save(round_num + 1)
+                except Exception as e:
+                    logger.warning("round_counter.save failed (non-fatal): %s", e)
+                    console.print(Text(
+                        f"  ⚠ 无法持久化 round 计数: {e}", "warning",
+                    ))
                 console.print(Text(f"  ✓ 已提交手动修复 (round {round_num})", "dim"))
             bug_attempts[h] = 0
             return True
