@@ -27,9 +27,27 @@ logger = logging.getLogger(__name__)
 Action = Literal["skip", "retry", "abort"]
 
 
-async def _prompt_async(question: str) -> str:
-    """Read a line from stdin without blocking the event loop."""
-    return await asyncio.to_thread(input, question)
+async def _prompt_async(question: str, *, default: str = "") -> str:
+    """Read a line from stdin without blocking the event loop.
+
+    Returns ``default`` if stdin is closed or reaches EOF (e.g. piped
+    input, non-interactive shell) — this keeps the loop from crashing when
+    there's no terminal to read from, instead letting the caller proceed
+    with a sensible default.
+    """
+    def _read() -> str:
+        try:
+            return input(question)
+        except EOFError:
+            # Stdin closed — print a newline so the prompt doesn't bleed
+            # into the next line of output, then return the default.
+            print()
+            return default
+        except KeyboardInterrupt:
+            # Re-raise so the outer run() can handle interruption cleanly.
+            raise
+
+    return await asyncio.to_thread(_read)
 
 
 async def blocked_diagnostic(bug: Bug, attempts: int, round_num: int) -> Action:
@@ -58,6 +76,11 @@ async def blocked_diagnostic(bug: Bug, attempts: int, round_num: int) -> Action:
         ans = (await _prompt_async(
             "如何处理? [s]kip / [r]etry (手动修复后重新审查) / [a]bort: "
         )).strip().lower()
+        if not ans:
+            # Stdin closed (EOF) — no user to decide. Default to abort so
+            # the loop exits rather than spinning on empty input forever.
+            console.print(Text("stdin 已关闭，默认中止。", "warning"))
+            return "abort"
         if ans in ("s", "skip"):
             return "skip"
         if ans in ("r", "retry"):
