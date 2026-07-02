@@ -77,6 +77,8 @@ class DevReviewLoop:
         self.last_clean = LastCleanHash(repo_dir=self.workdir)
         self.state = LoopState.IDLE
         self._stopped = False
+        self._wt_path: Path | None = None
+        self._wt_branch: str | None = None
 
     @staticmethod
     def _resolve_repo_root(workdir: Path) -> Path:
@@ -186,7 +188,15 @@ class DevReviewLoop:
     # ── single iteration: develop + inner review-fix loop ────────────────
 
     async def _run_iteration(self, req_content: str) -> None:
-        """One outer iteration: setup worktree → develop → review-fix loop → merge."""
+        """One outer iteration: setup worktree → develop → review-fix loop → merge.
+
+        Cleans up its own worktree at the end: auto-removes on successful
+        merge (the work is preserved in main); keeps on failure with a clear
+        pointer so the user can inspect. ``self._wt_path`` is cleared
+        afterward so the next iteration starts fresh — without this, outer
+        loop iterations would leak worktrees (only the last one would be
+        cleaned by ``run()``'s finally).
+        """
         # Create worktree
         try:
             wt_path, branch = await create_worktree(self.workdir)
@@ -196,32 +206,49 @@ class DevReviewLoop:
 
         self._wt_path = wt_path
         self._wt_branch = branch
+        merged = False
 
-        # Develop
-        self.state = LoopState.DEVELOPING
-        console.print(Panel(Text("阶段 1: 开发", "label"), border_style="dim", expand=False))
-        await self._develop(req_content, wt_path)
-        await commit_all(wt_path, f"feat: implement requirement per {self.req_path.name}")
+        try:
+            # Develop
+            self.state = LoopState.DEVELOPING
+            console.print(Panel(Text("阶段 1: 开发", "label"), border_style="dim", expand=False))
+            await self._develop(req_content, wt_path)
+            await commit_all(wt_path, f"feat: implement requirement per {self.req_path.name}")
 
-        # Inner loop: review-fix
-        self.state = LoopState.REVIEWING
-        if await self._inner_loop(wt_path):
-            # CLEAN — merge to main
-            console.print(Panel(Text("阶段 3: 合并到主分支", "label"), border_style="success", expand=False))
-            try:
-                await merge_worktree(self.workdir, branch)
-                console.print(Text(f"✓ 已合并 {branch} 到主分支", "success"))
-                # Record last-clean hash so the next `pa --loop` no-ops if
-                # requirements.md hasn't changed since.
-                clean_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
-                self.last_clean.save(clean_hash, self.round_counter.load() - 1)
-            except Exception as e:
+            # Inner loop: review-fix
+            self.state = LoopState.REVIEWING
+            clean = await self._inner_loop(wt_path)
+            if clean:
+                # CLEAN — merge to main
+                console.print(Panel(Text("阶段 3: 合并到主分支", "label"), border_style="success", expand=False))
+                try:
+                    await merge_worktree(self.workdir, branch)
+                    console.print(Text(f"✓ 已合并 {branch} 到主分支", "success"))
+                    # Record last-clean hash so the next `pa --loop` no-ops if
+                    # requirements.md hasn't changed since.
+                    clean_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
+                    self.last_clean.save(clean_hash, self.round_counter.load() - 1)
+                    merged = True
+                except Exception as e:
+                    console.print(Text.assemble(
+                        ("合并失败（worktree 保留以供检查）: ", "error"), (str(e), "error"),
+                    ))
+            else:
+                console.print(Text("内层循环未到 CLEAN，worktree 保留以供检查。", "warning"))
+        finally:
+            # Per-iteration cleanup so worktrees don't leak across outer iterations.
+            if merged:
+                # Work is preserved in main — safe to remove the worktree and branch.
+                await remove_worktree(self.workdir, wt_path, force=True)
+                await delete_branch(self.workdir, branch, force=True)
+                console.print(Text(f"已清理 worktree {wt_path}", "dim"))
+            else:
                 console.print(Text.assemble(
-                    ("合并失败（worktree 保留以供检查）: ", "error"), (str(e), "error"),
+                    ("worktree 保留以供检查: ", "warning"), (str(wt_path), "value"),
                 ))
-                return  # keep worktree for inspection
-        else:
-            console.print(Text("内层循环未到 CLEAN，worktree 保留以供检查。", "warning"))
+            # Clear so run()'s finally doesn't double-clean, and next iteration starts fresh
+            self._wt_path = None
+            self._wt_branch = None
 
     async def _inner_loop(self, wt_path: Path) -> bool:
         """Run review-fix until CLEAN or BLOCKED-not-resolved.
@@ -454,13 +481,16 @@ class DevReviewLoop:
     # ── cleanup ───────────────────────────────────────────────────────────
 
     async def _cleanup_worktree(self) -> None:
-        """Remove the worktree if the loop exits without merging."""
+        """Safety net: clean up a worktree left behind by an interrupted iteration.
+
+        ``_run_iteration`` cleans up its own worktree at the end. This only
+        fires if the loop was interrupted mid-iteration (Ctrl+C, crash) and
+        ``self._wt_path`` is still set.
+        """
         wt = getattr(self, "_wt_path", None)
         branch = getattr(self, "_wt_branch", None)
         if wt is None:
             return
-        # If we got here without merging, the worktree is leftover — remove it
-        # unless the user explicitly wants to keep it for inspection.
         try:
             from personal_agent.orchestrator.diagnostics import _prompt_async
             keep = (await _prompt_async(
