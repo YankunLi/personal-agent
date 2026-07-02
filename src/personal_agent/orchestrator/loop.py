@@ -231,7 +231,19 @@ class DevReviewLoop:
             self.state = LoopState.DEVELOPING
             console.print(Panel(Text("阶段 1: 开发", "label"), border_style="dim", expand=False))
             await self._develop(req_content, wt_path)
-            await commit_all(wt_path, f"feat: implement requirement per {self.req_path.name}")
+            developed = await commit_all(
+                wt_path, f"feat: implement requirement per {self.req_path.name}"
+            )
+            if not developed:
+                # develop produced no changes — either the agent failed or the
+                # requirement was already implemented. Either way, proceeding to
+                # the review-fix loop would review the base code and "fix"
+                # pre-existing bugs, merging unintended changes to main. Bail
+                # out early; worktree is preserved by the finally block below.
+                console.print(Text(
+                    "开发阶段未产生任何改动，跳过审查（worktree 保留以供检查）。", "warning",
+                ))
+                return
 
             # Inner loop: review-fix
             self.state = LoopState.REVIEWING
