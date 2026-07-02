@@ -151,7 +151,14 @@ class LastCleanHash:
             logger.warning("last_clean_req file corrupt, ignoring: %s", e)
             return None
 
-    def save(self, hash_: str, round_num: int) -> None:
+    def save(self, hash_: str, round_num: int | None) -> None:
+        """Record the last-clean hash.
+
+        ``round_num`` is the round number of the last fix commit applied in
+        the CLEAN iteration, or None if CLEAN was reached without any fixes
+        (reviewer found zero bugs on first pass). Recorded as null in the
+        JSON so consumers can distinguish "no fix needed" from "fix round 0".
+        """
         from datetime import datetime
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(self.path.suffix + ".tmp")

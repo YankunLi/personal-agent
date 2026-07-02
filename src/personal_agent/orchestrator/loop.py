@@ -229,7 +229,7 @@ class DevReviewLoop:
 
             # Inner loop: review-fix
             self.state = LoopState.REVIEWING
-            clean = await self._inner_loop(wt_path)
+            clean, last_fix_round = await self._inner_loop(wt_path)
             if clean:
                 # CLEAN — merge to main
                 console.print(Panel(Text("阶段 3: 合并到主分支", "label"), border_style="success", expand=False))
@@ -237,9 +237,12 @@ class DevReviewLoop:
                     await merge_worktree(self.workdir, branch)
                     console.print(Text(f"✓ 已合并 {branch} 到主分支", "success"))
                     # Record last-clean hash so the next `pa --loop` no-ops if
-                    # requirements.md hasn't changed since.
+                    # requirements.md hasn't changed since. last_fix_round is
+                    # None when CLEAN was reached without any fixes (reviewer
+                    # found zero bugs on first pass) — recorded as such so
+                    # the metadata isn't misleading.
                     clean_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
-                    self.last_clean.save(clean_hash, self.round_counter.load() - 1)
+                    self.last_clean.save(clean_hash, last_fix_round)
                     merged = True
                 except DirtyWorktreeError as e:
                     # Surface the dirty-tree reason clearly; worktree kept
@@ -268,12 +271,17 @@ class DevReviewLoop:
             self._wt_path = None
             self._wt_branch = None
 
-    async def _inner_loop(self, wt_path: Path) -> bool:
+    async def _inner_loop(self, wt_path: Path) -> tuple[bool, int | None]:
         """Run review-fix until CLEAN or BLOCKED-not-resolved.
 
-        Returns True if CLEAN (and merges), False if aborted/blocked.
+        Returns ``(clean, last_fix_round)``. ``last_fix_round`` is the round
+        number of the last fix commit applied this iteration, or None if no
+        fixes were needed (reviewer found zero bugs on first pass and gates
+        passed). Used by the caller to record accurate metadata in
+        last_clean_req.json.
         """
-        round_num = self.round_counter.load()
+        initial_round = self.round_counter.load()
+        round_num = initial_round
         bug_attempts: dict[str, int] = {}
         prev_bugs: list[Bug] = []
         applied_fixes: list[Bug] = []
@@ -300,8 +308,8 @@ class DevReviewLoop:
                 if gates_ok:
                     self.state = LoopState.CLEAN
                     console.print(Text("✓ 审查零 bug 且全部 gate 通过", "success"))
-                    self.round_counter.save(round_num)
-                    return True
+                    last_fix_round = round_num - 1 if round_num > initial_round else None
+                    return True, last_fix_round
                 else:
                     console.print(Text("审查零 bug 但 gate 失败，转为 fix 任务:", "warning"))
                     for r in results:
@@ -325,7 +333,7 @@ class DevReviewLoop:
                 report, wt_path, round_num, bug_attempts, applied_fixes,
             )
             if aborted:
-                return False
+                return False, None
 
             prev_bugs = report.bugs
             total_rounds += 1
@@ -338,9 +346,9 @@ class DevReviewLoop:
                     "?", "major", "global round cap reached"
                 )
                 if not await self._blocked_flow(last_bug, bug_attempts, round_num):
-                    return False
+                    return False, None
 
-        return False
+        return False, None
 
     async def _fix_bugs(
         self,
