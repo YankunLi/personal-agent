@@ -305,7 +305,7 @@ async def review_tree(
     )
 
     for d in top_dirs:
-        report = await review_module(provider, d, repo_root, prev_bugs, applied_fixes)
+        report = await review_module(provider, d, repo_root, prev_bugs, applied_fixes, guide)
         all_bugs.extend(report.bugs)
         if report.raw_output:
             raw_chunks.append(f"## {d.name}\n{report.raw_output}")
