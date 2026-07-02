@@ -51,6 +51,14 @@ async def run_tests(workdir: Path) -> GateResult:
     if not (workdir / "tests").is_dir():
         return GateResult("tests", True, "no tests/ directory — skipped")
     code, out = await _run(["python3", "-m", "pytest", "tests/", "-x", "-q"], workdir)
+    # pytest exit code 5 = "no tests collected" (e.g. empty tests/ dir, or
+    # files don't match the test_*.py pattern). Treat as a pass — same
+    # rationale as the missing-tests/ case above. Without this, an empty
+    # tests/ dir would block CLEAN forever: the gate fails, the fixer is
+    # asked to "fix tests gate failed" but there are no tests to fix, so
+    # it either fabricates a dummy test or spins on blocked.
+    if code == 5:
+        return GateResult("tests", True, "no tests collected — skipped")
     return GateResult("tests", code == 0, out)
 
 
