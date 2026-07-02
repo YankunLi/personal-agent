@@ -556,10 +556,20 @@ class DevReviewLoop:
             # User claims to have fixed it manually in the worktree. Commit
             # those edits with a clear label so they aren't swept into the
             # next bug's commit (which would mislabel the manual fix).
-            committed = await commit_all(
-                self._wt_path,
-                f"fix: round {round_num} — manual fix for {bug.location}: {bug.description[:40]}",
-            )
+            try:
+                committed = await commit_all(
+                    self._wt_path,
+                    f"fix: round {round_num} — manual fix for {bug.location}: {bug.description[:40]}",
+                )
+            except Exception as e:
+                # commit_all uses check=True on `git commit` — a hook failure,
+                # lock file, or disk-full would raise RuntimeError. Don't let
+                # that crash the loop while the user is mid-BLOCKED: log it,
+                # treat as "not committed", and let the user retry/abort via
+                # the next iteration's diagnostic.
+                logger.exception("Manual fix commit failed: %s", e)
+                console.print(Text(f"  ⚠ 手动修复提交失败: {e}", "warning"))
+                committed = False
             if committed:
                 self.round_counter.save(round_num + 1)
                 console.print(Text(f"  ✓ 已提交手动修复 (round {round_num})", "dim"))
