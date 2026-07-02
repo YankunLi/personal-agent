@@ -478,7 +478,18 @@ class DevReviewLoop:
 
             # Run the fix
             console.print(Text(f"  → 修复 round {round_num}: {bug.location}", "dim"))
-            await self._fix_one_bug(bug, wt_path)
+            try:
+                await self._fix_one_bug(bug, wt_path)
+            except Exception as e:
+                # Fix agent failed (LLM network error, rate limit, agent
+                # creation failure, etc.). Don't let a transient error kill
+                # the entire loop — log it, treat this as a failed attempt
+                # (bug_attempts[h] was already incremented above), and
+                # continue to the next bug. If the same bug keeps failing,
+                # the per-bug retry cap will escalate to BLOCKED.
+                logger.exception("Fix agent failed for %s: %s", bug.location, e)
+                console.print(Text(f"  ⚠ 修复 agent 失败（计入重试次数）: {e}", "warning"))
+                continue
 
             # Commit the fix
             committed = await commit_all(
