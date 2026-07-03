@@ -705,9 +705,17 @@ class DevReviewLoop:
             if self._stopped:
                 return round_num, last_committed_fix_round, True
             h = bug.identity_hash()
-            bug_attempts[h] = bug_attempts.get(h, 0) + 1
-
-            if bug_attempts[h] > MAX_BUG_ATTEMPTS:
+            # Cap check BEFORE incrementing: when _blocked_flow is called, it
+            # reads bug_attempts[h] to display "已尝试修复: N 次" in the BLOCKED
+            # panel. If we increment first, N reads as MAX_BUG_ATTEMPTS+1
+            # (e.g. 4) even though only MAX_BUG_ATTEMPTS (e.g. 3) fixes
+            # actually ran — the (MAX_BUG_ATTEMPTS+1)th was escalated before
+            # running. Increment only after the cap check passes, so the
+            # displayed count matches reality. The regression-revert path
+            # below increments unconditionally on entry, but that path runs
+            # after _fix_one_bug actually executed, so its count is accurate
+            # either way.
+            if bug_attempts.get(h, 0) >= MAX_BUG_ATTEMPTS:
                 # Escalate
                 proceed, manual_round = await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes)
                 if not proceed:
@@ -737,6 +745,13 @@ class DevReviewLoop:
                 # harmless — no commit changed the state.)
                 baseline_failing = await self._gate_failures(wt_path)
                 continue
+
+            # Cap check passed — this bug will actually be fixed. Increment
+            # the attempt counter now (after the cap check, before _fix_one_bug)
+            # so that: (a) the displayed "已尝试修复: N 次" in the BLOCKED panel
+            # matches the number of fixes that actually ran, and (b) a fix-agent
+            # failure (caught below) still counts toward the retry cap.
+            bug_attempts[h] = bug_attempts.get(h, 0) + 1
 
             # Run the fix
             console.print(Text(f"  → 修复 round {round_num}: {bug.location}", "dim"))
