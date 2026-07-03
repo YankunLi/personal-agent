@@ -470,7 +470,7 @@ class DevReviewLoop:
 
             report = await review_tree(
                 self._reviewer_provider(),
-                wt_path / "src" if (wt_path / "src").exists() else wt_path,
+                wt_path / "src" if (wt_path / "src").is_dir() else wt_path,
                 wt_path,
                 prev_bugs=prev_bugs,
                 applied_fixes=applied_fixes,
