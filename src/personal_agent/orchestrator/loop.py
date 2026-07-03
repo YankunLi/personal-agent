@@ -570,6 +570,20 @@ class DevReviewLoop:
                 logger.exception("Fix commit failed for %s: %s", bug.location, e)
                 console.print(Text(f"  ⚠ 修复提交失败（计入重试次数）: {e}", "warning"))
                 committed = False
+            if not committed:
+                # commit_all returns False when there's nothing to commit
+                # (git add -A staged no changes) or when git add -A itself
+                # failed. Without this message the user only sees
+                # "→ 修复 round N: location" with no follow-up, and the next
+                # bug reuses the same round number — a subtle clue but easy
+                # to misread as a hang. Surface the no-op so the user knows
+                # the fixer didn't produce changes (bug already fixed, or
+                # agent couldn't locate it). bug_attempts[h] was already
+                # incremented, so this counts toward the retry cap.
+                console.print(Text(
+                    f"  · 修复未产生改动 (round {round_num} 保留，计入重试次数)", "dim",
+                ))
+                continue
             if committed:
                 round_num += 1
                 # Persist the new round counter. save() can raise OSError on
