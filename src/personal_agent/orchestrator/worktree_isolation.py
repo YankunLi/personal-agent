@@ -107,6 +107,18 @@ async def merge_worktree(repo_root: Path, branch: str, target: str | None = None
     if target is None:
         _, target_ref = await _git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_root)
         target = target_ref.strip()
+        # On a detached HEAD, `--abbrev-ref HEAD` returns the literal
+        # string "HEAD" (not a branch name). `git merge --ff-only` would
+        # silently succeed — fast-forwarding the detached HEAD to the
+        # worktree branch — but NO branch is updated. The user's work
+        # lands on the detached HEAD; switching to `main` shows no
+        # changes, and the work appears "lost". Detect this and refuse
+        # to merge so the user can checkout a branch first.
+        if target == "HEAD":
+            raise RuntimeError(
+                "当前处于 detached HEAD 状态，fast-forward 合并只会更新 detached HEAD "
+                "而非任何分支。请先 `git checkout <branch>`（通常是 main）再重跑 --loop。"
+            )
 
     clean, dirty_desc = await _working_tree_is_clean(repo_root)
     if not clean:
