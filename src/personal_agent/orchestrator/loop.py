@@ -476,7 +476,7 @@ class DevReviewLoop:
                     description=f"reviewer error: {report.raw_output[:200]}",
                     suggested_fix="检查 reviewer provider 配置或重试",
                 )
-                if not await self._blocked_flow(reviewer_bug, bug_attempts, round_num):
+                if not await self._blocked_flow(reviewer_bug, bug_attempts, round_num, applied_fixes):
                     return False, None
                 # blocked_flow's "retry" may have committed a manual fix and
                 # bumped the persisted counter — refresh local round_num so
@@ -530,7 +530,7 @@ class DevReviewLoop:
                 last_bug = report.bugs[-1] if report.bugs else Bug(
                     "?", "major", "global round cap reached"
                 )
-                if not await self._blocked_flow(last_bug, bug_attempts, round_num):
+                if not await self._blocked_flow(last_bug, bug_attempts, round_num, applied_fixes):
                     return False, None
                 # blocked_flow's "retry" may have committed a manual fix and
                 # bumped the persisted counter — refresh local round_num so
@@ -582,7 +582,7 @@ class DevReviewLoop:
 
             if bug_attempts[h] > MAX_BUG_ATTEMPTS:
                 # Escalate
-                if not await self._blocked_flow(bug, bug_attempts, round_num):
+                if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
                     return round_num, True  # user aborted
                 # _blocked_flow may have committed a manual fix and bumped the
                 # persisted counter — refresh local round_num so the next bug
@@ -688,16 +688,22 @@ class DevReviewLoop:
                         console.print(Text(
                             "回滚失败（冲突），进入 BLOCKED 诊断。", "error",
                         ))
-                        if not await self._blocked_flow(bug, bug_attempts, round_num):
+                        if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
                             return round_num, True
                         round_num = self.round_counter.load()
                         continue
-                    if not await self._blocked_flow(bug, bug_attempts, round_num):
+                    if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
                         return round_num, True
                     round_num = self.round_counter.load()
         return round_num, False
 
-    async def _blocked_flow(self, bug: Bug, bug_attempts: dict[str, int], round_num: int) -> bool:
+    async def _blocked_flow(
+        self,
+        bug: Bug,
+        bug_attempts: dict[str, int],
+        round_num: int,
+        applied_fixes: list[Bug],
+    ) -> bool:
         """Enter BLOCKED diagnostics. Returns True if user chose skip, False if abort."""
         self.state = LoopState.BLOCKED
         h = bug.identity_hash()
@@ -713,7 +719,23 @@ class DevReviewLoop:
         action = await blocked_diagnostic(bug, attempts, round_num)
         if action == "skip":
             console.print(Text(f"跳过 bug: {bug.location}", "dim"))
-            # Reset so a re-report next round gets a fresh attempt budget
+            # Mark the bug as "don't re-report" by adding to applied_fixes.
+            # Without this, the reviewer re-reports the skipped bug next round
+            # (it's not in applied_fixes), the loop re-attempts it, and if it
+            # keeps failing gates the user is forced back into BLOCKED every
+            # round — the per-bug retry cap never fires because bug_attempts[h]
+            # is reset below. This turned "skip" into an infinite intervention
+            # loop. Adding to applied_fixes tells the reviewer "don't re-report
+            # this", so the bug stays skipped. The reset below is still needed
+            # for the case where the reviewer re-reports anyway (LLM ignoring
+            # the hint) — it gives a fresh budget rather than immediately
+            # re-tripping the cap. Dedup by identity_hash so a bug already in
+            # applied_fixes (e.g. fix succeeded then gate-regression popped it
+            # — wait, pop removes it, so no dup there; but the global-cap path
+            # may pass a bug whose fix succeeded and is still in the list) is
+            # not listed twice in the reviewer prompt.
+            if not any(b.identity_hash() == bug.identity_hash() for b in applied_fixes):
+                applied_fixes.append(bug)
             bug_attempts[h] = 0
             return True
         if action == "retry":
