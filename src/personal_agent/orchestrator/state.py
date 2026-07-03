@@ -139,16 +139,22 @@ class RoundCounter:
                 cwd=str(repo),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=15,
                 check=False,
             )
-        except (OSError, subprocess.TimeoutExpired) as e:
+        except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError) as e:
             # OSError covers FileNotFoundError (git not on PATH) AND
             # PermissionError (git binary not executable) — the previous
             # except only caught FileNotFoundError, so a PermissionError
             # propagated through load() → _inner_loop (line 372, unwrapped)
             # and crashed the loop. subprocess.TimeoutExpired is a separate
             # exception tree (not an OSError subclass) so list it too.
+            # UnicodeDecodeError: with errors="replace" above this shouldn't
+            # fire, but belt-and-suspenders — a non-UTF-8 commit message in
+            # the git log must not crash the loop. The regex scan just
+            # wouldn't match the garbled subject line.
             logger.warning("git log scan failed for round seed: %s", e)
             return 1
         if out.returncode != 0:
