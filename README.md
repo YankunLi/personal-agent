@@ -7,7 +7,7 @@
 - **六种代理模式**：ReAct（推理-行动循环）、Plan-and-Execute（先规划后执行）、Reflection（自我反思迭代）、Debate（多角色辩论）、ParallelJudge（并行多候选 + 评委综合）、Pipeline（阶段流水线）
 - **7 大 LLM 提供商**：OpenAI、DeepSeek、阿里云千问（Qwen）、智谱 GLM、腾讯混元、Anthropic Claude、百度文心一言
 - **MCP 协议支持**：通过 Model Context Protocol 发现和调用外部工具，支持 stdio / SSE / streamable_http 三种传输，内置 OAuth 客户端凭据流
-- **多层记忆系统**：短期记忆（对话缓冲）、工作记忆（键值草稿本）、长期记忆（语义搜索，支持 in-memory / JSON 文件 / ChromaDB 三种后端）、文件记忆库（`MEMORY.md` 索引 + 单条目文件）、代理知识库（`AGENT.md`）、记忆整合器（自动沉淀）
+- **多层记忆系统**：短期记忆（对话缓冲）、工作记忆（键值草稿本）、长期记忆（关键字召回，基于 `FileMemoryStore`）、文件记忆库（`MEMORY.md` 索引 + 单条目 markdown 文件）、代理知识库（`AGENT.md`）、记忆整合器（自动沉淀）
 - **上下文管理**：滑动窗口、LLM 压缩、混合策略，以及预算策略（CJK 感知的 token 估算 + 注意力路由分段标记 + 身份去重）
 - **技能编排**：可组合技能包，支持依赖解析、工具注册、路径 glob 条件激活、git 仓库安装
 - **自我记忆升级**：代理可通过内置工具更新自身记忆、工作草稿、长期指令
@@ -59,14 +59,13 @@ src/personal_agent/
 │   ├── mcp/              # MCP 工具源（transports / source / wrapper / oauth）
 │   └── builtin/          # 内置工具集（见下文）
 ├── memory/
-│   ├── base.py           # MemoryBackend ABC + 共享 keyword_search
+│   ├── base.py           # make_entry() + keyword_search() 共享工具
 │   ├── short_term.py     # ShortTermMemory（FIFO 对话缓冲）
 │   ├── working.py        # WorkingMemory（KV 草稿本）
-│   ├── long_term.py      # LongTermMemory（语义搜索）
+│   ├── long_term.py      # LongTermMemory（FileMemoryStore 之上的薄封装）
 │   ├── consolidator.py   # 记忆整合器（自动沉淀）
 │   ├── file_store.py     # FileMemoryStore（MEMORY.md 索引 + 单条目文件）
-│   ├── agent_knowledge.py# AgentKnowledge（AGENT.md）
-│   └── backends/         # InMemoryBackend, FileBackend, ChromaBackend
+│   └── agent_knowledge.py# AgentKnowledge（AGENT.md）
 ├── context/
 │   ├── manager.py        # ContextManager（每次 LLM 调用前预处理）
 │   ├── compressor.py     # LLMCompressor, RuleBasedCompressor
@@ -150,9 +149,6 @@ pip install -e .
 
 # 安装开发依赖（含测试、lint）
 pip install -e ".[dev]"
-
-# 如需 ChromaDB 向量记忆后端
-pip install -e ".[memory-chroma]"
 ```
 
 ## 快速开始
@@ -199,22 +195,24 @@ pa init --name my-proj --description "我的项目"
 
 ### 配置
 
-通过环境变量配置（前缀 `PA_`）：
+通过环境变量配置（前缀 `PA_`，嵌套分隔符 `__`）：
 
 ```bash
 # 代理模式
 export PA_AGENT__PATTERN=react          # react | plan_execute | reflection | debate | parallel_judge | pipeline
 
-# 提供商设置
-export PA_AGENT__PROVIDER__PROVIDER=deepseek
-export PA_AGENT__PROVIDER__MODEL=deepseek-chat
-export PA_AGENT__PROVIDER__API_KEY=sk-xxxxxxxx
+# 提供商设置（agent.provider / agent.model 是字符串字段，不是嵌套对象）
+export PA_AGENT__PROVIDER=deepseek
+export PA_AGENT__MODEL=deepseek-chat
 
-# 记忆后端
-export PA_AGENT__MEMORY__LONG_TERM_BACKEND=chroma   # in_memory | file | chroma
+# API Key 存放在顶层 providers 映射中（按提供商名分桶）
+export PA_PROVIDERS__DEEPSEEK__API_KEY=sk-xxxxxxxx
+
+# 记忆目录（LongTermMemory 已统一为 FileMemoryStore，long_term_backend 字段保留但目前仅 "file" 生效）
+export PA_MEMORY__MEMORY_DIR=~/.personal-agent/memory
 
 # 上下文策略
-export PA_AGENT__CONTEXT__STRATEGY=hybrid            # sliding_window | compression | hybrid | budget
+export PA_CONTEXT__STRATEGY=hybrid       # sliding_window | compression | hybrid | budget
 
 # 最大步数
 export PA_AGENT__MAX_STEPS=50
@@ -236,10 +234,9 @@ export PA_AGENT__MAX_STEPS=50
     }
   },
   "memory": {
-    "long_term": {
-      "backend": "file",
-      "persist_path": "./memory.json"
-    }
+    "memory_dir": "~/.personal-agent/memory",
+    "long_term_backend": "file",
+    "short_term_max_messages": 200
   },
   "context": {
     "strategy": "hybrid",
@@ -263,17 +260,19 @@ export PA_AGENT__MAX_STEPS=50
 ```python
 import asyncio
 from personal_agent import create_agent, Settings
+from personal_agent.config import ProviderCredentials
 
 async def main():
     # 方式一：从环境变量创建
     agent = await create_agent()
 
-    # 方式二：从配置创建
+    # 方式二：从配置创建（agent.provider / agent.model 是字符串字段；
+    # API Key 存放在顶层 providers 映射中）
     settings = Settings()
     settings.agent.pattern = "react"
-    settings.agent.provider.provider = "deepseek"
-    settings.agent.provider.model = "deepseek-chat"
-    settings.agent.provider.api_key = "sk-xxx"
+    settings.agent.provider = "deepseek"
+    settings.agent.model = "deepseek-chat"
+    settings.providers["deepseek"] = ProviderCredentials(api_key="sk-xxx")
     agent = await create_agent(settings)
 
     # 使用 async context manager（自动清理资源）
