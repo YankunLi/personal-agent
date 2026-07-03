@@ -52,13 +52,22 @@ async def _prompt_async(question: str) -> str | None:
     return await asyncio.to_thread(_read)
 
 
-async def blocked_diagnostic(bug: Bug, attempts: int, round_num: int) -> Action:
+async def blocked_diagnostic(
+    bug: Bug, attempts: int, round_num: int, *, allow_skip: bool = True
+) -> Action:
     """Show the bug and ask the user how to proceed.
 
     Returns the chosen action. The caller is responsible for acting on it:
     - ``skip``: mark the bug as won't-fix, continue the inner loop
     - ``retry``: user will manually edit code, then orchestrator re-reviews
     - ``abort``: exit the loop (worktree is removed by the caller)
+
+    ``allow_skip`` controls whether "skip" is offered. Gate-synthesized bugs
+    (location == "tests/lint/typecheck") are passed ``allow_skip=False`` by
+    the caller: skipping them is a no-op because the gate is still failing
+    next round, re-synthesizes the same bug (the skip filter runs before
+    synthesis), and traps the user in a skip→re-synthesize→BLOCKED loop.
+    Forcing fix-or-abort breaks the loop and avoids merging broken code.
     """
     # Build the "attempts" line carefully. attempts=0 happens for
     # synthesized bugs that never went through _fix_bugs (e.g. reviewer
@@ -89,17 +98,20 @@ async def blocked_diagnostic(bug: Bug, attempts: int, round_num: int) -> Action:
         expand=False,
     ))
 
+    prompt = (
+        "如何处理? [s]kip / [r]etry (手动修复后重新审查) / [a]bort: "
+        if allow_skip
+        else "如何处理? [r]etry (手动修复后重新审查) / [a]bort (skip 已禁用 — gate 失败必须修复或中止): "
+    )
     while True:
-        raw = await _prompt_async(
-            "如何处理? [s]kip / [r]etry (手动修复后重新审查) / [a]bort: "
-        )
+        raw = await _prompt_async(prompt)
         if raw is None:
             # Stdin closed (EOF) — no user to decide. Default to abort so
             # the loop exits rather than spinning on EOF forever.
             console.print(Text("stdin 已关闭，默认中止。", "warning"))
             return "abort"
         ans = raw.strip().lower()
-        if ans in ("s", "skip"):
+        if allow_skip and ans in ("s", "skip"):
             return "skip"
         if ans in ("r", "retry"):
             console.print(Text("请在外部编辑器中修复上述 bug，完成后回到这里按回车…", "dim"))
@@ -112,7 +124,10 @@ async def blocked_diagnostic(bug: Bug, attempts: int, round_num: int) -> Action:
         # cleaned up the worktree — losing the user's in-progress fix work
         # on an accidental keypress. Now only true EOF aborts; empty input
         # re-prompts like any other invalid choice.
-        console.print(Text("无效选择，请输入 s / r / a", "warning"))
+        console.print(Text(
+            "无效选择，请输入 r / a" if not allow_skip else "无效选择，请输入 s / r / a",
+            "warning",
+        ))
 
 
 async def await_req_update() -> bool:

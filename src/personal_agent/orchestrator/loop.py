@@ -843,7 +843,15 @@ class DevReviewLoop:
             console.print(Text.assemble(
                 ("worktree: ", "label"), (str(self._wt_path), "value"),
             ))
-        action = await blocked_diagnostic(bug, attempts, round_num)
+        # Gate-synthesized bugs (location == "tests/lint/typecheck") can't
+        # be meaningfully skipped: the skip filter runs before gate-bug
+        # synthesis in _inner_loop, so next round the same failing gate
+        # re-synthesizes the same bug (same identity_hash) and it re-enters
+        # _fix_bugs with a fresh bug_attempts budget — trapping the user
+        # in a skip→re-synthesize→BLOCKED loop. Disallow skip so the user
+        # must fix (retry) or abort, breaking the loop.
+        allow_skip = bug.location != "tests/lint/typecheck"
+        action = await blocked_diagnostic(bug, attempts, round_num, allow_skip=allow_skip)
         if action == "skip":
             console.print(Text(f"跳过 bug: {bug.location}", "dim"))
             # Record the skip in skipped_hashes so the reviewer's next-round
