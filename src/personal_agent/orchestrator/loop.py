@@ -110,7 +110,12 @@ class DevReviewLoop:
                 root = out.stdout.strip()
                 if root:
                     return Path(root)
-        except (FileNotFoundError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired):
+            # OSError covers FileNotFoundError (git not on PATH) AND
+            # PermissionError (git not executable, workdir inaccessible).
+            # _resolve_repo_root runs in __init__ before any loop-level
+            # exception handling exists, so an uncaught raise here crashes
+            # the constructor — fall back to the given workdir instead.
             pass
         return workdir
 
