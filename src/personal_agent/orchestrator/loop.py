@@ -1035,6 +1035,7 @@ class DevReviewLoop:
                     self._wt_path,
                     f"fix: round {round_num} — manual fix for {bug.location}: {bug.description[:40]}",
                 )
+                commit_failed = False
             except Exception as e:
                 # commit_all uses check=True on `git commit` — a hook failure,
                 # lock file, or disk-full would raise RuntimeError. Don't let
@@ -1044,6 +1045,7 @@ class DevReviewLoop:
                 logger.exception("Manual fix commit failed: %s", e)
                 console.print(Text(f"  ⚠ 手动修复提交失败: {e}", "warning"))
                 committed = False
+                commit_failed = True
             if committed:
                 # Same rationale as round 236: save() can raise OSError on
                 # disk-full or permission. The manual fix commit is already
@@ -1075,6 +1077,19 @@ class DevReviewLoop:
                 # of a re-fix where a prior round's entry survived.
                 if not any(b.identity_hash() == h for b in applied_fixes):
                     applied_fixes.append(bug)
+            elif not commit_failed:
+                # commit_all returned False without raising — the user chose
+                # "retry" but the worktree had no changes (they pressed Enter
+                # without editing, or their edit produced no diff). Without
+                # this message the user sees no feedback after "retry", and
+                # the next round's reviewer re-reports the bug — confusing
+                # them into thinking their (non-existent) fix didn't work.
+                # Matches the _fix_bugs auto-fix path's "修复未产生改动"
+                # message (line ~838). The commit-failure case already
+                # printed "手动修复提交失败" above; don't contradict it.
+                console.print(Text(
+                    "  · 未检测到改动（请在 worktree 中编辑后再次 retry，或 skip/abort）", "warning",
+                ))
             bug_attempts[h] = 0
             # Propagate the manual fix's round so the caller can update
             # last_committed_fix_round. None when committed is False (no
