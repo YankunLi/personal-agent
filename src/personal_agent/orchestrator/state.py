@@ -133,7 +133,13 @@ class RoundCounter:
                 timeout=15,
                 check=False,
             )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        except (OSError, subprocess.TimeoutExpired) as e:
+            # OSError covers FileNotFoundError (git not on PATH) AND
+            # PermissionError (git binary not executable) — the previous
+            # except only caught FileNotFoundError, so a PermissionError
+            # propagated through load() → _inner_loop (line 372, unwrapped)
+            # and crashed the loop. subprocess.TimeoutExpired is a separate
+            # exception tree (not an OSError subclass) so list it too.
             logger.warning("git log scan failed for round seed: %s", e)
             return 1
         if out.returncode != 0:
