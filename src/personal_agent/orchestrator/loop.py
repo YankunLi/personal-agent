@@ -1060,6 +1060,21 @@ class DevReviewLoop:
                         f"  ⚠ 无法持久化 round 计数: {e}", "warning",
                     ))
                 console.print(Text(f"  ✓ 已提交手动修复 (round {round_num})", "dim"))
+                # Record the manual fix in applied_fixes so the reviewer's
+                # next-round "verify" context includes it. The skip path
+                # removes the bug from applied_fixes (line ~1026); the retry
+                # path previously didn't add it, creating an asymmetry: a
+                # manual fix was committed to git but invisible to the
+                # reviewer's verify prompt. If the manual fix was wrong and
+                # the reviewer didn't independently re-report it, the bad
+                # fix would merge to main without verification. The bug is
+                # NOT in applied_fixes at this point — the cap-check path
+                # never appended (the fix never ran), and the regression-
+                # revert path popped it (line ~909) before calling us — so
+                # the dedup guard is belt-and-suspenders for the rare case
+                # of a re-fix where a prior round's entry survived.
+                if not any(b.identity_hash() == h for b in applied_fixes):
+                    applied_fixes.append(bug)
             bug_attempts[h] = 0
             # Propagate the manual fix's round so the caller can update
             # last_committed_fix_round. None when committed is False (no
