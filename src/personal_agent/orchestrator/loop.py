@@ -167,11 +167,27 @@ class DevReviewLoop:
         # is the matching fix for the idempotency-gate read at the top.
         try:
             initial_req = self.req_path.read_text(encoding="utf-8")
-        except OSError:
+        except FileNotFoundError:
             console.print(Text.assemble(
                 ("需求文件不存在: ", "error"), (str(self.req_path), "value"),
             ))
             console.print(Text("请先创建需求文件再启动 --loop 模式。", "dim"))
+            return
+        except UnicodeDecodeError as e:
+            # UnicodeDecodeError is a ValueError, NOT an OSError subclass —
+            # the bare `except OSError` below wouldn't catch it, and a
+            # non-UTF-8 requirements.md (e.g. saved as Latin-1 or GBK by a
+            # misconfigured editor) would crash the loop with a raw traceback
+            # in run()'s generic except. Surface a clear message instead.
+            console.print(Text.assemble(
+                ("需求文件不是有效的 UTF-8: ", "error"), (str(self.req_path), "value"),
+            ))
+            console.print(Text(f"  {e}（请用 UTF-8 重新保存后重跑）", "dim"))
+            return
+        except OSError as e:
+            console.print(Text.assemble(
+                ("读取需求文件失败: ", "error"), (str(e), "value"),
+            ))
             return
 
         # Cross-invocation idempotency gate: if requirements.md hasn't changed
@@ -199,6 +215,16 @@ class DevReviewLoop:
             # rather than crashing.
             try:
                 req_content = self.req_path.read_text(encoding="utf-8")
+            except UnicodeDecodeError as e:
+                # Encoding errors don't resolve by retrying — the file's
+                # bytes are invalid UTF-8, not briefly absent. Spinning the
+                # OSError retry loop here would hang until Ctrl+C. Surface a
+                # clear message and exit this iteration's outer-loop pass.
+                console.print(Text.assemble(
+                    ("需求文件不是有效的 UTF-8: ", "error"), (str(self.req_path), "value"),
+                ))
+                console.print(Text(f"  {e}（请用 UTF-8 重新保存后重跑）", "dim"))
+                return
             except OSError as e:
                 logger.warning("requirements read failed (retrying): %s", e)
                 console.print(Text(
@@ -210,10 +236,17 @@ class DevReviewLoop:
                     await asyncio.sleep(1.0)
                     try:
                         req_content = self.req_path.read_text(encoding="utf-8")
-                        recovered = True
-                        break
+                    except UnicodeDecodeError as ud:
+                        # A partial multi-byte sequence mid-write (atomic
+                        # save that hasn't flushed the full character) looks
+                        # like a UnicodeDecodeError. It WILL resolve once the
+                        # write completes — treat as transient, keep polling.
+                        logger.warning("requirements partial UTF-8 (retrying): %s", ud)
+                        continue
                     except OSError:
                         continue
+                    recovered = True
+                    break
                 if not recovered:
                     continue
             req_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
@@ -240,7 +273,10 @@ class DevReviewLoop:
             await asyncio.sleep(2.0)
             try:
                 content = self.req_path.read_text(encoding="utf-8")
-            except OSError:
+            except (OSError, UnicodeDecodeError):
+                # OSError: file briefly unavailable (atomic save delete+recreate).
+                # UnicodeDecodeError: partial multi-byte sequence mid-write.
+                # Both are transient in this polling context — keep polling.
                 continue
             new_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
             if new_hash != old_hash:
