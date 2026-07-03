@@ -899,7 +899,17 @@ class DevReviewLoop:
             console.print(Text(result.answer[:500], "dim"))
         finally:
             if agent is not None:
-                await agent.close()
+                # agent.close() cleans up the provider's httpx connection
+                # pool. If it raises (network teardown error, cancelled
+                # task), the exception would propagate from finally and
+                # mask any result from agent.run() — the develop phase
+                # would be treated as failed even though the agent
+                # finished its work. Wrap so a close failure doesn't
+                # discard the run result or mask the run's own exception.
+                try:
+                    await agent.close()
+                except Exception as e:
+                    logger.warning("agent.close() failed in _develop: %s", e)
 
     async def _fix_one_bug(self, bug: Bug, wt_path: Path) -> None:
         """Run a fix agent on a single bug."""
@@ -923,7 +933,12 @@ class DevReviewLoop:
             console.print(Text(f"  修复结果: {result.answer[:200]}", "dim"))
         finally:
             if agent is not None:
-                await agent.close()
+                # Same rationale as _develop: don't let agent.close() mask
+                # the run result or the run's own exception.
+                try:
+                    await agent.close()
+                except Exception as e:
+                    logger.warning("agent.close() failed in _fix_one_bug: %s", e)
 
     def _agent_overrides(self) -> dict:
         """Project CLI overrides onto agent factory kwargs."""
