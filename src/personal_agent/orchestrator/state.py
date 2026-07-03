@@ -104,7 +104,16 @@ class RoundCounter:
         if self.path.exists():
             try:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
-                file_value = int(data.get("next_round", 1))
+                # json.loads can return a non-dict (list, str, int, None) for
+                # valid JSON like `[1]` or `"abc"`. `data.get(...)` would raise
+                # AttributeError on those types — NOT caught by the except
+                # below (JSONDecodeError/OSError/ValueError/TypeError), so the
+                # error propagated through load() → _inner_loop (unwrapped) and
+                # crashed the loop. Treat non-dict as corrupt and reseed.
+                if isinstance(data, dict):
+                    file_value = int(data.get("next_round", 1))
+                else:
+                    logger.warning("round_counter file not a dict, reseeding: %r", type(data).__name__)
             except (json.JSONDecodeError, OSError, ValueError, TypeError) as e:
                 logger.warning("round_counter file corrupt, reseeding: %s", e)
         git_seed = self._seed_from_git()
@@ -176,6 +185,14 @@ class LastCleanHash:
             return None
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
+            # Same rationale as RoundCounter.load(): a non-dict JSON body
+            # (array, string, number) would make `data.get(...)` raise
+            # AttributeError, which isn't in the except clause below —
+            # propagating through load() → _outer_loop's idempotency gate
+            # (unwrapped) and crashing the loop. Guard with isinstance.
+            if not isinstance(data, dict):
+                logger.warning("last_clean_req file not a dict, ignoring: %r", type(data).__name__)
+                return None
             return str(data.get("hash", "")) or None
         except (json.JSONDecodeError, OSError, ValueError, TypeError) as e:
             logger.warning("last_clean_req file corrupt, ignoring: %s", e)
