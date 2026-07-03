@@ -155,8 +155,14 @@ class DevReviewLoop:
     # ── outer loop ────────────────────────────────────────────────────────
 
     async def _outer_loop(self) -> None:
-        # Initial requirement must exist
-        if not self.req_path.exists():
+        # Read the requirement. Combine the existence check and the read so
+        # an atomic-save editor (delete+recreate) can't race between
+        # exists() returning True and read_text() raising FileNotFoundError.
+        # The same race in the while-loop read was fixed in round 238; this
+        # is the matching fix for the idempotency-gate read at the top.
+        try:
+            initial_req = self.req_path.read_text(encoding="utf-8")
+        except OSError:
             console.print(Text.assemble(
                 ("需求文件不存在: ", "error"), (str(self.req_path), "value"),
             ))
@@ -167,9 +173,7 @@ class DevReviewLoop:
         # since the last CLEAN pass, no-op. This makes `pa --loop` safe to
         # re-run — the second invocation exits immediately without spinning
         # up a worktree or agent.
-        current_hash = hashlib.sha256(
-            self.req_path.read_text(encoding="utf-8").encode("utf-8")
-        ).hexdigest()
+        current_hash = hashlib.sha256(initial_req.encode("utf-8")).hexdigest()
         last_clean = self.last_clean.load()
         if last_clean is not None and last_clean == current_hash:
             console.print(Text.assemble(
