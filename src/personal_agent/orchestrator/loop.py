@@ -353,10 +353,21 @@ class DevReviewLoop:
                 console.print(Text("内层循环未到 CLEAN，worktree 保留以供检查。", "warning"))
         finally:
             # Per-iteration cleanup so worktrees don't leak across outer iterations.
+            # Cleanup failures (remove_worktree/delete_branch raise on subprocess
+            # creation PermissionError, etc.) must not crash the loop after a
+            # successful merge — the work is already in main. Log and continue
+            # so the outer loop can proceed; any leaked worktree/branch is
+            # handled by run()'s _cleanup_worktree safety net on exit.
             if merged:
                 # Work is preserved in main — safe to remove the worktree and branch.
-                await remove_worktree(self.workdir, wt_path, force=True)
-                await delete_branch(self.workdir, branch, force=True)
+                try:
+                    await remove_worktree(self.workdir, wt_path, force=True)
+                except Exception as e:
+                    logger.warning("remove_worktree failed (continuing): %s", e)
+                try:
+                    await delete_branch(self.workdir, branch, force=True)
+                except Exception as e:
+                    logger.warning("delete_branch failed (continuing): %s", e)
                 console.print(Text(f"已清理 worktree {wt_path}", "dim"))
             else:
                 console.print(Text.assemble(
