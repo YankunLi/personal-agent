@@ -58,6 +58,21 @@ async def blocked_diagnostic(bug: Bug, attempts: int, round_num: int) -> Action:
     - ``retry``: user will manually edit code, then orchestrator re-reviews
     - ``abort``: exit the loop (worktree is removed by the caller)
     """
+    # Build the "attempts" line carefully. attempts=0 happens for
+    # synthesized bugs that never went through _fix_bugs (e.g. reviewer
+    # errors — their identity_hash includes raw_output, so bug_attempts[h]
+    # is always a fresh 0). The old format string unconditionally computed
+    # "round {round_num - attempts} → {round_num - 1}", which for attempts=0
+    # produced a backwards range ("round N → round N-1") and for
+    # attempts > round_num produced negative round numbers. Both confused
+    # the user about which rounds actually ran.
+    if attempts <= 0:
+        attempts_line = "\n未尝试自动修复（直接进入 BLOCKED）"
+    else:
+        start_round = max(0, round_num - attempts)
+        end_round = max(0, round_num - 1)
+        attempts_line = f"\n已尝试修复: {attempts} 次 (round {start_round} → {end_round})"
+
     console.print(Panel(
         Text.assemble(
             ("Bug 在重试上限内未解决\n\n", "error"),
@@ -65,7 +80,7 @@ async def blocked_diagnostic(bug: Bug, attempts: int, round_num: int) -> Action:
             (f"严重度:     {bug.severity}\n", "value"),
             (f"描述:       {bug.description}\n", "value"),
             (f"建议修复:   {bug.suggested_fix}\n", "dim"),
-            (f"\n已尝试修复: {attempts} 次 (round {round_num - attempts} → {round_num - 1})", "warning"),
+            (attempts_line, "warning"),
         ),
         title="BLOCKED",
         border_style="error",
