@@ -877,6 +877,15 @@ class DevReviewLoop:
             # hash could recur) — it gives a fresh budget rather than
             # immediately re-tripping the cap.
             skipped_hashes.add(h)
+            # A bug previously fixed (and thus in applied_fixes as "verify"
+            # context) that is now being skipped has contradictory state: the
+            # reviewer is told to verify it while skipped_hashes filters any
+            # re-report. Remove it from applied_fixes so the reviewer isn't
+            # asked to verify a bug the user chose to accept — that wastes
+            # tokens and the verify outcome is moot since re-reports are
+            # filtered anyway. Use slice assignment so the caller's list
+            # (passed by reference) is mutated in place.
+            applied_fixes[:] = [b for b in applied_fixes if b.identity_hash() != h]
             bug_attempts[h] = 0
             return True
         if action == "retry":
