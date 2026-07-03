@@ -830,7 +830,18 @@ class DevReviewLoop:
         except Exception:
             keep = False
         if not keep:
-            await remove_worktree(self.workdir, wt, force=True)
+            # Wrap each cleanup call so a failure in one doesn't skip the
+            # other. remove_worktree failing should not prevent
+            # delete_branch from running (and vice versa) — otherwise a
+            # transient subprocess error leaks the branch even though
+            # round 240's outer wrap in run() catches the exception.
+            try:
+                await remove_worktree(self.workdir, wt, force=True)
+            except Exception as e:
+                logger.warning("remove_worktree failed during cleanup: %s", e)
             if branch:
-                await delete_branch(self.workdir, branch, force=True)
+                try:
+                    await delete_branch(self.workdir, branch, force=True)
+                except Exception as e:
+                    logger.warning("delete_branch failed during cleanup: %s", e)
             console.print(Text(f"已清理 worktree {wt}", "dim"))
