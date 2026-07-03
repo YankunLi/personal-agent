@@ -105,10 +105,15 @@ async def all_gates(workdir: Path) -> tuple[bool, list[GateResult]]:
     results: list[GateResult] = []
     for name, item in zip(("tests", "lint", "typecheck"), raw):
         if isinstance(item, BaseException):
-            # Don't swallow KeyboardInterrupt/SystemExit — re-raise so
-            # Ctrl+C still terminates the loop promptly. Only convert
-            # genuine exceptions to failed GateResults.
-            if isinstance(item, (KeyboardInterrupt, SystemExit)):
+            # Don't swallow cancellation/control exceptions — re-raise so
+            # Ctrl+C and task cancellation terminate the loop promptly.
+            # CancelledError is BaseException (not Exception) since 3.8;
+            # without listing it, a CancelledError returned by gather
+            # (race: inner task cancelled just as the outer is cancelled)
+            # would be converted to a failed GateResult and the loop would
+            # keep running instead of exiting. Only convert genuine
+            # exceptions to failed GateResults.
+            if isinstance(item, (KeyboardInterrupt, SystemExit, asyncio.CancelledError)):
                 raise item
             logger.warning("gate %s raised unexpectedly: %s", name, item)
             results.append(GateResult(name, False, f"gate crashed: {item}"))
