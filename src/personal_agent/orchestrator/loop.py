@@ -223,15 +223,39 @@ class DevReviewLoop:
             try:
                 req_content = self.req_path.read_text(encoding="utf-8")
             except UnicodeDecodeError as e:
-                # Encoding errors don't resolve by retrying — the file's
-                # bytes are invalid UTF-8, not briefly absent. Spinning the
-                # OSError retry loop here would hang until Ctrl+C. Surface a
-                # clear message and exit this iteration's outer-loop pass.
-                console.print(Text.assemble(
-                    ("需求文件不是有效的 UTF-8: ", "error"), (str(self.req_path), "value"),
+                # A partial multi-byte sequence mid-write (atomic save that
+                # hasn't flushed the full character) looks like a
+                # UnicodeDecodeError. It WILL resolve once the write
+                # completes — same rationale as the retry loop's matching
+                # handler below. The previous code returned here, exiting
+                # the outer loop on a transient partial-UTF-8 read; the
+                # retry loop's handler treated the same error as transient.
+                # Inconsistent: a partial sequence on the first read crashed
+                # the loop, but the same partial sequence on a retry was
+                # tolerated. Fall through to the retry loop (which already
+                # handles UnicodeDecodeError as transient) instead of
+                # exiting. A genuinely non-UTF-8 file (e.g. GBK) would hang
+                # here until Ctrl+C — same behavior as a missing file in the
+                # OSError path, and the user can fix the encoding and save
+                # again to unblock.
+                logger.warning("requirements partial UTF-8 (retrying): %s", e)
+                console.print(Text(
+                    f"读取需求文件失败，等待重试（Ctrl+C 退出）: {e}", "warning",
                 ))
-                console.print(Text(f"  {e}（请用 UTF-8 重新保存后重跑）", "dim"))
-                return
+                recovered = False
+                while not self._stopped:
+                    await asyncio.sleep(1.0)
+                    try:
+                        req_content = self.req_path.read_text(encoding="utf-8")
+                    except UnicodeDecodeError as ud:
+                        logger.warning("requirements partial UTF-8 (retrying): %s", ud)
+                        continue
+                    except OSError:
+                        continue
+                    recovered = True
+                    break
+                if not recovered:
+                    continue
             except OSError as e:
                 logger.warning("requirements read failed (retrying): %s", e)
                 console.print(Text(
