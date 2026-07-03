@@ -548,7 +548,8 @@ class DevReviewLoop:
                     description=f"reviewer error: {report.raw_output[:200]}",
                     suggested_fix="检查 reviewer provider 配置或重试",
                 )
-                if not await self._blocked_flow(reviewer_bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
+                proceed, _manual_round = await self._blocked_flow(reviewer_bug, bug_attempts, round_num, applied_fixes, skipped_hashes)
+                if not proceed:
                     return False, None
                 # blocked_flow's "retry" may have committed a manual fix and
                 # bumped the persisted counter — refresh local round_num so
@@ -636,8 +637,11 @@ class DevReviewLoop:
                 last_bug = report.bugs[-1] if report.bugs else Bug(
                     "?", "major", "global round cap reached"
                 )
-                if not await self._blocked_flow(last_bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
+                proceed, manual_round = await self._blocked_flow(last_bug, bug_attempts, round_num, applied_fixes, skipped_hashes)
+                if not proceed:
                     return False, None
+                if manual_round is not None:
+                    last_committed_fix_round = manual_round
                 # blocked_flow's "retry" may have committed a manual fix and
                 # bumped the persisted counter — refresh local round_num so
                 # the next _fix_bugs doesn't reuse the same round number.
@@ -703,8 +707,11 @@ class DevReviewLoop:
 
             if bug_attempts[h] > MAX_BUG_ATTEMPTS:
                 # Escalate
-                if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
+                proceed, manual_round = await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes)
+                if not proceed:
                     return round_num, last_committed_fix_round, True  # user aborted
+                if manual_round is not None:
+                    last_committed_fix_round = manual_round
                 # _blocked_flow sets state=BLOCKED. After resolution (skip/
                 # retry), we're back in the fix phase — restore FIXING so
                 # external observers don't see BLOCKED while the loop is
@@ -858,14 +865,20 @@ class DevReviewLoop:
                         console.print(Text(
                             "回滚失败（冲突），进入 BLOCKED 诊断。", "error",
                         ))
-                        if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
+                        proceed, manual_round = await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes)
+                        if not proceed:
                             return round_num, last_committed_fix_round, True
+                        if manual_round is not None:
+                            last_committed_fix_round = manual_round
                         self.state = LoopState.FIXING
                         round_num = self.round_counter.load()
                         baseline_failing = await self._gate_failures(wt_path)
                         continue
-                    if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
+                    proceed, manual_round = await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes)
+                    if not proceed:
                         return round_num, last_committed_fix_round, True
+                    if manual_round is not None:
+                        last_committed_fix_round = manual_round
                     self.state = LoopState.FIXING
                     round_num = self.round_counter.load()
                     baseline_failing = await self._gate_failures(wt_path)
@@ -897,8 +910,17 @@ class DevReviewLoop:
         round_num: int,
         applied_fixes: list[Bug],
         skipped_hashes: set[str],
-    ) -> bool:
-        """Enter BLOCKED diagnostics. Returns True if user chose skip, False if abort."""
+    ) -> tuple[bool, int | None]:
+        """Enter BLOCKED diagnostics.
+
+        Returns ``(proceed, committed_fix_round)``.
+        ``proceed`` is True for skip/retry (continue the loop), False for
+        abort (stop the loop). ``committed_fix_round`` is the round number
+        of the manual fix committed by "retry" (or None for skip/abort/no
+        commit). Callers use it to update ``last_committed_fix_round`` so
+        CLEAN metadata points at the manual fix when it's the last fix
+        before CLEAN.
+        """
         self.state = LoopState.BLOCKED
         h = bug.identity_hash()
         attempts = bug_attempts.get(h, 0)
@@ -944,7 +966,7 @@ class DevReviewLoop:
             # (passed by reference) is mutated in place.
             applied_fixes[:] = [b for b in applied_fixes if b.identity_hash() != h]
             bug_attempts[h] = 0
-            return True
+            return True, None
         if action == "retry":
             # User claims to have fixed it manually in the worktree. Commit
             # those edits with a clear label so they aren't swept into the
@@ -980,12 +1002,16 @@ class DevReviewLoop:
                     ))
                 console.print(Text(f"  ✓ 已提交手动修复 (round {round_num})", "dim"))
             bug_attempts[h] = 0
-            return True
+            # Propagate the manual fix's round so the caller can update
+            # last_committed_fix_round. None when committed is False (no
+            # changes staged, or commit_all raised) — the manual "retry"
+            # produced no commit, so there's no new fix round to record.
+            return True, (round_num if committed else None)
         if action == "abort":
             console.print(Text("用户中止。", "warning"))
             self._stopped = True
-            return False
-        return False
+            return False, None
+        return False, None
 
     # ── agent creation & execution ────────────────────────────────────────
 
