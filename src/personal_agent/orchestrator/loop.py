@@ -856,10 +856,23 @@ class DevReviewLoop:
     # ── agent creation & execution ────────────────────────────────────────
 
     def _dev_settings(self, wt_path: Path, pattern: str = "plan_execute") -> Settings:
-        """Create a settings copy scoped to the worktree."""
+        """Create a settings copy scoped to the worktree.
+
+        Forces ``tools.restrict_to_workspace = True`` so the dev/fix agent's
+        file_ops tools can only touch files inside the worktree. Without
+        this, the framework default (``restrict_to_workspace=False``) makes
+        ``create_agent`` pass ``workspace_dir=None`` to
+        ``create_file_ops_tools``, which makes ``validate_within_workspace``
+        short-circuit — the agent could then write to the main repo's
+        working tree, dirtying it and causing the next iteration's
+        ``merge_worktree`` to fail with ``DirtyWorktreeError``. For an
+        autonomous loop, the agent must be sandboxed to its worktree
+        regardless of the user's config.
+        """
         s = self.settings.model_copy(deep=True)
         s.agent.workspace = str(wt_path)
         s.agent.pattern = pattern
+        s.tools.restrict_to_workspace = True
         return s
 
     def _reviewer_provider(self):
