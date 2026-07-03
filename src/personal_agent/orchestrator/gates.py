@@ -73,10 +73,32 @@ async def run_typecheck(workdir: Path) -> GateResult:
 
 
 async def all_gates(workdir: Path) -> tuple[bool, list[GateResult]]:
-    """Run all three gates. Returns (all_pass, results)."""
-    results = await asyncio.gather(
+    """Run all three gates. Returns (all_pass, results).
+
+    Each gate runs in parallel via asyncio.gather. If a gate raises an
+    unexpected exception (PermissionError on subprocess creation, pipe
+    error during communicate, etc. — _run only catches FileNotFoundError
+    and TimeoutError), gather would re-raise and crash the loop in two
+    places: _inner_loop's zero-bug path and _fix_bugs' regression check.
+    Use return_exceptions=True so a single gate's failure is recorded as
+    a failed GateResult rather than taking down the whole gate batch.
+    """
+    raw = await asyncio.gather(
         run_tests(workdir),
         run_lint(workdir),
         run_typecheck(workdir),
+        return_exceptions=True,
     )
-    return all(r.passed for r in results), list(results)
+    results: list[GateResult] = []
+    for name, item in zip(("tests", "lint", "typecheck"), raw):
+        if isinstance(item, BaseException):
+            # Don't swallow KeyboardInterrupt/SystemExit — re-raise so
+            # Ctrl+C still terminates the loop promptly. Only convert
+            # genuine exceptions to failed GateResults.
+            if isinstance(item, (KeyboardInterrupt, SystemExit)):
+                raise item
+            logger.warning("gate %s raised unexpectedly: %s", name, item)
+            results.append(GateResult(name, False, f"gate crashed: {item}"))
+        else:
+            results.append(item)
+    return all(r.passed for r in results), results
