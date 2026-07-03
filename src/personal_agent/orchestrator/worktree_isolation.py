@@ -80,8 +80,22 @@ async def create_worktree(repo_root: Path, base_branch: str | None = None) -> tu
             "worktree", "add", "-b", branch, str(wt_path), base_branch,
             cwd=repo_root,
         )
-    except Exception:
-        await _git("branch", "-D", branch, cwd=repo_root, check=False)
+    except BaseException:
+        # Catch BaseException (not Exception) so CancelledError /
+        # KeyboardInterrupt from Ctrl+C during `git worktree add` also
+        # triggers branch cleanup. Without this, a mid-flight cancel
+        # leaks the `dev-review-<ts>-<suffix>` branch: `git worktree
+        # add -b` creates the branch first, so a killed subprocess can
+        # leave the branch created with no worktree attached. Shield
+        # the cleanup so it actually runs even when the outer task is
+        # being cancelled (otherwise the await would re-raise
+        # CancelledError before the git branch -D executes).
+        try:
+            await asyncio.shield(
+                _git("branch", "-D", branch, cwd=repo_root, check=False)
+            )
+        except asyncio.CancelledError:
+            pass
         raise
     logger.info("Created worktree at %s on branch %s (off %s)", wt_path, branch, base_branch)
     return wt_path, branch
