@@ -495,6 +495,11 @@ class DevReviewLoop:
         skipped_hashes: set[str] = set()
         total_rounds = 0
         reviewer_error_streak = 0
+        # Last fix round that was committed AND NOT reverted, across all
+        # while iterations in this inner loop. Used for CLEAN metadata so
+        # last_clean_req.json doesn't point at a reverted commit. None
+        # until a fix survives the regression check.
+        last_committed_fix_round: int | None = None
 
         while not self._stopped:
             self.state = LoopState.REVIEWING
@@ -568,8 +573,13 @@ class DevReviewLoop:
                 if gates_ok:
                     self.state = LoopState.CLEAN
                     console.print(Text("✓ 审查零 bug 且全部 gate 通过", "success"))
-                    last_fix_round = round_num - 1 if round_num > initial_round else None
-                    return True, last_fix_round
+                    # Use the tracked last-surviving fix round, NOT
+                    # round_num-1 — round_num advances even for reverted
+                    # fixes, so round_num-1 can point at a commit that was
+                    # rolled back (and is absent from git log). None means
+                    # no fix survived (all reverted, or zero bugs on first
+                    # pass).
+                    return True, last_committed_fix_round
                 else:
                     console.print(Text("审查零 bug 但 gate 失败，转为 fix 任务:", "warning"))
                     for r in results:
@@ -602,11 +612,19 @@ class DevReviewLoop:
 
             # Fix phase
             self.state = LoopState.FIXING
-            round_num, aborted = await self._fix_bugs(
+            round_num, round_last_fix, aborted = await self._fix_bugs(
                 report, wt_path, round_num, bug_attempts, applied_fixes, baseline_failing, skipped_hashes,
             )
             if aborted:
                 return False, None
+            # Track the last non-reverted fix round across while iterations.
+            # _fix_bugs returns the last fix from THIS call that survived the
+            # regression check; earlier rounds' surviving fixes are still the
+            # "last committed" if this round reverted its only fix. Without
+            # this cross-round tracking, last_fix_round would point at a
+            # reverted commit when the final round's only fix was reverted.
+            if round_last_fix is not None:
+                last_committed_fix_round = round_last_fix
 
             prev_bugs = report.bugs
             total_rounds += 1
@@ -642,12 +660,25 @@ class DevReviewLoop:
         applied_fixes: list[Bug],
         baseline_failing: set[str],
         skipped_hashes: set[str],
-    ) -> tuple[int, bool]:
+    ) -> tuple[int, int | None, bool]:
         """Fix each bug in the report, committing individually.
 
-        Returns (next_round_num, aborted). When aborted is True the caller
-        should stop the loop — ``self._stopped`` is also set.
+        Returns ``(next_round_num, last_committed_fix_round, aborted)``.
+        ``last_committed_fix_round`` is the round number of the last fix
+        that was committed AND NOT reverted — None if every fix was
+        reverted or no fix was committed. The caller uses this for CLEAN
+        metadata so ``last_clean_req.json`` doesn't point at a reverted
+        commit (which would be confusing and absent from ``git log``).
+        When ``aborted`` is True the caller should stop the loop —
+        ``self._stopped`` is also set.
         """
+        # Track the round number of the last fix that was committed and
+        # NOT reverted. round_num advances even for reverted fixes (the
+        # increment happens before the regression check), so round_num-1
+        # can't be trusted to point at a real commit. This variable is
+        # only updated after a non-regressed commit survives the
+        # regression check.
+        last_committed_fix_round: int | None = None
         # Deduplicate bugs by identity_hash within this report. The reviewer
         # (LLM) can emit the same bug twice in one JSON output; without
         # dedup, each duplicate increments bug_attempts[h] for the same bug,
@@ -666,14 +697,14 @@ class DevReviewLoop:
 
         for bug in unique_bugs:
             if self._stopped:
-                return round_num, True
+                return round_num, last_committed_fix_round, True
             h = bug.identity_hash()
             bug_attempts[h] = bug_attempts.get(h, 0) + 1
 
             if bug_attempts[h] > MAX_BUG_ATTEMPTS:
                 # Escalate
                 if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
-                    return round_num, True  # user aborted
+                    return round_num, last_committed_fix_round, True  # user aborted
                 # _blocked_flow sets state=BLOCKED. After resolution (skip/
                 # retry), we're back in the fix phase — restore FIXING so
                 # external observers don't see BLOCKED while the loop is
@@ -828,13 +859,13 @@ class DevReviewLoop:
                             "回滚失败（冲突），进入 BLOCKED 诊断。", "error",
                         ))
                         if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
-                            return round_num, True
+                            return round_num, last_committed_fix_round, True
                         self.state = LoopState.FIXING
                         round_num = self.round_counter.load()
                         baseline_failing = await self._gate_failures(wt_path)
                         continue
                     if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
-                        return round_num, True
+                        return round_num, last_committed_fix_round, True
                     self.state = LoopState.FIXING
                     round_num = self.round_counter.load()
                     baseline_failing = await self._gate_failures(wt_path)
@@ -852,7 +883,12 @@ class DevReviewLoop:
                                 f"  ✓ 修复了 gate: {', '.join(sorted(fixed_gates))}", "success",
                             ))
                     baseline_failing = current_failing
-        return round_num, False
+                    # This fix survived the regression check — record its
+                    # round number so the caller's CLEAN metadata points
+                    # at a real commit. round_num was already incremented
+                    # after the commit, so the fix's round is round_num-1.
+                    last_committed_fix_round = round_num - 1
+        return round_num, last_committed_fix_round, False
 
     async def _blocked_flow(
         self,
