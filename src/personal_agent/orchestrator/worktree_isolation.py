@@ -172,7 +172,14 @@ async def remove_worktree(repo_root: Path, wt_path: Path, force: bool = False) -
 
 async def delete_branch(repo_root: Path, branch: str, force: bool = False) -> None:
     flag = "-D" if force else "-d"
-    await _git("branch", flag, branch, cwd=repo_root, check=False)
+    # Match remove_worktree's pattern: check=False so non-zero doesn't raise,
+    # but log on failure so a leaked branch (e.g. branch checked out in
+    # another worktree, or git internals error) doesn't accumulate silently.
+    # Without this, repeated failed deletes would leak `dev-review-*`
+    # branches with no signal to the user.
+    code, text = await _git("branch", flag, branch, cwd=repo_root, check=False)
+    if code != 0:
+        logger.warning("branch delete failed (continuing): %s", text)
 
 
 async def commit_all(wt_path: Path, message: str) -> bool:
