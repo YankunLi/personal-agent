@@ -81,7 +81,7 @@ def _build_user_prompt(
         for b in prev_bugs:
             parts.append(f"- [{b.severity}] {b.location}: {b.description}")
     if applied_fixes:
-        parts.append("\n## 本轮已应用的修复（不要重复报告这些）")
+        parts.append("\n## 本轮已应用的修复（请验证是否真正修复，仍未修复的可重复报告）")
         for b in applied_fixes:
             parts.append(f"- {b.location}: {b.description} → {b.suggested_fix}")
     if not prev_bugs and not applied_fixes:

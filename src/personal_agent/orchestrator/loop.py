@@ -458,6 +458,16 @@ class DevReviewLoop:
         bug_attempts: dict[str, int] = {}
         prev_bugs: list[Bug] = []
         applied_fixes: list[Bug] = []
+        # identity_hash set of bugs the user explicitly skipped via BLOCKED.
+        # The reviewer is no longer told to suppress applied_fixes (it's
+        # asked to VERIFY them — a wrong fix must be re-reported so it gets
+        # re-fixed, otherwise bad code reaches main). But skipped bugs are
+        # an explicit user decision to not fix — those must stay suppressed.
+        # Filter the reviewer's output against this set so skipped bugs
+        # don't come back next round. (Gate-synthesized bugs are added
+        # AFTER this filter, so a skipped gate bug still re-appears if the
+        # gate keeps failing — that's a separate issue, see _fix_bugs.)
+        skipped_hashes: set[str] = set()
         total_rounds = 0
         reviewer_error_streak = 0
 
@@ -502,13 +512,21 @@ class DevReviewLoop:
                     description=f"reviewer error: {report.raw_output[:200]}",
                     suggested_fix="检查 reviewer provider 配置或重试",
                 )
-                if not await self._blocked_flow(reviewer_bug, bug_attempts, round_num, applied_fixes):
+                if not await self._blocked_flow(reviewer_bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
                     return False, None
                 # blocked_flow's "retry" may have committed a manual fix and
                 # bumped the persisted counter — refresh local round_num so
                 # the next _fix_bugs doesn't reuse the same round number.
                 round_num = self.round_counter.load()
                 continue
+
+            # Filter out bugs the user explicitly skipped in a prior round.
+            # The reviewer doesn't know about skips (it only sees
+            # applied_fixes as "verify" context); suppression happens here.
+            if skipped_hashes:
+                report.bugs = [
+                    b for b in report.bugs if b.identity_hash() not in skipped_hashes
+                ]
 
             # Review succeeded (even if it found bugs) — reset the streak.
             reviewer_error_streak = 0
@@ -554,7 +572,7 @@ class DevReviewLoop:
             # Fix phase
             self.state = LoopState.FIXING
             round_num, aborted = await self._fix_bugs(
-                report, wt_path, round_num, bug_attempts, applied_fixes, baseline_failing,
+                report, wt_path, round_num, bug_attempts, applied_fixes, baseline_failing, skipped_hashes,
             )
             if aborted:
                 return False, None
@@ -569,7 +587,7 @@ class DevReviewLoop:
                 last_bug = report.bugs[-1] if report.bugs else Bug(
                     "?", "major", "global round cap reached"
                 )
-                if not await self._blocked_flow(last_bug, bug_attempts, round_num, applied_fixes):
+                if not await self._blocked_flow(last_bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
                     return False, None
                 # blocked_flow's "retry" may have committed a manual fix and
                 # bumped the persisted counter — refresh local round_num so
@@ -592,6 +610,7 @@ class DevReviewLoop:
         bug_attempts: dict[str, int],
         applied_fixes: list[Bug],
         baseline_failing: set[str],
+        skipped_hashes: set[str],
     ) -> tuple[int, bool]:
         """Fix each bug in the report, committing individually.
 
@@ -622,7 +641,7 @@ class DevReviewLoop:
 
             if bug_attempts[h] > MAX_BUG_ATTEMPTS:
                 # Escalate
-                if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
+                if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
                     return round_num, True  # user aborted
                 # _blocked_flow sets state=BLOCKED. After resolution (skip/
                 # retry), we're back in the fix phase — restore FIXING so
@@ -760,13 +779,13 @@ class DevReviewLoop:
                         console.print(Text(
                             "回滚失败（冲突），进入 BLOCKED 诊断。", "error",
                         ))
-                        if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
+                        if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
                             return round_num, True
                         self.state = LoopState.FIXING
                         round_num = self.round_counter.load()
                         baseline_failing = await self._gate_failures(wt_path)
                         continue
-                    if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
+                    if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes, skipped_hashes):
                         return round_num, True
                     self.state = LoopState.FIXING
                     round_num = self.round_counter.load()
@@ -793,6 +812,7 @@ class DevReviewLoop:
         bug_attempts: dict[str, int],
         round_num: int,
         applied_fixes: list[Bug],
+        skipped_hashes: set[str],
     ) -> bool:
         """Enter BLOCKED diagnostics. Returns True if user chose skip, False if abort."""
         self.state = LoopState.BLOCKED
@@ -809,23 +829,19 @@ class DevReviewLoop:
         action = await blocked_diagnostic(bug, attempts, round_num)
         if action == "skip":
             console.print(Text(f"跳过 bug: {bug.location}", "dim"))
-            # Mark the bug as "don't re-report" by adding to applied_fixes.
-            # Without this, the reviewer re-reports the skipped bug next round
-            # (it's not in applied_fixes), the loop re-attempts it, and if it
-            # keeps failing gates the user is forced back into BLOCKED every
-            # round — the per-bug retry cap never fires because bug_attempts[h]
-            # is reset below. This turned "skip" into an infinite intervention
-            # loop. Adding to applied_fixes tells the reviewer "don't re-report
-            # this", so the bug stays skipped. The reset below is still needed
-            # for the case where the reviewer re-reports anyway (LLM ignoring
-            # the hint) — it gives a fresh budget rather than immediately
-            # re-tripping the cap. Dedup by identity_hash so a bug already in
-            # applied_fixes (e.g. fix succeeded then gate-regression popped it
-            # — wait, pop removes it, so no dup there; but the global-cap path
-            # may pass a bug whose fix succeeded and is still in the list) is
-            # not listed twice in the reviewer prompt.
-            if not any(b.identity_hash() == bug.identity_hash() for b in applied_fixes):
-                applied_fixes.append(bug)
+            # Record the skip in skipped_hashes so the reviewer's next-round
+            # output is filtered (the reviewer is no longer told to suppress
+            # applied_fixes — it verifies them — so suppression of skips must
+            # happen via this set, not via applied_fixes). Previously the bug
+            # was appended to applied_fixes for suppression, but that list is
+            # now "verify" context; conflating skip and fix meant a wrong fix
+            # was never re-reported (the bug was suppressed as if fixed). The
+            # reset below is still needed for the case where the reviewer
+            # re-reports anyway (LLM ignoring the filter is impossible now,
+            # but a hash collision or a re-synthesized gate bug with the same
+            # hash could recur) — it gives a fresh budget rather than
+            # immediately re-tripping the cap.
+            skipped_hashes.add(h)
             bug_attempts[h] = 0
             return True
         if action == "retry":
