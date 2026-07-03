@@ -27,22 +27,24 @@ logger = logging.getLogger(__name__)
 Action = Literal["skip", "retry", "abort"]
 
 
-async def _prompt_async(question: str, *, default: str = "") -> str:
+async def _prompt_async(question: str) -> str | None:
     """Read a line from stdin without blocking the event loop.
 
-    Returns ``default`` if stdin is closed or reaches EOF (e.g. piped
-    input, non-interactive shell) — this keeps the loop from crashing when
-    there's no terminal to read from, instead letting the caller proceed
-    with a sensible default.
+    Returns ``None`` if stdin is closed or reaches EOF (e.g. piped
+    input, non-interactive shell) — distinct from the empty string
+    returned when the user presses Enter with no input. Callers that
+    need to distinguish "no user" (EOF) from "user pressed Enter"
+    (empty choice) can check for None; callers that just need a
+    truthy/non-truthy value can treat None as falsy.
     """
-    def _read() -> str:
+    def _read() -> str | None:
         try:
             return input(question)
         except EOFError:
             # Stdin closed — print a newline so the prompt doesn't bleed
-            # into the next line of output, then return the default.
+            # into the next line of output, then signal EOF to caller.
             print()
-            return default
+            return None
         except KeyboardInterrupt:
             # Re-raise so the outer run() can handle interruption cleanly.
             raise
@@ -88,14 +90,15 @@ async def blocked_diagnostic(bug: Bug, attempts: int, round_num: int) -> Action:
     ))
 
     while True:
-        ans = (await _prompt_async(
+        raw = await _prompt_async(
             "如何处理? [s]kip / [r]etry (手动修复后重新审查) / [a]bort: "
-        )).strip().lower()
-        if not ans:
+        )
+        if raw is None:
             # Stdin closed (EOF) — no user to decide. Default to abort so
-            # the loop exits rather than spinning on empty input forever.
+            # the loop exits rather than spinning on EOF forever.
             console.print(Text("stdin 已关闭，默认中止。", "warning"))
             return "abort"
+        ans = raw.strip().lower()
         if ans in ("s", "skip"):
             return "skip"
         if ans in ("r", "retry"):
@@ -104,6 +107,11 @@ async def blocked_diagnostic(bug: Bug, attempts: int, round_num: int) -> Action:
             return "retry"
         if ans in ("a", "abort"):
             return "abort"
+        # Empty Enter or unrecognized — re-ask. Previously, empty Enter was
+        # conflated with EOF (via `not ans`) and triggered abort, which
+        # cleaned up the worktree — losing the user's in-progress fix work
+        # on an accidental keypress. Now only true EOF aborts; empty input
+        # re-prompts like any other invalid choice.
         console.print(Text("无效选择，请输入 s / r / a", "warning"))
 
 
@@ -114,7 +122,11 @@ async def await_req_update() -> bool:
     False if they want to exit the loop.
     """
     console.print()
-    ans = (await _prompt_async(
+    raw = await _prompt_async(
         "本轮需求已开发并通过审查。是否有新需求? [y]es 继续开发 / [n]o 退出: "
-    )).strip().lower()
+    )
+    if raw is None:
+        # Stdin closed — treat as "no new requirement, exit".
+        return False
+    ans = raw.strip().lower()
     return ans in ("y", "yes")

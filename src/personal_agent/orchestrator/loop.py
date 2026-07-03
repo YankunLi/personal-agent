@@ -985,9 +985,12 @@ class DevReviewLoop:
             return
         try:
             from personal_agent.orchestrator.diagnostics import _prompt_async
-            keep = (await _prompt_async(
+            raw = await _prompt_async(
                 f"是否保留 worktree {wt} 以供检查? [y/N]: "
-            )).strip().lower() in ("y", "yes")
+            )
+            # None (EOF) or empty — default is "don't keep" (clean up).
+            # Only an explicit "y"/"yes" keeps the worktree.
+            keep = raw is not None and raw.strip().lower() in ("y", "yes")
         except Exception:
             keep = False
         if not keep:
