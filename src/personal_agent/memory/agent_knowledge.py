@@ -209,14 +209,16 @@ class AgentKnowledge:
         for name, desc in DEFAULT_SECTIONS.items():
             parts.append(f"\n## {name}")
             lines = sections.get(name, [])
-            if lines:
-                # Preserve the section description as context even after
-                # content is added, so the purpose of each section remains
-                # visible in the rendered AGENT.md.
-                parts.append(f"*{desc}*")
-                parts.extend(lines)
-            else:
-                parts.append(f"*{desc}*")
+            # _parse_sections treats the description line ("*{desc}*") as a
+            # body line of the section. Without filtering, every rebuild
+            # would prepend another copy (parse picks it up, build prepends
+            # it again), so each append_learnings() call grows the section
+            # by one description line interspersed with the bullets. Strip
+            # any copies before re-emitting the single canonical description.
+            desc_line = f"*{desc}*"
+            content_lines = [l for l in lines if l != desc_line]
+            parts.append(desc_line)
+            parts.extend(content_lines)
 
         # Preserve any custom sections that aren't in DEFAULT_SECTIONS
         for name, lines in sections.items():
