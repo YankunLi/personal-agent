@@ -566,10 +566,12 @@ class DevReviewLoop:
                 committed = await commit_all(
                     wt_path, f"fix: round {round_num} — {bug.description[:60]}"
                 )
+                commit_failed = False
             except Exception as e:
                 logger.exception("Fix commit failed for %s: %s", bug.location, e)
                 console.print(Text(f"  ⚠ 修复提交失败（计入重试次数）: {e}", "warning"))
                 committed = False
+                commit_failed = True
             if not committed:
                 # commit_all returns False when there's nothing to commit
                 # (git add -A staged no changes) or when git add -A itself
@@ -580,9 +582,15 @@ class DevReviewLoop:
                 # the fixer didn't produce changes (bug already fixed, or
                 # agent couldn't locate it). bug_attempts[h] was already
                 # incremented, so this counts toward the retry cap.
-                console.print(Text(
-                    f"  · 修复未产生改动 (round {round_num} 保留，计入重试次数)", "dim",
-                ))
+                #
+                # Only print for the genuine no-changes case — the
+                # commit-failure case already printed "修复提交失败" above
+                # and "修复未产生改动" would contradict it (the fix DID
+                # produce changes, the commit just failed).
+                if not commit_failed:
+                    console.print(Text(
+                        f"  · 修复未产生改动 (round {round_num} 保留，计入重试次数)", "dim",
+                    ))
                 continue
             if committed:
                 round_num += 1
