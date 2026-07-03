@@ -31,6 +31,19 @@ async def _git(*args: str, cwd: Path, check: bool = True) -> tuple[int, str]:
         proc.kill()
         await proc.wait()
         return 124, "git timed out"
+    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+        # Round 192 fixed the matching bug in tools/builtin/worktree.py;
+        # the orchestrator's own _git was missed. Without this, Ctrl+C
+        # during `git commit`/`git merge` cancels the communicate() await
+        # but leaves the OS process running — it can hold .git/index.lock
+        # and block subsequent git operations. Kill before re-raising so
+        # cancellation still propagates but no subprocess is orphaned.
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        raise
     code = proc.returncode or 0
     text = out.decode("utf-8", errors="replace")
     if check and code != 0:

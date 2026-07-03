@@ -40,6 +40,19 @@ async def _run(cmd: list[str], cwd: Path, timeout: float = 300.0) -> tuple[int, 
         proc.kill()
         await proc.wait()
         return 124, f"timed out after {timeout}s"
+    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
+        # Matching fix to round 192: without this, Ctrl+C during a gate
+        # run (pytest can take 60s+, mypy 30s+) cancels communicate() but
+        # leaves the test/lint/typecheck subprocess running. A orphaned
+        # pytest holding the worktree's files open can block later git
+        # operations on Windows/WSL where open file handles prevent
+        # rename/delete.
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        raise
     return proc.returncode or 0, out.decode("utf-8", errors="replace")
 
 
