@@ -218,8 +218,13 @@ class ContextBudgetManager:
         recent = rest[split:]
         older = rest[:split]
 
-        if not older:
-            return messages
+        # NOTE: do NOT early-return when ``older`` is empty. compress() is only
+        # called from assemble() when conv_tokens > conv_budget, so reaching
+        # here with empty ``older`` means ``recent`` alone exceeds the budget
+        # (short conversation, very long messages). Returning ``messages``
+        # unchanged would pass an over-budget list to the LLM and trigger a
+        # context-length error. The available < 500 branch below handles this
+        # via _truncate_recent — falling through is correct and cheap.
 
         # Estimate tokens for recent messages only (max_tokens is already the
         # conversation budget, system messages are accounted for separately)
