@@ -507,15 +507,28 @@ class DevReviewLoop:
                                 description=f"{r.name} gate failed",
                                 suggested_fix=f"修复 {r.name} 失败:\n{r.output[:2000]}",
                             ))
+                # Baseline: which gates were failing before _fix_bugs runs.
+                # _fix_bugs uses this to detect regressions (a previously-
+                # passing gate now failing) vs pre-existing failures — see
+                # the gate-regression comment in _fix_bugs for why this
+                # matters.
+                baseline_failing = {r.name for r in results if not r.passed}
             else:
                 console.print(Text(f"审查发现 {len(report.bugs)} 个 bug:", "warning"))
                 for b in report.bugs:
                     console.print(Text(f"  [{b.severity}] {b.location}: {b.description}", "dim"))
+                # Compute the baseline gate state even when the reviewer found
+                # bugs — a fix for a reviewer bug can still break a gate, and
+                # we need the baseline to distinguish regression from
+                # pre-existing failure. Without this, the "has bugs" path
+                # would pass an undefined baseline to _fix_bugs.
+                _, baseline_results = await all_gates(wt_path)
+                baseline_failing = {r.name for r in baseline_results if not r.passed}
 
             # Fix phase
             self.state = LoopState.FIXING
             round_num, aborted = await self._fix_bugs(
-                report, wt_path, round_num, bug_attempts, applied_fixes,
+                report, wt_path, round_num, bug_attempts, applied_fixes, baseline_failing,
             )
             if aborted:
                 return False, None
@@ -552,6 +565,7 @@ class DevReviewLoop:
         round_num: int,
         bug_attempts: dict[str, int],
         applied_fixes: list[Bug],
+        baseline_failing: set[str],
     ) -> tuple[int, bool]:
         """Fix each bug in the report, committing individually.
 
@@ -664,11 +678,25 @@ class DevReviewLoop:
                     ))
                 applied_fixes.append(bug)
 
-                # Test regression gate
-                gates_ok, _ = await all_gates(wt_path)
-                if not gates_ok:
+                # Regression gate: only revert if a previously-passing gate
+                # now fails. The old behavior (revert on any gate failure)
+                # had no baseline — when multiple gates were pre-failing, a
+                # fix that correctly fixed one gate was wrongly reverted
+                # because the OTHER gate was still failing. The loop made no
+                # progress: fix tests → lint still fails → revert → next
+                # round, tests still failing → fix tests → revert → infinite
+                # loop until per-bug cap. With a baseline, a fix that doesn't
+                # break any previously-passing gate is kept even if other
+                # gates remain failing. The baseline is updated after each
+                # non-regressed fix so the next fix compares against the
+                # current state (a gate fixed by this fix should be
+                # considered "passing" for the next fix's regression check).
+                _, gate_results = await all_gates(wt_path)
+                current_failing = {r.name for r in gate_results if not r.passed}
+                regressed = current_failing - baseline_failing
+                if regressed:
                     console.print(Text(
-                        f"fix round {round_num - 1} 导致 gate 回归，回滚该 commit…", "error",
+                        f"fix round {round_num - 1} 导致 gate 回归 ({', '.join(sorted(regressed))})，回滚该 commit…", "error",
                     ))
                     # The fix is bad — pop from applied_fixes BEFORE the
                     # revert attempt. Previously pop() was only called on
@@ -695,6 +723,20 @@ class DevReviewLoop:
                     if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
                         return round_num, True
                     round_num = self.round_counter.load()
+                else:
+                    # No regression. If the fix made a gate newly pass, the
+                    # baseline should be updated so the next fix's regression
+                    # check treats it as passing. If gates are still failing
+                    # (but only pre-existing ones), surface that so the user
+                    # knows the fix didn't achieve CLEAN but isn't being
+                    # reverted.
+                    if current_failing and current_failing != baseline_failing:
+                        fixed_gates = baseline_failing - current_failing
+                        if fixed_gates:
+                            console.print(Text(
+                                f"  ✓ 修复了 gate: {', '.join(sorted(fixed_gates))}", "success",
+                            ))
+                    baseline_failing = current_failing
         return round_num, False
 
     async def _blocked_flow(
