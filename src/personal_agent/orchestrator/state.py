@@ -86,14 +86,31 @@ class RoundCounter:
         self.path = path or (repo_dir / ".pa" / "round_counter.json")
 
     def load(self) -> int:
-        """Return the next round number to use."""
+        """Return the next round number to use.
+
+        The file is the primary source, but it can be stale: rounds 236/237
+        made save() failures non-fatal, so a save failure leaves the file
+        holding an older value while the fix commit (with a higher round
+        number) is already in git. On re-run, returning the stale file
+        value would re-use a round number already in the git log,
+        producing duplicate ``fix: round N`` commits.
+
+        Cross-check against the git seed and take the max so the counter
+        only moves forward. The git scan is a single ``git log`` call,
+        run a handful of times per iteration — cheap relative to the
+        agent LLM calls that dominate each round.
+        """
+        file_value: int | None = None
         if self.path.exists():
             try:
                 data = json.loads(self.path.read_text(encoding="utf-8"))
-                return int(data.get("next_round", 1))
+                file_value = int(data.get("next_round", 1))
             except (json.JSONDecodeError, OSError, ValueError, TypeError) as e:
                 logger.warning("round_counter file corrupt, reseeding: %s", e)
-        return self._seed_from_git()
+        git_seed = self._seed_from_git()
+        if file_value is None:
+            return git_seed
+        return max(file_value, git_seed)
 
     def save(self, next_round: int) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
