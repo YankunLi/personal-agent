@@ -602,6 +602,16 @@ class DevReviewLoop:
                 # persisted counter — refresh local round_num so the next bug
                 # doesn't reuse a round number.
                 round_num = self.round_counter.load()
+                # "retry" may have committed a manual fix that changed the
+                # gate state — recompute the baseline so the next fix's
+                # regression check isn't against a stale snapshot. Without
+                # this, a manual fix that fixed a gate wouldn't be reflected
+                # in the baseline, and the next auto-fix's regression check
+                # would treat the fixed gate as "still failing" — a
+                # subsequent breakage of that gate wouldn't be caught as a
+                # regression. (For "skip", the recompute is redundant but
+                # harmless — no commit changed the state.)
+                baseline_failing = await self._gate_failures(wt_path)
                 continue
 
             # Run the fix
@@ -719,10 +729,12 @@ class DevReviewLoop:
                         if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
                             return round_num, True
                         round_num = self.round_counter.load()
+                        baseline_failing = await self._gate_failures(wt_path)
                         continue
                     if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
                         return round_num, True
                     round_num = self.round_counter.load()
+                    baseline_failing = await self._gate_failures(wt_path)
                 else:
                     # No regression. If the fix made a gate newly pass, the
                     # baseline should be updated so the next fix's regression
@@ -856,6 +868,16 @@ class DevReviewLoop:
         )
         self._reviewer_prov = prov
         return prov
+
+    async def _gate_failures(self, wt_path: Path) -> set[str]:
+        """Return the set of gate names currently failing.
+
+        Used to (re)compute the regression baseline — see _fix_bugs. Wraps
+        all_gates so callers don't repeat the destructuring, and so the
+        "which gates count as failing" definition lives in one place.
+        """
+        _, results = await all_gates(wt_path)
+        return {r.name for r in results if not r.passed}
 
     async def _develop(self, req_content: str, wt_path: Path) -> None:
         """Run the developer agent on the requirement."""
