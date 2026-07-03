@@ -346,6 +346,13 @@ class DevReviewLoop:
                 # re-run pa --loop to retry.
                 logger.exception("Develop agent failed: %s", e)
                 console.print(Text(f"开发 agent 失败: {e}", "error"))
+                # State stays DEVELOPING on early return — misleading for
+                # external observers polling loop.state, who'd see "developing"
+                # for an iteration that already terminated. Flip to BLOCKED
+                # (same pattern as round 277's merge-failure fix): the user
+                # must intervene (re-run, fix config, or edit requirements)
+                # before progress can resume.
+                self.state = LoopState.BLOCKED
                 return
             try:
                 developed = await commit_all(
@@ -363,6 +370,7 @@ class DevReviewLoop:
                 # message that contradicts the actual failure mode.
                 logger.exception("Develop commit failed: %s", e)
                 console.print(Text(f"开发提交失败: {e}", "error"))
+                self.state = LoopState.BLOCKED
                 return
             if not developed:
                 # develop produced no changes — either the agent failed or the
@@ -373,6 +381,7 @@ class DevReviewLoop:
                 console.print(Text(
                     "开发阶段未产生任何改动，跳过审查（worktree 保留以供检查）。", "warning",
                 ))
+                self.state = LoopState.BLOCKED
                 return
 
             # Inner loop: review-fix
