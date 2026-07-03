@@ -383,6 +383,16 @@ class DevReviewLoop:
                 console.print(Panel(Text("阶段 3: 合并到主分支", "label"), border_style="success", expand=False))
                 try:
                     await merge_worktree(self.workdir, branch)
+                    # Mark merged inside the try so an exception leaves it
+                    # False. Round 277 added the `if not merged: state =
+                    # BLOCKED` check below but never set merged=True on the
+                    # success path — the check always evaluated True, so
+                    # every successful merge wrongly flipped state to
+                    # BLOCKED, skipped the success message, leaked the
+                    # worktree (finally's `if merged` was False), and
+                    # skipped last_clean.save (idempotency gate never
+                    # fired, every re-run re-developed).
+                    merged = True
                 except DirtyWorktreeError as e:
                     # Surface the dirty-tree reason clearly; worktree kept
                     # for inspection so the user can retry after stashing.
@@ -404,17 +414,13 @@ class DevReviewLoop:
                     # resolve divergent history) and re-run.
                     self.state = LoopState.BLOCKED
                 else:
-                    # Merge succeeded — mark merged BEFORE recording state so a
-                    # save failure doesn't leave the worktree preserved (and
-                    # the user misinformed that the merge failed). The work is
-                    # already in main; the worktree can be cleaned up.
-                    merged = True
+                    # Merge succeeded — merged was set True in the try block.
+                    # Record last-clean hash so the next `pa --loop` no-ops
+                    # if requirements.md hasn't changed since. last_fix_round
+                    # is None when CLEAN was reached without any fixes
+                    # (reviewer found zero bugs on first pass) — recorded as
+                    # such so the metadata isn't misleading.
                     console.print(Text(f"✓ 已合并 {branch} 到主分支", "success"))
-                    # Record last-clean hash so the next `pa --loop` no-ops if
-                    # requirements.md hasn't changed since. last_fix_round is
-                    # None when CLEAN was reached without any fixes (reviewer
-                    # found zero bugs on first pass) — recorded as such so
-                    # the metadata isn't misleading.
                     clean_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
                     try:
                         self.last_clean.save(clean_hash, last_fix_round)
