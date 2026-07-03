@@ -350,6 +350,14 @@ class DevReviewLoop:
             wt_path, branch = await create_worktree(self.workdir)
         except Exception as e:
             console.print(Text.assemble(("无法创建 worktree: ", "error"), (str(e), "error")))
+            # State stays at whatever the prior iteration left (CLEAN, BLOCKED,
+            # or IDLE on first run) — misleading for external observers polling
+            # loop.state, who'd see a stale state for an iteration that already
+            # terminated without doing any work. Flip to BLOCKED (same pattern
+            # as rounds 277/280/281): the user must intervene (free disk space,
+            # fix .git/index.lock, check permissions) before progress can
+            # resume.
+            self.state = LoopState.BLOCKED
             return
 
         self._wt_path = wt_path
