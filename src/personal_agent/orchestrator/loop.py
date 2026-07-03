@@ -607,6 +607,14 @@ class DevReviewLoop:
                 # Escalate
                 if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
                     return round_num, True  # user aborted
+                # _blocked_flow sets state=BLOCKED. After resolution (skip/
+                # retry), we're back in the fix phase — restore FIXING so
+                # external observers don't see BLOCKED while the loop is
+                # actively processing the next bug. The README state machine
+                # documents this transition (BLOCKED → [skip/retry] → 回到
+                # FIXING/REVIEWING) but the code previously left state=BLOCKED
+                # for the remainder of the for-loop.
+                self.state = LoopState.FIXING
                 # _blocked_flow may have committed a manual fix and bumped the
                 # persisted counter — refresh local round_num so the next bug
                 # doesn't reuse a round number.
@@ -737,11 +745,13 @@ class DevReviewLoop:
                         ))
                         if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
                             return round_num, True
+                        self.state = LoopState.FIXING
                         round_num = self.round_counter.load()
                         baseline_failing = await self._gate_failures(wt_path)
                         continue
                     if not await self._blocked_flow(bug, bug_attempts, round_num, applied_fixes):
                         return round_num, True
+                    self.state = LoopState.FIXING
                     round_num = self.round_counter.load()
                     baseline_failing = await self._gate_failures(wt_path)
                 else:
