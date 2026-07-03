@@ -290,11 +290,13 @@ class DevReviewLoop:
                 # the develop-phase site. Without the wrap, a transient commit
                 # failure after a successful develop agent crashed the whole
                 # loop — wasting the agent's work and leaving the worktree
-                # in a half-committed state. Treat as "not developed" so the
-                # iteration aborts cleanly (worktree preserved by finally).
+                # in a half-committed state. Return early so the user sees a
+                # single clear "commit failed" message; the "no changes"
+                # branch below would otherwise print a misleading second
+                # message that contradicts the actual failure mode.
                 logger.exception("Develop commit failed: %s", e)
                 console.print(Text(f"开发提交失败: {e}", "error"))
-                developed = False
+                return
             if not developed:
                 # develop produced no changes — either the agent failed or the
                 # requirement was already implemented. Either way, proceeding to
