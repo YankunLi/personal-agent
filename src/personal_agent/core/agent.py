@@ -532,10 +532,16 @@ class BaseAgent(ABC):
                 existing = await asyncio.to_thread(self.memory_store.list_all)
                 conversation = list(state.full_messages) if state.full_messages else list(state.messages)
                 # Only append the final answer if it's not already the last message
-                # (e.g., max_steps exceeded produces a synthetic answer not in the conversation)
+                # (e.g., max_steps exceeded produces a synthetic answer not in the conversation).
+                # Compare on the truncated form: the answer is stored as answer[:2000]
+                # below, while last_msg.content may be the full untruncated response.
+                # Without truncating both sides, a >2000-char answer that IS the last
+                # message would mismatch its 2000-char truncation and a duplicate
+                # (truncated) assistant message would be appended to the consolidator
+                # input, biasing fact extraction toward the truncated tail.
                 if answer and answer != "No answer produced.":
                     last_msg = conversation[-1] if conversation else None
-                    if not last_msg or last_msg.role != Role.ASSISTANT or last_msg.content != answer[:2000]:
+                    if not last_msg or last_msg.role != Role.ASSISTANT or last_msg.content[:2000] != answer[:2000]:
                         conversation.append(Message(role=Role.ASSISTANT, content=answer[:2000]))
                 # Prune completed tasks and create the new one under _close_lock
                 # to prevent a TOCTOU race with close(): close() reads and
