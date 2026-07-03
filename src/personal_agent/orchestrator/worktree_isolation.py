@@ -57,11 +57,19 @@ async def create_worktree(repo_root: Path, base_branch: str | None = None) -> tu
         _, head_ref = await _git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo_root)
         base_branch = head_ref.strip() or "HEAD"
 
-    # Create the worktree on a new branch off base
-    await _git(
-        "worktree", "add", "-b", branch, str(wt_path), base_branch,
-        cwd=repo_root,
-    )
+    # Create the worktree on a new branch off base. `git worktree add -b`
+    # creates the branch first, then the worktree — so if the worktree
+    # creation fails (wt_path exists, filesystem error, etc.), the branch
+    # is already created and would leak. Wrap so a partial failure cleans
+    # up the branch before propagating.
+    try:
+        await _git(
+            "worktree", "add", "-b", branch, str(wt_path), base_branch,
+            cwd=repo_root,
+        )
+    except Exception:
+        await _git("branch", "-D", branch, cwd=repo_root, check=False)
+        raise
     logger.info("Created worktree at %s on branch %s (off %s)", wt_path, branch, base_branch)
     return wt_path, branch
 
