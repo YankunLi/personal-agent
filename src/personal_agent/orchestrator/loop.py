@@ -941,7 +941,17 @@ class DevReviewLoop:
         # _fix_bugs with a fresh bug_attempts budget — trapping the user
         # in a skip→re-synthesize→BLOCKED loop. Disallow skip so the user
         # must fix (retry) or abort, breaking the loop.
-        allow_skip = bug.location != "tests/lint/typecheck"
+        #
+        # Reviewer-synthesized bugs (location == "reviewer") are also
+        # unskippable: the skip filter only applies to report.bugs, but
+        # reviewer errors never populate report.bugs (report.error=True,
+        # report.bugs=[]). So skipping a reviewer bug adds its hash to
+        # skipped_hashes where no filter will ever match it — a no-op
+        # that misleads the user into thinking they've suppressed it.
+        # The reviewer_error_streak counter (not bug_attempts) governs
+        # reviewer-error escalation, so skip buys nothing. Force retry
+        # or abort so the user takes effective action.
+        allow_skip = bug.location not in ("tests/lint/typecheck", "reviewer")
         action = await blocked_diagnostic(bug, attempts, round_num, allow_skip=allow_skip)
         if action == "skip":
             console.print(Text(f"跳过 bug: {bug.location}", "dim"))
