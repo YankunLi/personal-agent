@@ -252,7 +252,16 @@ class DevReviewLoop:
             req_hash = hashlib.sha256(req_content.encode("utf-8")).hexdigest()
 
             if last_req_hash is not None and req_hash == last_req_hash:
-                # Requirement unchanged since last iteration — ask user
+                # Requirement unchanged since last iteration — ask user.
+                # Transition to AWAIT_REQ so external observers polling
+                # ``loop.state`` see "waiting for user input" instead of the
+                # last iteration's terminal state (CLEAN or BLOCKED). The
+                # README's state machine documents this transition
+                # (CLEAN → [询问用户] → AWAIT_REQ) but the code previously
+                # left state stale — running await_req_update() while
+                # ``self.state`` still read CLEAN/BLOCKED, contradicting both
+                # the docs and any monitoring that checks the state attribute.
+                self.state = LoopState.AWAIT_REQ
                 if not await await_req_update():
                     console.print(Text("退出 dev-review 循环。", "success"))
                     return
