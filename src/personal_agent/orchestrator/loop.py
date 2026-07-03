@@ -393,6 +393,16 @@ class DevReviewLoop:
                     console.print(Text.assemble(
                         ("合并失败（worktree 保留以供检查）: ", "error"), (str(e), "error"),
                     ))
+                if not merged:
+                    # _inner_loop set state=CLEAN before returning, but the
+                    # merge failed — the work is NOT in main. External
+                    # monitors polling loop.state would see CLEAN and assume
+                    # the iteration shipped, potentially triggering downstream
+                    # actions (deploy, notify) on stale code. Flip to BLOCKED
+                    # so the state reflects "needs intervention": the user
+                    # must fix the main repo (commit/stash dirty tree, or
+                    # resolve divergent history) and re-run.
+                    self.state = LoopState.BLOCKED
                 else:
                     # Merge succeeded — mark merged BEFORE recording state so a
                     # save failure doesn't leave the worktree preserved (and
