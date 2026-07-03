@@ -526,6 +526,12 @@ class DevReviewLoop:
                     console.print(Text(
                         f"reviewer 连续失败 {reviewer_error_streak} 次，中止本轮（worktree 保留）。", "error",
                     ))
+                    # State was set to REVIEWING at the top of the loop; flip
+                    # to BLOCKED so external observers don't see "reviewing"
+                    # for an iteration that has terminated. Same pattern as
+                    # rounds 277/280 — the state must reflect "needs
+                    # intervention" when the loop gives up on this iteration.
+                    self.state = LoopState.BLOCKED
                     return False, None
                 console.print(Text(
                     "审查失败（LLM 调用或 JSON 解析错误），进入 BLOCKED 诊断。", "error",
