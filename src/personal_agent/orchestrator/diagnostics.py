@@ -137,11 +137,23 @@ async def await_req_update() -> bool:
     False if they want to exit the loop.
     """
     console.print()
-    raw = await _prompt_async(
-        "本轮需求已开发并通过审查。是否有新需求? [y]es 继续开发 / [n]o 退出: "
-    )
-    if raw is None:
-        # Stdin closed — treat as "no new requirement, exit".
-        return False
-    ans = raw.strip().lower()
-    return ans in ("y", "yes")
+    while True:
+        raw = await _prompt_async(
+            "本轮需求已开发并通过审查。是否有新需求? [y]es 继续开发 / [n]o 退出: "
+        )
+        if raw is None:
+            # Stdin closed — treat as "no new requirement, exit".
+            return False
+        ans = raw.strip().lower()
+        if ans in ("y", "yes"):
+            return True
+        if ans in ("n", "no"):
+            return False
+        # Empty Enter or unrecognized — re-ask. Matches blocked_diagnostic's
+        # behavior (same file): empty Enter is NOT "exit". A user who just
+        # came from the BLOCKED prompt (which re-prompts on empty Enter) and
+        # reflexively hits Enter here would otherwise exit the loop and lose
+        # the AWAIT_REQ state — the same kind of accidental-exit sharp edge
+        # that was sanded off the BLOCKED prompt. Only an explicit "n"/"no"
+        # or EOF exits.
+        console.print(Text("无效选择，请输入 y / n", "warning"))
