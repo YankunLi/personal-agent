@@ -739,7 +739,19 @@ class DevReviewLoop:
                     console.print(Text(
                         f"  ⚠ 无法持久化 round 计数（下次重跑可能重复 round 号）: {e}", "warning",
                     ))
-                applied_fixes.append(bug)
+                # Dedup by identity_hash so a bug re-reported (and re-fixed)
+                # across rounds isn't listed twice in the reviewer's "verify"
+                # context — duplicates confuse the reviewer and make the
+                # prompt needlessly long. was_appended tracks whether THIS
+                # fix added a new entry; the regression-revert path's pop()
+                # uses it to avoid popping a prior round's entry for the same
+                # bug (that entry represents a still-committed fix that
+                # must stay recorded so the reviewer keeps verifying it).
+                was_appended = not any(
+                    b.identity_hash() == bug.identity_hash() for b in applied_fixes
+                )
+                if was_appended:
+                    applied_fixes.append(bug)
 
                 # Regression gate: only revert if a previously-passing gate
                 # now fails. The old behavior (revert on any gate failure)
@@ -767,11 +779,16 @@ class DevReviewLoop:
                     # applied_fixes, which tells the reviewer "don't
                     # re-report this" — the loop then ran forever without
                     # ever re-attacking the bug, while its bad fix stayed
-                    # in the worktree. Popping unconditionally means the
-                    # next review round re-reports the bug so the fixer
-                    # gets another attempt (whether or not the bad commit
-                    # was successfully reverted).
-                    applied_fixes.pop()
+                    # in the worktree. Popping (when this fix appended)
+                    # means the next review round re-reports the bug so the
+                    # fixer gets another attempt. If this fix did NOT
+                    # append (dedup — a prior round's entry for the same
+                    # bug is already in the list), leave that entry: the
+                    # prior fix is still committed, so the bug is still
+                    # "fixed" from the reviewer's perspective and should
+                    # stay recorded for verification.
+                    if was_appended:
+                        applied_fixes.pop()
                     reverted = await revert_last_commit(wt_path)
                     if not reverted:
                         # Revert conflicted — the bad commit is still in place.
