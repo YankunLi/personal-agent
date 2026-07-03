@@ -157,12 +157,26 @@ async def revert_last_commit(wt_path: Path) -> bool:
     on False — a failed revert leaves the worktree with the bad commit
     still in place, which is not a state the loop can recover from
     automatically.
+
+    _git uses check=False here so non-zero exit doesn't raise, but
+    subprocess *creation* can still raise OSError (FileNotFoundError if
+    git isn't on PATH, PermissionError, etc.). An unwrapped raise would
+    propagate through _fix_bugs (which doesn't wrap revert_last_commit)
+    and crash the loop. Catch OSError and treat as a failed revert so
+    the caller escalates to BLOCKED instead of crashing.
     """
-    code, text = await _git("revert", "--no-edit", "HEAD", cwd=wt_path, check=False)
+    try:
+        code, text = await _git("revert", "--no-edit", "HEAD", cwd=wt_path, check=False)
+    except OSError as e:
+        logger.warning("revert HEAD subprocess failed: %s", e)
+        return False
     if code != 0:
         logger.warning("revert HEAD failed (code=%s): %s", code, text)
         # Abort any in-progress revert so the worktree isn't left in a
         # conflicted state — the next git operation would otherwise fail.
-        await _git("revert", "--abort", cwd=wt_path, check=False)
+        try:
+            await _git("revert", "--abort", cwd=wt_path, check=False)
+        except OSError as e:
+            logger.warning("revert --abort subprocess failed: %s", e)
         return False
     return True
