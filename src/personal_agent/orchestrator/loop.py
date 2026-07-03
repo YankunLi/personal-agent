@@ -266,7 +266,17 @@ class DevReviewLoop:
                     console.print(Text("退出 dev-review 循环。", "success"))
                     return
                 # User said "yes" — but they need to edit the file. Wait for change.
-                last_req_hash = await self._wait_for_req_change(req_hash)
+                # Discard the return value and reset last_req_hash to None so the
+                # next iteration develops the new req instead of re-asking. The
+                # previous code set ``last_req_hash = new_hash``; the next
+                # iteration then read the (unchanged) new req, computed the same
+                # hash, and ``req_hash == last_req_hash`` re-triggered the ask
+                # — trapping the user in an ask→wait→ask loop without ever
+                # developing the new requirement. None makes the
+                # ``last_req_hash is not None`` guard skip the ask and fall
+                # through to _run_iteration.
+                await self._wait_for_req_change(req_hash)
+                last_req_hash = None
                 continue
 
             last_req_hash = req_hash
