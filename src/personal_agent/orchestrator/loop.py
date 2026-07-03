@@ -548,9 +548,11 @@ class DevReviewLoop:
                     description=f"reviewer error: {report.raw_output[:200]}",
                     suggested_fix="检查 reviewer provider 配置或重试",
                 )
-                proceed, _manual_round = await self._blocked_flow(reviewer_bug, bug_attempts, round_num, applied_fixes, skipped_hashes)
+                proceed, manual_round = await self._blocked_flow(reviewer_bug, bug_attempts, round_num, applied_fixes, skipped_hashes)
                 if not proceed:
                     return False, None
+                if manual_round is not None:
+                    last_committed_fix_round = manual_round
                 # blocked_flow's "retry" may have committed a manual fix and
                 # bumped the persisted counter — refresh local round_num so
                 # the next _fix_bugs doesn't reuse the same round number.
