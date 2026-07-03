@@ -103,6 +103,8 @@ class DevReviewLoop:
                 cwd=str(workdir),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
                 check=False,
             )
@@ -110,12 +112,17 @@ class DevReviewLoop:
                 root = out.stdout.strip()
                 if root:
                     return Path(root)
-        except (OSError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
             # OSError covers FileNotFoundError (git not on PATH) AND
             # PermissionError (git not executable, workdir inaccessible).
             # _resolve_repo_root runs in __init__ before any loop-level
             # exception handling exists, so an uncaught raise here crashes
             # the constructor — fall back to the given workdir instead.
+            # UnicodeDecodeError: with errors="replace" above this shouldn't
+            # fire, but belt-and-suspenders — a non-UTF-8 path on a system
+            # where git's output bytes don't round-trip through utf-8 must
+            # not crash the constructor. Round 263 fixed the matching bug in
+            # _seed_from_git; this site was missed.
             pass
         return workdir
 
