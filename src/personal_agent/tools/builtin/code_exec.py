@@ -29,10 +29,25 @@ CODE_EXEC_PARAMETERS = {
 MAX_OUTPUT_BYTES = 1_000_000
 
 
-def _kill_process_group(pid: int) -> None:
-    """SIGKILL the whole process group so grandchildren are reaped too."""
+def _kill_process_group(proc: asyncio.subprocess.Process) -> None:
+    """Forcefully terminate the subprocess and its children.
+
+    On POSIX, ``start_new_session=True`` makes the child a session/group
+    leader, so ``os.killpg`` reaches grandchildren (e.g. processes spawned
+    by the bash script), not just the parent shell. On Windows,
+    ``os.killpg`` and ``signal.SIGKILL`` do not exist, and
+    ``start_new_session`` is ignored — fall back to ``proc.kill()``
+    (TerminateProcess), which kills the direct child. Children of that
+    child are not reaped on Windows, but that's the best the platform
+    offers without job objects; the previous code raised AttributeError
+    on every timeout / output-cap / cancel path on Windows, crashing
+    code_exec entirely.
+    """
     try:
-        os.killpg(pid, signal.SIGKILL)
+        if hasattr(os, "killpg") and hasattr(signal, "SIGKILL"):
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        else:
+            proc.kill()
     except (ProcessLookupError, PermissionError, OSError):
         pass
 
@@ -68,7 +83,7 @@ async def _run_command(cmd: list[str], timeout: float = 30) -> tuple[str, str, i
                 total += len(chunk)
                 if total > MAX_OUTPUT_BYTES:
                     capped = True
-                    _kill_process_group(proc.pid)
+                    _kill_process_group(proc)
             # Once capped, keep reading to drain the pipe to EOF so the
             # transport is closed by asyncio rather than leaked.
         return b"".join(chunks)[:MAX_OUTPUT_BYTES]
@@ -80,7 +95,7 @@ async def _run_command(cmd: list[str], timeout: float = 30) -> tuple[str, str, i
                 timeout=timeout,
             )
         except asyncio.TimeoutError:
-            _kill_process_group(proc.pid)
+            _kill_process_group(proc)
             await proc.wait()
             return "", f"Timeout: execution exceeded {timeout} seconds", -1
         # Streams reached EOF, but the process may still be running (e.g.,
@@ -89,7 +104,7 @@ async def _run_command(cmd: list[str], timeout: float = 30) -> tuple[str, str, i
         try:
             await asyncio.wait_for(proc.wait(), timeout=5.0)
         except asyncio.TimeoutError:
-            _kill_process_group(proc.pid)
+            _kill_process_group(proc)
             await proc.wait()
         rc = proc.returncode if proc.returncode is not None else -1
         return (
@@ -98,14 +113,14 @@ async def _run_command(cmd: list[str], timeout: float = 30) -> tuple[str, str, i
             rc,
         )
     except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
-        _kill_process_group(proc.pid)
+        _kill_process_group(proc)
         try:
             await asyncio.shield(proc.wait())
         except Exception:
             pass
         raise
     except Exception:
-        _kill_process_group(proc.pid)
+        _kill_process_group(proc)
         try:
             await asyncio.shield(proc.wait())
         except Exception:
