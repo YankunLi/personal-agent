@@ -71,6 +71,30 @@ def _normalize_plan(plan_data: list) -> list[dict]:
     return normalized
 
 
+def _extract_json_block(content: str) -> str:
+    """Extract a JSON body from an LLM response that may be wrapped in a fence.
+
+    Uses the first/last-```- fence approach: a naive ``split("```json")[1]``
+    misparses when the JSON itself contains a literal ``` run (e.g. a step
+    description that quotes a code block), picking a truncated segment and
+    silently degrading a multi-step plan to the single-step fallback.
+    Finding the first and last fence and taking everything between them is
+    robust to embedded fences as long as the LLM wraps the whole JSON in
+    one outer fence (the common case).
+    """
+    if "```" in content:
+        first = content.find("```")
+        last = content.rfind("```")
+        if first != last:
+            block = content[first + 3:last].strip()
+            # Strip an optional "json" language tag immediately after the
+            # opening fence.
+            if block.startswith("json"):
+                block = block[4:].strip()
+            return block
+    return content
+
+
 class PlanAndExecuteAgent(BaseAgent):
     """Agent that uses the Plan-and-Execute pattern."""
 
@@ -236,12 +260,7 @@ class PlanAndExecuteAgent(BaseAgent):
         self._add_assistant_message(state.messages, response)
 
         try:
-            content = response.content
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
-
+            content = _extract_json_block(response.content)
             plan_data = json.loads(content)
             if isinstance(plan_data, dict) and "plan" in plan_data:
                 plan_data = plan_data["plan"]
@@ -350,11 +369,7 @@ class PlanAndExecuteAgent(BaseAgent):
         self._add_assistant_message(state.messages, response)
 
         try:
-            content = response.content
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
+            content = _extract_json_block(response.content)
             new_plan = json.loads(content)
             if isinstance(new_plan, dict) and "plan" in new_plan:
                 new_plan = new_plan["plan"]
