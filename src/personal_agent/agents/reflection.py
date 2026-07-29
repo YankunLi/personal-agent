@@ -151,10 +151,23 @@ class ReflectionAgent(BaseAgent):
             if last_assistant is not None:
                 state.messages.append(last_assistant)
 
-        state.final_answer = current_response if not llm_failure else (
-            f"I encountered an error while refining the response: {llm_failure}\n\n"
-            "Here is what I have so far:\n\n" + current_response
-        )
+        if llm_failure:
+            if current_response:
+                state.final_answer = (
+                    f"I encountered an error while refining the response: {llm_failure}\n\n"
+                    "Here is what I have so far:\n\n" + current_response
+                )
+            else:
+                # First-iteration failure: _generate never produced a response,
+                # so "what I have so far" would be empty. The previous format
+                # appended an empty string, showing the user a dangling
+                # "Here is what I have so far:" header with nothing under it.
+                # Surface the error directly instead.
+                state.final_answer = (
+                    f"I encountered an error while generating the response: {llm_failure}"
+                )
+        else:
+            state.final_answer = current_response
         state.done = True
         await self._fire("on_answer", state.final_answer)
 
