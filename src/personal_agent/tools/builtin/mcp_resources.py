@@ -60,8 +60,13 @@ def create_list_mcp_resources_tool(mcp_source: Any = None) -> Tool:
         errors: list[str] = []
 
         for session in sessions:
+            # Same filter as read_mcp_resource: when a specific server is
+            # requested, skip any session whose name doesn't match — including
+            # unnamed sessions. The previous `session_name and ...` guard left
+            # unnamed sessions in the loop, listing their resources under a
+            # server filter that should have excluded them.
             session_name = getattr(session, "_server_name", None)
-            if server is not None and session_name and session_name != server:
+            if server is not None and session_name != server:
                 continue
             try:
                 result = await asyncio.wait_for(
@@ -128,9 +133,16 @@ def create_read_mcp_resource_tool(
             return "No connected MCP servers"
 
         for session in sessions:
-            # Filter by server name stored during session creation
+            # Filter by server name stored during session creation. A session
+            # without _server_name should NOT be tried for a named request —
+            # the previous `if session_name and session_name != server` only
+            # skipped named-and-mismatched sessions, leaving unnamed sessions
+            # to be tried for every read regardless of which server the user
+            # requested. That returned resources from the wrong server (or
+            # wasted time on failed reads). Skip any session whose name
+            # doesn't equal the requested server, including unnamed ones.
             session_name = getattr(session, "_server_name", None)
-            if session_name and session_name != server:
+            if session_name != server:
                 continue
             try:
                 result = await asyncio.wait_for(
