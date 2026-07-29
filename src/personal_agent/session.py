@@ -236,18 +236,26 @@ class SessionManager:
                 except OSError as e:
                     logger.warning("Cannot stat session file '%s': %s", f.name, e)
                     continue
-                if st.st_uid != os.geteuid():
-                    logger.warning(
-                        "Skipping session file '%s': not owned by current user (uid=%d)",
-                        f.name, st.st_uid,
-                    )
-                    continue
-                if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-                    logger.warning(
-                        "Skipping session file '%s': group/other access bits set (mode=%o)",
-                        f.name, st.st_mode & 0o777,
-                    )
-                    continue
+                # os.geteuid() is Unix-only; on Windows (and any platform
+                # without it) the ownership/permission check doesn't apply —
+                # Windows uses ACLs, not uid/mode bits. The previous code
+                # unconditionally called os.geteuid(), which raised
+                # AttributeError on Windows whenever a session file existed,
+                # crashing load_all() and thus every CLI/server startup that
+                # tried to restore sessions.
+                if hasattr(os, "geteuid"):
+                    if st.st_uid != os.geteuid():
+                        logger.warning(
+                            "Skipping session file '%s': not owned by current user (uid=%d)",
+                            f.name, st.st_uid,
+                        )
+                        continue
+                    if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+                        logger.warning(
+                            "Skipping session file '%s': group/other access bits set (mode=%o)",
+                            f.name, st.st_mode & 0o777,
+                        )
+                        continue
                 try:
                     session = self._load_session_file(f)
                     self._sessions[session.id] = session
