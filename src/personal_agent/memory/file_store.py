@@ -202,7 +202,19 @@ class FileMemoryStore:
         """Read a memory file by name. Returns (metadata, body) or None."""
         cache = await self._ensure_cache()
         filepath = cache.get(name)
-        if filepath is None or not filepath.exists():
+        if filepath is None:
+            # Name is not in the index. Previously this fell through to a
+            # full repair_index() on every miss, which rebuilds the index
+            # from disk (checking every file's existence and rewriting
+            # MEMORY.md). An LLM hallucinating a memory name and retrying
+            # would trigger that expensive I/O cycle on every call. The
+            # cache already reflects every indexed name, so a missing name
+            # means the memory does not exist — return None without
+            # rebuilding. repair_index is only warranted when the index
+            # references a file that no longer exists (stale entry), which
+            # is the other branch below.
+            return None
+        if not filepath.exists():
             async with self._lock:
                 self._invalidate_cache()
             await self.repair_index()
