@@ -253,9 +253,15 @@ class FeishuChannel(Channel):
             ts = request.headers.get("X-Lark-Request-Timestamp", "")
             nonce = request.headers.get("X-Lark-Request-Nonce", "")
             key = hashlib.sha256(self._encrypt_key.encode("utf-8")).digest()
+            # HMAC over the raw request bytes — Feishu signs the body as
+            # received. The previous form decoded with errors="replace"
+            # then re-encoded, which substitutes invalid UTF-8 bytes with
+            # U+FFFD (a 3-byte sequence), mutating the byte stream and
+            # causing valid signatures to be rejected whenever the body
+            # contains any non-UTF-8 byte.
             expected = hmac.new(
                 key,
-                (ts + nonce + raw_body.decode("utf-8", errors="replace")).encode("utf-8"),
+                ts.encode("utf-8") + nonce.encode("utf-8") + raw_body,
                 hashlib.sha256,
             ).hexdigest()
             if not hmac.compare_digest(sig, expected):
