@@ -61,7 +61,13 @@ def _slugify(name: str) -> str:
     """Convert a memory name to a safe filename slug."""
     slug = re.sub(r"[^\w\s-]", "", name.lower())
     slug = re.sub(r"[-\s]+", "_", slug)
-    return slug.strip("_") or "memory"
+    slug = slug.strip("_") or "memory"
+    # Bound the length: an LLM-controlled memory name of thousands of chars
+    # would produce a filename exceeding most filesystems' 255-byte limit,
+    # and os.replace would raise OSError (ENAMETOOLONG) — surfacing as an
+    # opaque failure with the index entry already half-written. Truncate
+    # to a safe margin.
+    return slug[:100]
 
 
 class FileMemoryStore:
