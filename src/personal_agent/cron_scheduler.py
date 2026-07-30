@@ -79,7 +79,12 @@ def _cron_matches(cron: str, dt: datetime) -> bool:
         hours = _parse_cron_field(fields[1], 0, 23)
         dom = _parse_cron_field(fields[2], 1, 31)
         months = _parse_cron_field(fields[3], 1, 12)
-        dow = _parse_cron_field(fields[4], 0, 6)
+        # DOW field accepts 0-6 (0=Sun) plus 7 as a POSIX-allowed Sunday
+        # alias. Parsing with max_val=7 lets `7` through; we then normalize
+        # 7→0 so the weekday mapping below is correct. Without this, a
+        # valid expression like `0 0 * * 7` was rejected as out of range.
+        dow = _parse_cron_field(fields[4], 0, 7)
+        dow = {0 if d == 7 else d for d in dow}
 
         # Convert cron DOW (0=Sun, 1=Mon, ..., 6=Sat) to Python weekday
         # (0=Mon, 1=Tue, ..., 6=Sun)
