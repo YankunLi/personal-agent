@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.types import ToolSpec
@@ -29,6 +30,13 @@ def create_sleep_tool(max_duration: float = DEFAULT_MAX_DURATION) -> Tool:
     """
 
     async def _sleep(duration: float) -> str:
+        # NaN bypasses both `<= 0` and `> max` comparisons (both return
+        # False for NaN), so without this guard an LLM sending NaN would
+        # reach asyncio.sleep(NaN) — which hangs or raises an opaque
+        # ValueError deep in the event loop. Infinity is caught by the
+        # max check below, but reject it here too for a clear message.
+        if math.isnan(duration) or math.isinf(duration):
+            return "Error: Duration must be a finite number"
         if duration <= 0:
             return "Error: Duration must be positive"
         if duration > max_duration:
