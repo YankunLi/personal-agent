@@ -113,7 +113,9 @@ def create_file_ops_tools(workspace_dir: str | None = None, skill_manager: Any =
             return f"Error: Path is a directory: {path}"
         await asyncio.to_thread(p.parent.mkdir, parents=True, exist_ok=True)
         await asyncio.to_thread(atomic_write, p, content)
-        return f"File written: {path} ({len(content)} bytes)"
+        # len(content) is character count; for multi-byte UTF-8 (CJK, emoji)
+        # it undercounts the actual bytes written. Report the encoded length.
+        return f"File written: {path} ({len(content.encode('utf-8'))} bytes)"
 
     async def _list_dir(path: str) -> str:
         p = resolve_path(path, workspace_dir)
