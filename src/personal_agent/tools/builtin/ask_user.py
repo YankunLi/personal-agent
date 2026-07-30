@@ -102,6 +102,19 @@ def create_ask_user_tool(
                 try:
                     answer = (await asyncio.to_thread(input, "> ")).strip()
                 except EOFError:
+                    # Stdin closed mid-batch. Previously this returned a bare
+                    # error string, discarding answers already gathered for
+                    # earlier questions. If we have any results, return them
+                    # (with a note that the batch was interrupted) so the
+                    # caller gets the partial data; only surface the
+                    # "no interactive input" error when nothing was collected.
+                    if results:
+                        results.append({
+                            "question": question_text,
+                            "header": header,
+                            "answer": "[input interrupted: stdin closed]",
+                        })
+                        return json.dumps(results, indent=2, ensure_ascii=False)
                     return "Error: No interactive input available (stdin is not a terminal)"
 
             results.append({
