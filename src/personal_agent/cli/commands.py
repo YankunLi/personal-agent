@@ -18,6 +18,28 @@ from rich.text import Text
 
 from personal_agent.cli.theme import console
 
+
+def _track_background_task(channel, coro) -> None:
+    """Spawn a fire-and-forget task on the channel, surfacing failures.
+
+    Without the exception-printing callback, a failure in _session_create,
+    _session_switch, or _install_git_skill was silently swallowed (the task's
+    exception was never retrieved), so the user saw no feedback when a
+    /session or /skill command failed.
+    """
+    t = asyncio.create_task(coro)
+    channel._background_tasks.add(t)
+
+    def _on_done(task: asyncio.Task) -> None:
+        channel._background_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            console.print(Text(f"Command failed: {exc}", style="error"))
+
+    t.add_done_callback(_on_done)
+
 if TYPE_CHECKING:
     from personal_agent.cli.channel import CLIChannel
 
@@ -254,9 +276,7 @@ async def _cmd_skill(channel: CLIChannel, arg: str) -> bool:
             console.print(Text("Usage: /skill deactivate <name>", style="error"))
     elif sub == "git":
         if sub_arg:
-            t = asyncio.create_task(channel._install_git_skill(sub_arg))
-            channel._background_tasks.add(t)
-            t.add_done_callback(channel._background_tasks.discard)
+            _track_background_task(channel, channel._install_git_skill(sub_arg))
         else:
             console.print(Text("Usage: /skill git <url>", style="error"))
             console.print(Text("  Examples: /skill git user/repo", style="dim"))
@@ -315,16 +335,12 @@ async def _cmd_session(channel: CLIChannel, arg: str) -> bool:
         channel._session_list()
     elif sub == "create":
         if sub_arg:
-            t = asyncio.create_task(channel._session_create(sub_arg))
-            channel._background_tasks.add(t)
-            t.add_done_callback(channel._background_tasks.discard)
+            _track_background_task(channel, channel._session_create(sub_arg))
         else:
             console.print(Text("Usage: /session create <name>", style="error"))
     elif sub == "switch":
         if sub_arg:
-            t = asyncio.create_task(channel._session_switch(sub_arg))
-            channel._background_tasks.add(t)
-            t.add_done_callback(channel._background_tasks.discard)
+            _track_background_task(channel, channel._session_switch(sub_arg))
         else:
             console.print(Text("Usage: /session switch <name>", style="error"))
     elif sub == "delete":
