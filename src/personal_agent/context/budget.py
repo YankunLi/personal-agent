@@ -295,6 +295,12 @@ class ContextBudgetManager:
                 break
             kept.insert(0, msg)
             running += t
+        # If the single most-recent message alone exceeds the budget, the
+        # loop's `kept` guard kept it anyway — but sending it would still
+        # blow the context window, the exact failure this method exists to
+        # prevent. Drop it and fall back to system-only context.
+        if running > max_tokens:
+            kept = []
         # Never start the truncated tail on a tool result — an orphaned
         # tool message (without its parent assistant tool_calls) is rejected
         # by most provider APIs.
