@@ -205,6 +205,17 @@ async def delete_task(session_id: str, task_id: str) -> bool:
                         task_id, task["id"], exc_info=True,
                     )
 
+    # Drop the per-task lock entry for the deleted task. Without this,
+    # _task_locks grows without bound over the lifetime of a long-running
+    # server: every task ever created leaves a Lock object behind, even
+    # after deletion. A concurrent in-flight operation that already
+    # captured the lock object continues safely (the object is still
+    # referenced); only the dict entry is removed, so the next caller
+    # for this (session, task) — which no longer exists — would create a
+    # fresh lock only if the task is somehow re-created with the same id.
+    async with _task_locks_guard:
+        _task_locks.pop((session_id, task_id), None)
+
     return True
 
 
