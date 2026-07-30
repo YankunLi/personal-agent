@@ -231,14 +231,25 @@ def _python_fallback(
             last_emitted_idx = -1
 
             if multiline:
+                # Precompute newline offsets once so each match's line
+                # number is an O(log n) bisect lookup. The previous form
+                # did content[:m.start()].count("\n") per match — O(n)
+                # per match, O(m*n) total, which seconds-longs on a large
+                # file with many matches.
+                import bisect
+                nl_offsets = [i for i, c in enumerate(content) if c == "\n"]
+
+                def _offset_to_line(offset: int) -> int:
+                    return bisect.bisect_left(nl_offsets, offset) + 1
+
                 # Search the full content as a single string for cross-line patterns
                 for m in compiled.finditer(content):
                     file_matches += 1
                     match_count += 1
                     if output_mode == "content":
                         # Find line range for the match
-                        start_line = content[:m.start()].count("\n") + 1
-                        end_line = content[:m.end()].count("\n") + 1
+                        start_line = _offset_to_line(m.start())
+                        end_line = _offset_to_line(m.end())
                         if start_line == end_line:
                             prefix = f"{fpath}:{start_line}: " if show_line_numbers is not False else f"{fpath}: "
                             # Clamp index: a zero-width or end-of-string match
