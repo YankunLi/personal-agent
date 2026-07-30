@@ -185,11 +185,13 @@ class CLIChannel(Channel):
                 session_mgr.switch(sid)
 
         cli_key = SessionKey(channel=CLI_CHANNEL, user_id=CLI_USER, conversation_id=CLI_CONVERSATION)
-        session = session_mgr.find_by_key(cli_key)
-        if session is None:
-            session = session_mgr.create_for_key(cli_key)
-        else:
-            session_mgr.switch(session.id)
+        # Use the atomic find_or_create_for_key rather than find_by_key +
+        # create_for_key as separate calls: the split form races under
+        # concurrent startup (two CLIChannel instances sharing a
+        # SessionManager both find None and both create, orphaning one
+        # session). find_or_create_for_key does both under a single lock.
+        session = session_mgr.find_or_create_for_key(cli_key)
+        session_mgr.switch(session.id)
         self._current_session = session
 
         if project_data and not project_data.get("session_id"):
