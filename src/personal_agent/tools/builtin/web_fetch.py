@@ -54,6 +54,12 @@ _SKIP_TAGS = {"script", "style", "noscript", "head", "title"}
 # Tags that insert a line break when opened or closed
 _BLOCK_TAGS = {"br", "p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "div", "section", "article", "header", "footer", "main", "nav", "aside"}
 
+# Precompiled text-cleanup patterns — get_text() is called on every fetch,
+# so recompiling these per call was wasted work.
+_RE_NEWLINES = re.compile(r"\n{3,}")
+_RE_SPACES = re.compile(r"[ \t]+")
+_RE_BLANK_LINES = re.compile(r"\n[ \t]+\n")
+
 
 class _TextExtractor(HTMLParser):
     """Extract plain text from HTML, preserving basic structure."""
@@ -82,10 +88,10 @@ class _TextExtractor(HTMLParser):
     def get_text(self) -> str:
         text = "".join(self._text)
         # Collapse 3+ newlines to 2, and collapse multiple spaces
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        text = re.sub(r"[ \t]+", " ", text)
+        text = _RE_NEWLINES.sub("\n\n", text)
+        text = _RE_SPACES.sub(" ", text)
         # Clean up lines with only whitespace
-        text = re.sub(r"\n[ \t]+\n", "\n\n", text)
+        text = _RE_BLANK_LINES.sub("\n\n", text)
         return text.strip()
 
 
