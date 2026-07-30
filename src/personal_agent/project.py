@@ -27,7 +27,12 @@ def find_project_root(start: Path | None = None) -> Path | None:
 def load_project(path: Path | None = None) -> dict[str, Any] | None:
     """Load pa.json from the given directory or auto-discover."""
     if path:
-        pa_file = Path(path) / PA_FILE if path.is_dir() else Path(path)
+        # Coerce to Path first: path.is_dir() on a str raises AttributeError.
+        # The signature is Path | None but callers can pass str (e.g. a
+        # workdir from an untyped CLI arg), and the previous form crashed
+        # instead of loading the project file.
+        path = Path(path)
+        pa_file = path / PA_FILE if path.is_dir() else path
     else:
         root = find_project_root()
         if root is None:
