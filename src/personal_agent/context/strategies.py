@@ -19,9 +19,17 @@ def _avoid_splitting_tool_group(messages: list[Message], split: int) -> int:
     message whose parent assistant message would be left in the "older" portion,
     the orphaned tool result causes provider API errors. We instead move the
     boundary back to include the parent assistant message.
+
+    If the leftward walk reaches index 0 and the first message is *still* a
+    tool message, the leading tool run has no parent in ``messages`` at all —
+    it is already orphaned. Returning ``split == 0`` in that case would yield
+    ``rest[0:]`` (the entire list) and silently violate ``max_messages``.
+    Advance past the orphaned run instead so the cap holds.
     """
     while split > 0 and _is_tool_message(messages[split]):
         split -= 1
+    while split < len(messages) and _is_tool_message(messages[split]):
+        split += 1
     return split
 
 
