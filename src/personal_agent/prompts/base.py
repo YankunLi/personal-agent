@@ -33,9 +33,13 @@ class PromptTemplate:
             ast = Environment(loader=BaseLoader()).parse(template)
             return sorted(meta.find_undeclared_variables(ast))
         except Exception:
-            # Fall back to a simple {{ var }} regex if parsing fails
+            # Fall back to a regex if Jinja2 parsing fails. Capture the
+            # leading identifier of any {{ ... }} expression (not just bare
+            # {{ var }}), so {{ obj.attr }}, {{ func(x) }}, and
+            # {{ var | filter }} yield "obj"/"func"/"var" rather than being
+            # silently dropped. Sort for consistency with the AST path.
             import re
-            return list(set(re.findall(r"\{\{\s*(\w+)\s*\}\}", template)))
+            return sorted(set(re.findall(r"\{\{\s*(\w+)", template)))
 
     @classmethod
     def from_file(cls, path: str | Path) -> "PromptTemplate":
