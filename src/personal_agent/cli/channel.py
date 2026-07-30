@@ -40,6 +40,12 @@ class CLIChannel(Channel):
     interface so it can coexist with other channels in the same AgentServer.
     """
 
+    # Cap on retained per-task history entries. Each entry holds a 200-char
+    # task preview and 1000-char answer preview, and the whole list is
+    # serialized to disk on every save_session — without a cap, a long
+    # REPL session grew memory and save time without bound.
+    MAX_SESSION_TASKS = 200
+
     def __init__(
         self,
         settings: Any,
@@ -329,6 +335,10 @@ class CLIChannel(Channel):
                     "steps": len(result.steps),
                 }
             )
+            # Trim to the cap so memory and save time stay bounded over a
+            # long REPL session.
+            if len(self._session_tasks) > self.MAX_SESSION_TASKS:
+                self._session_tasks = self._session_tasks[-self.MAX_SESSION_TASKS:]
 
             if self._current_session:
                 async with self._current_session.memory_lock:
