@@ -208,8 +208,15 @@ class DebateAgent(BaseAgent):
         if round_num == 1:
             round_task = task
         else:
+            # Only show other roles' successful responses. A failed role's
+            # "[Error: ...]" string is not a real perspective — passing it
+            # to other roles as if it were a legitimate answer misleads the
+            # debate (same error-text-leaks-downstream pattern as the
+            # pipeline agent). Drop failed entries so the current role only
+            # sees genuine responses from peers.
             other = {
-                k: v for k, v in previous_responses.items() if k != role.name
+                k: v for k, v in previous_responses.items()
+                if k != role.name and not v.startswith("[Error: ")
             }
             other_text = "\n\n".join(
                 f"### {name}\n{response}" for name, response in other.items()
