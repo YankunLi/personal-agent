@@ -1,9 +1,0 @@
-fix: round 300 — reflection critique JSON fence split truncates embedded fence
-
-The critique parser used split on the json fence then split on the next
-fence, which truncates at the first closing fence. When the critique body
-itself contains a triple-backtick run (e.g. a strengths/weaknesses entry
-quoting code), the JSON gets cut short and parsing falls through to the
-generic 7.0 fallback, masking the LLM's real verdict. Same defect
-plan_execute already fixed via _extract_json_block; apply the
-first/last-fence approach here.
