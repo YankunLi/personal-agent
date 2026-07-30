@@ -12,6 +12,7 @@ spots are accepted as a tradeoff for cost simplicity.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -315,8 +316,13 @@ async def review_tree(
         f for f in src_root.glob("*.py") if f.name not in ("__init__.py", "__main__.py")
     )
 
-    for d in top_dirs:
-        report = await review_module(provider, d, repo_root, prev_bugs, applied_fixes, guide)
+    # Run per-module reviews in parallel — each is an independent LLM call,
+    # so serializing them multiplied wall-clock time by the module count.
+    async def _review_one(d: Path) -> BugReport:
+        return await review_module(provider, d, repo_root, prev_bugs, applied_fixes, guide)
+
+    reports = await asyncio.gather(*[_review_one(d) for d in top_dirs])
+    for d, report in zip(top_dirs, reports):
         if report.error:
             any_error = True
         all_bugs.extend(report.bugs)
