@@ -862,7 +862,15 @@ class SkillManager:
                             f"Invalid subdirectory path '{subdir}': path traversal not allowed"
                         )
                     discover_root = (tmp_path / subdir).resolve()
-                    if not str(discover_root).startswith(str(tmp_path.resolve())):
+                    # Use relative_to rather than str.startswith: the latter
+                    # is prefix-confusion — "/tmp/skill" is a prefix of
+                    # "/tmp/skill-evil/x", so a subdir resolving under a
+                    # sibling directory whose name extends tmp_path would
+                    # pass the check. relative_to raises ValueError unless
+                    # discover_root is genuinely inside tmp_path.
+                    try:
+                        discover_root.relative_to(tmp_path.resolve())
+                    except ValueError:
                         raise SkillError(
                             f"Invalid subdirectory path '{subdir}': resolves outside repository"
                         )
