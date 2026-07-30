@@ -53,7 +53,17 @@ class StdioTransport(MCPTransport):
         env = {**config.env} if config.env else None
 
         ctx = stdio_client(command=cmd, env=env)
-        read, write = await ctx.__aenter__()
+        # If __aenter__ raises after partially initializing (subprocess
+        # spawned but handshake failed), ctx.__aexit__ must still run so
+        # the subprocess is reaped — otherwise it leaks as an orphan.
+        try:
+            read, write = await ctx.__aenter__()
+        except BaseException:
+            try:
+                await ctx.__aexit__(None, None, None)
+            except Exception:
+                pass
+            raise
         return read, write, ctx
 
 
@@ -82,7 +92,14 @@ class SSETransport(MCPTransport):
             kwargs["auth"] = auth
 
         ctx = sse_client(**kwargs)
-        read, write = await ctx.__aenter__()
+        try:
+            read, write = await ctx.__aenter__()
+        except BaseException:
+            try:
+                await ctx.__aexit__(None, None, None)
+            except Exception:
+                pass
+            raise
         return read, write, ctx
 
 
@@ -113,7 +130,14 @@ class StreamableHTTPTransport(MCPTransport):
         http_client = create_mcp_http_client(**client_kwargs) if client_kwargs else None
 
         ctx = streamable_http_client(url=config.url, http_client=http_client)
-        read, write, get_session_id = await ctx.__aenter__()
+        try:
+            read, write, get_session_id = await ctx.__aenter__()
+        except BaseException:
+            try:
+                await ctx.__aexit__(None, None, None)
+            except Exception:
+                pass
+            raise
         return read, write, ctx
 
 
