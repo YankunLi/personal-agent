@@ -171,8 +171,11 @@ class AgentKnowledge:
     def _ensure_file(self) -> None:
         """Create the global AGENT.md if it doesn't exist."""
         if not self._global_path.exists():
-            self._global_path.parent.mkdir(parents=True, exist_ok=True)
-            self._global_path.write_text(self._generate_starter(), encoding="utf-8")
+            # Use _write_file (temp + os.replace) so a crash mid-write
+            # doesn't leave a truncated AGENT.md on disk. A partial starter
+            # file would be loaded by load() as the global knowledge,
+            # silently corrupting the agent's self-knowledge.
+            self._write_file(self._global_path, self._generate_starter())
 
     def _generate_starter(self) -> str:
         """Generate a minimal AGENT.md with empty sections."""
