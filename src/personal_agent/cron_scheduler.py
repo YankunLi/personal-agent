@@ -352,22 +352,45 @@ class CronScheduler:
 
                     if not job.recurring:
                         to_remove.append(job.id)
-
-            for job_id in to_remove:
-                self._jobs.pop(job_id, None)
+            # Do NOT pop one-shot jobs here. Previously they were removed
+            # under this lock, but callback dispatch happens after lock
+            # release — if stop() ran in that window, _running would be
+            # False at the dispatch guard below, callbacks would not fire,
+            # and the one-shot jobs would already be gone from _jobs:
+            # silently lost. Defer the removal to after dispatch is
+            # confirmed.
 
         # Fire callbacks outside the lock to avoid blocking job management.
         # Only fire if still running — stop() sets _running=False and then
         # cancels _pending_callbacks, so checking here prevents a race
         # where callbacks are added after stop() has already cleaned up.
-        if self._running:
-            for job_id, prompt in to_fire:
-                if self._callback:
-                    task = asyncio.create_task(
-                        self._fire_callback(job_id, prompt)
-                    )
-                    self._pending_callbacks.add(task)
-                    task.add_done_callback(self._pending_callbacks.discard)
+        if not self._running:
+            # Roll back fired_count for jobs we marked but won't fire, so
+            # the one-shot job's state is preserved for the next start().
+            async with self._jobs_lock:
+                for job_id, _ in to_fire:
+                    job = self._jobs.get(job_id)
+                    if job is not None:
+                        job.fired_count -= 1
+                        # last_fired is informational; leave it rather than
+                        # trying to restore a prior value we didn't capture.
+            return
+        for job_id, prompt in to_fire:
+            if self._callback:
+                task = asyncio.create_task(
+                    self._fire_callback(job_id, prompt)
+                )
+                self._pending_callbacks.add(task)
+                task.add_done_callback(self._pending_callbacks.discard)
+
+        # Now that callbacks are dispatched, remove one-shot jobs. This
+        # happens after the _running check, so a stop() that ran before
+        # dispatch leaves the jobs in _jobs (rolled back above) instead of
+        # silently dropping them.
+        if to_remove:
+            async with self._jobs_lock:
+                for job_id in to_remove:
+                    self._jobs.pop(job_id, None)
 
         # Persist durable state: removed jobs must be cleaned up, and
         # recurring durable jobs need last_fired persisted to avoid
