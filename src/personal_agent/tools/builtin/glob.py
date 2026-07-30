@@ -47,7 +47,6 @@ def create_glob_tool(
         elif workspace_dir:
             search_dir = resolve_path(workspace_dir)
         else:
-            from pathlib import Path
             search_dir = Path.cwd()
 
         validate_within_workspace(search_dir, workspace_dir)
@@ -64,15 +63,17 @@ def create_glob_tool(
             for p in raw:
                 # Path.glob with ** follows symlinks, which can reach files
                 # outside the workspace via a symlinked directory inside it.
-                # Filter any match whose resolved path escapes the workspace.
+                # Only symlinks can escape, though — non-symlink results are
+                # guaranteed to be under search_dir (already validated within
+                # ws_resolved). Calling p.resolve() on every match stats every
+                # path component; skipping it for the common non-symlink case
+                # saves a stat storm on large result sets.
                 if ws_resolved is not None:
                     try:
-                        resolved = p.resolve()
-                    except OSError:
-                        continue
-                    try:
-                        resolved.relative_to(ws_resolved)
-                    except ValueError:
+                        if p.is_symlink():
+                            resolved = p.resolve()
+                            resolved.relative_to(ws_resolved)
+                    except (OSError, ValueError):
                         continue
                 results.append(p)
             # Sort by mtime; use a safe stat to avoid following broken symlinks.
