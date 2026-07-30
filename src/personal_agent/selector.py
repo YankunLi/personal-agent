@@ -63,8 +63,11 @@ def classify(task: str) -> AgentPattern:
     elif len(task) > 200:
         plan_score += 1
 
-    # Multiple sentences → multi-step
-    sentences = len(re.split(r"[.!?。！？\n]+", task))
+    # Multiple sentences → multi-step. Filter empty fragments: trailing
+    # separators (e.g. "Hi.\n") produce empty strings in the split result,
+    # inflating the count and bumping short tasks across the >2 / >5
+    # thresholds.
+    sentences = len([s for s in re.split(r"[.!?。！？\n]+", task) if s.strip()])
     if sentences > 5:
         plan_score += 2
     elif sentences > 2:
