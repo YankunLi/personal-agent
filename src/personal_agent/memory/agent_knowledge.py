@@ -93,7 +93,7 @@ class AgentKnowledge:
         """
         async with self._lock:
             await asyncio.to_thread(self._ensure_file)
-            text = await asyncio.to_thread(self._global_path.read_text, "utf-8")
+            text = await asyncio.to_thread(self._read_file, self._global_path)
             sections = self._parse_sections(text)
 
             # Split content into lines for consistent storage
@@ -118,7 +118,7 @@ class AgentKnowledge:
 
         async with self._lock:
             await asyncio.to_thread(self._ensure_file)
-            text = await asyncio.to_thread(self._global_path.read_text, "utf-8")
+            text = await asyncio.to_thread(self._read_file, self._global_path)
 
             # Parse existing sections
             existing = self._parse_sections(text)
@@ -235,7 +235,15 @@ class AgentKnowledge:
     def _read_file(path: Path | None) -> str:
         if path is None or not path.exists():
             return ""
-        return path.read_text(encoding="utf-8").strip()
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except (UnicodeDecodeError, OSError) as e:
+            # A corrupt AGENT.md (invalid UTF-8, permission error) would
+            # otherwise kill update/append_learnings/load. Treat as empty
+            # so the caller can proceed — _ensure_file/_write_file will
+            # overwrite the corrupt content on the next write.
+            logger.warning("Failed to read %s: %s — treating as empty", path, e)
+            return ""
 
     @staticmethod
     def _write_file(path: Path, content: str) -> None:
