@@ -77,9 +77,19 @@ class RichDisplay:
 
     async def on_tool_call(self, name: str, arguments: dict[str, Any]) -> None:
         self._tool_count += 1
-        args_str = _format_args(arguments)
-        # Use multi-line syntax highlighting when args are long.
-        if "\n" in args_str or len(args_str) > _MAX_INLINE_ARG_CHARS:
+        # Serialize once. The previous form called _format_args (which
+        # json.dumps) and then, on the long-args path, json.dumps'd again
+        # with indent=2 — double serialization on every long tool call.
+        # Also, _format_args truncates before the length check, so
+        # `len(args_str) > _MAX_INLINE_ARG_CHARS` was always False and the
+        # multi-line Syntax path was effectively dead for JSON-serializable
+        # args. Check the un-truncated length so long args actually get the
+        # multi-line treatment.
+        try:
+            compact = json.dumps(arguments, ensure_ascii=False)
+        except Exception:
+            compact = str(arguments)
+        if "\n" in compact or len(compact) > _MAX_INLINE_ARG_CHARS:
             console.print(
                 Text.assemble(
                     ("  ", ""),
@@ -97,14 +107,14 @@ class RichDisplay:
                 )
                 console.print(syntax)
             except Exception:
-                console.print(Text(args_str, style="tool.args"))
+                console.print(Text(compact, style="tool.args"))
         else:
             console.print(
                 Text.assemble(
                     ("  ", ""),
                     (name, "tool.name"),
                     ("  ", ""),
-                    (args_str, "tool.args"),
+                    (compact, "tool.args"),
                 )
             )
 
