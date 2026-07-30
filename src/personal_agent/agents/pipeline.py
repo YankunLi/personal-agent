@@ -113,6 +113,14 @@ class PipelineAgent(BaseAgent):
                 ))
                 failed_stages.append(stage_cfg.name or f"stage {i + 1}")
                 current_input = f"[Pipeline stage '{stage_cfg.name}' failed: {e}]"
+                # Stop the pipeline on the first stage failure. Previously the
+                # loop continued, feeding the error text to the next stage as
+                # "Previous stage output" — a downstream stage would then
+                # produce a confident-sounding answer built on the error text,
+                # and the user only saw a generic "may be incomplete" warning.
+                # Since each stage depends on its predecessor's output, there
+                # is no useful independent work to do after a failure.
+                break
             finally:
                 if stage_agent is not None:
                     try:
