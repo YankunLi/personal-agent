@@ -87,8 +87,13 @@ class AgentResult:
     elapsed_ms: float = 0.0
 
 
-@dataclass
+@dataclass(eq=False)
 class MemoryEntry:
+    # eq=False so equality falls back to object identity. The generated
+    # value-based __eq__ compared content/metadata, so two entries with
+    # different ids but identical text were "equal" — wrong for a record
+    # whose identity is its id. If used in a set or as a dict key, the
+    # value-based form would silently dedup distinct entries.
     id: str
     content: str
     metadata: dict[str, Any] = field(default_factory=dict)
