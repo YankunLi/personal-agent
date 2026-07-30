@@ -281,9 +281,19 @@ class MemoryConsolidator:
                     logger.info("Memory created: %s (%s)", name, memory_type)
                 elif action == "update":
                     if await self._store.get(name) is None:
+                        # The LLM claimed to "update" a memory that doesn't
+                        # exist. The previous code fell through to store.add,
+                        # silently persisting a hallucinated name as a new
+                        # memory — over many consolidation runs this
+                        # accumulated junk. Skip instead: if the LLM genuinely
+                        # wants to create this memory, it should emit
+                        # action: "new".
                         logger.warning(
-                            "Memory update requested for '%s' but it doesn't exist, creating new", name
+                            "Memory update requested for '%s' but it doesn't exist; "
+                            "skipping (emit action 'new' to create)",
+                            name,
                         )
+                        continue
                     await self._store.add(name, content, memory_type, description)
                     applied.append(op)
                     logger.info("Memory updated: %s (%s)", name, memory_type)
