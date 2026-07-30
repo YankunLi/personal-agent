@@ -336,6 +336,13 @@ class FileMemoryStore:
             try:
                 with open(self.index_path, "x", encoding="utf-8") as f:
                     f.write("# Memory Index\n\nNo memories stored yet.\n")
+                # open(..., "x") uses default umask (0o644 on most systems),
+                # which leaves the index world-readable. The index lists
+                # memory names/descriptions — user PII — so restrict to owner.
+                try:
+                    os.chmod(self.index_path, 0o600)
+                except OSError:
+                    pass
             except FileExistsError:
                 pass
             return self.index_path.read_text(encoding="utf-8")
@@ -373,16 +380,24 @@ class FileMemoryStore:
             lines.append("No memories stored yet.")
         lines.append("")
         content = "\n".join(lines)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(self.index_path.parent), suffix=".tmp"
+        )
+        # Write through the fd from mkstemp (mode 0o600) rather than
+        # close+reopen via Path.write_text, which would reopen with
+        # default umask (0o644, world-readable). The index lists memory
+        # names and descriptions — often user PII — so it must not be
+        # world-readable on shared hosts. Memory body files already use
+        # this pattern via _atomic_write_text.
         try:
-            fd, tmp_path = tempfile.mkstemp(
-                dir=str(self.index_path.parent), suffix=".tmp"
-            )
-            os.close(fd)
-            Path(tmp_path).write_text(content, encoding="utf-8")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
             os.replace(tmp_path, self.index_path)
-        except Exception:
-            if 'tmp_path' in locals() and Path(tmp_path).exists():
-                Path(tmp_path).unlink()
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
             raise
 
     async def _update_index_entry_locked(self, name: str, filename: str, description: str) -> None:
