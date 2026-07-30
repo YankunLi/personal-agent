@@ -505,7 +505,11 @@ class FeishuChannel(Channel):
             async with session.memory_lock:
                 session.short_term = agent.short_term
                 session.working = agent.working
-            self._router.session_manager.save_session(session)
+            # save_session does sync file I/O (json.dump + chmod + os.replace)
+            # under a threading.Lock — calling it directly blocks the event
+            # loop on every message, and on the Feishu path that means under
+            # the per-user lock, serializing all users behind disk writes.
+            await asyncio.to_thread(self._router.session_manager.save_session, session)
 
 
 # ANSI color for startup message

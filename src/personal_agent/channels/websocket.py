@@ -264,7 +264,9 @@ class WebSocketChannel(Channel):
                 async with resolved.memory_lock:
                     resolved.short_term = agent.short_term
                     resolved.working = agent.working
-                self._router.session_manager.save_session(resolved)
+                # save_session does sync file I/O under a threading.Lock;
+                # calling it directly blocks the event loop on every message.
+                await asyncio.to_thread(self._router.session_manager.save_session, resolved)
 
     # ── Agent management ─────────────────────────────────────────────────────
 
@@ -300,7 +302,7 @@ class WebSocketChannel(Channel):
             async with old_session.memory_lock:
                 old_session.short_term = self._conn_agents[conn_id].short_term
                 old_session.working = self._conn_agents[conn_id].working
-            session_mgr.save_session(old_session)
+            await asyncio.to_thread(session_mgr.save_session, old_session)
 
         session = session_mgr.create(name)
         # Inherit routing identity from the previous session (or connection
@@ -347,7 +349,7 @@ class WebSocketChannel(Channel):
                 async with current.memory_lock:
                     current.short_term = self._conn_agents[conn_id].short_term
                     current.working = self._conn_agents[conn_id].working
-            session_mgr.save_session(current)
+            await asyncio.to_thread(session_mgr.save_session, current)
 
         target = session_mgr.switch(session_id)
         if target is None:
