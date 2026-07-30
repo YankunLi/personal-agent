@@ -7,6 +7,7 @@ import json
 import logging
 from typing import AsyncIterator
 
+from personal_agent.exceptions import ProviderError
 from personal_agent.providers._errors import raise_provider_error
 from personal_agent.providers.base import ChatResponse, Provider
 from personal_agent.types import Message, Role, ToolCall, ToolSpec
@@ -72,8 +73,17 @@ class AnthropicProvider(Provider):
                 m = {"role": "user"}
                 tool_use_id = msg.tool_call_id
                 if not tool_use_id:
-                    logger.warning("Tool message missing tool_call_id, using fallback")
-                    tool_use_id = f"unknown_{idx}"
+                    # A tool_result block must reference an existing tool_use
+                    # block's id. A synthetic id like "unknown_{idx}" is
+                    # guaranteed to be rejected by the API with a 400
+                    # ("tool_use_id does not match any previous tool_use"),
+                    # so failing fast with a clear message surfaces the root
+                    # cause (a tool message missing tool_call_id) instead of
+                    # a confusing downstream API error.
+                    raise ProviderError(
+                        "Tool message is missing tool_call_id; Anthropic requires "
+                        "every tool_result to reference a prior tool_use block."
+                    )
                 m["content"] = [{
                     "type": "tool_result",
                     "tool_use_id": tool_use_id,
