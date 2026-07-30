@@ -37,6 +37,7 @@ from personal_agent.orchestrator.worktree_isolation import (
     delete_branch,
     merge_worktree,
     remove_worktree,
+    reset_worktree,
     revert_last_commit,
 )
 from personal_agent.providers.registry import ProviderCredentials, create_provider
@@ -819,6 +820,15 @@ class DevReviewLoop:
                 console.print(Text(f"  ⚠ 修复提交失败（计入重试次数）: {e}", "warning"))
                 committed = False
                 commit_failed = True
+                # Discard the uncommitted fix so the next bug's commit_all
+                # doesn't sweep it up and mislabel it under a different
+                # bug's message. The failed fix is retried on the next
+                # round; this reset just keeps the worktree honest in the
+                # meantime. Without it, the comment above ("the next bug's
+                # commit_all would sweep them up (mislabeling)") described
+                # a real bug: a transient hook/lock failure on bug A's
+                # commit would land A's changes in bug B's commit.
+                await reset_worktree(wt_path)
             if not committed:
                 # commit_all returns False when there's nothing to commit
                 # (git add -A staged no changes) or when git add -A itself

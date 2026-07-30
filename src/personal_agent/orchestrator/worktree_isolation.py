@@ -203,6 +203,25 @@ async def commit_all(wt_path: Path, message: str) -> bool:
     return True
 
 
+async def reset_worktree(wt_path: Path) -> None:
+    """Discard all uncommitted changes (staged + working tree + untracked).
+
+    Used when a fix's commit fails: without a reset, the staged changes
+    remain in the working tree and the next bug's ``commit_all`` runs
+    ``git add -A`` again, sweeping the orphaned changes into the next
+    bug's commit and mislabeling them. Resetting gives the next bug a
+    clean starting point; the failed fix is retried on the next round.
+
+    Errors are logged and swallowed — this is a best-effort cleanup on an
+    already-failing path, and a reset failure shouldn't crash the loop.
+    """
+    try:
+        await _git("reset", "--hard", "HEAD", cwd=wt_path, check=False)
+        await _git("clean", "-fd", cwd=wt_path, check=False)
+    except OSError as e:
+        logger.warning("reset_worktree failed for %s: %s", wt_path, e)
+
+
 async def revert_last_commit(wt_path: Path) -> bool:
     """Revert the last commit (used when a fix causes test regression).
 
