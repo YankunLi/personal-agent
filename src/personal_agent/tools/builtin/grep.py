@@ -272,7 +272,19 @@ def _python_fallback(
                                     if ctx_i <= last_emitted_idx:
                                         continue
                                     ln = ctx_i + 1
-                                    is_match = ln == i
+                                    # A line is a match line if the pattern
+                                    # matches it — not just if it's the
+                                    # current iteration's line. When two
+                                    # matches are within ctx_after of each
+                                    # other, the second match's line is
+                                    # emitted during the first match's
+                                    # context window; checking ln == i would
+                                    # mark it as a context line (-) and the
+                                    # second match's own iteration would
+                                    # then skip it (already emitted), so the
+                                    # real match was never shown with the :
+                                    # marker. Test the pattern instead.
+                                    is_match = compiled.search(lines[ctx_i]) is not None
                                     marker = ":" if is_match else "-"
                                     # Match rg's format: "file:line:content" for matches,
                                     # "file-line-content" for context lines.
