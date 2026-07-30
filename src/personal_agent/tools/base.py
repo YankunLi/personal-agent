@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable
@@ -92,7 +93,13 @@ class FunctionTool(Tool):
 
     async def execute(self, **kwargs: Any) -> Any:
         result = self._fn(**kwargs)
-        if asyncio.iscoroutine(result):
+        # Use inspect.isawaitable rather than asyncio.iscoroutine: the
+        # latter misses futures and custom objects with __await__ (e.g.
+        # an async function wrapped by functools.partial of a custom
+        # awaitable). A missed awaitable would be returned un-awaited,
+        # silently dropping the tool's work and producing a
+        # "coroutine was never awaited" warning.
+        if inspect.isawaitable(result):
             result = await result
         return result
 
