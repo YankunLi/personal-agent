@@ -24,6 +24,7 @@ ASK_USER_PARAMETERS = {
                     },
                     "header": {
                         "type": "string",
+                        "maxLength": 12,
                         "description": "Very short label displayed as a chip/tag (max 12 chars).",
                     },
                     "options": {
