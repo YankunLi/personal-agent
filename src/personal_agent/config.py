@@ -318,7 +318,7 @@ def _parse_config_file(path: Path) -> Settings:
     import json
 
     if path.suffix == ".json":
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             try:
                 data = json.load(f)
             except json.JSONDecodeError as e:
@@ -332,7 +332,7 @@ def _parse_config_file(path: Path) -> Settings:
                 "Install it with: pip install pyyaml"
             ) from None
 
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             try:
                 data = yaml.safe_load(f)
             except yaml.YAMLError as e:
