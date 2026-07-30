@@ -23,7 +23,7 @@ NOTEBOOK_EDIT_PARAMETERS = {
         },
         "cell_id": {
             "type": "string",
-            "description": "The ID of the cell to edit. When inserting a new cell, the new cell will be inserted after the cell with this ID, or at the beginning if not specified.",
+            "description": "The ID of the cell to edit. When inserting a new cell, the new cell will be inserted after the cell with this ID, or at the end if not specified.",
         },
         "new_source": {
             "type": "string",
