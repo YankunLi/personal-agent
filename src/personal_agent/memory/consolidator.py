@@ -209,8 +209,13 @@ class MemoryConsolidator:
                 last = content.rfind("```")
                 if first != last:
                     block = content[first + 3:last].strip()
-                    if block.startswith("json"):
-                        block = block[4:].strip()
+                    # Strip an optional language tag after the opening fence
+                    # (e.g. json, JSON, jsonl). The previous check only
+                    # handled the exact lowercase "json", so ```JSON or
+                    # ```jsonl left the tag prepended to the body and
+                    # json.loads failed silently — dropping the whole
+                    # consolidation batch for that turn.
+                    block = re.sub(r"^[a-zA-Z0-9+_.\-]*\n", "", block, count=1)
                     try:
                         parsed = json.loads(block)
                     except json.JSONDecodeError:
