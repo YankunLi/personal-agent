@@ -139,7 +139,13 @@ class ContextBudgetManager:
         Returns:
             Message list with budget applied and sections formatted.
         """
-        if not self._allocations or loaded_memories is not None:
+        # Re-allocate only when allocations are missing OR when there are
+        # actual loaded memories to budget for. The previous `loaded_memories
+        # is not None` check was True for an empty list, so passing
+        # loaded_memories=[] discarded any prior allocate() settings the
+        # caller had established (e.g. BudgetStrategy.apply's cap) and
+        # re-ran allocate with an empty memory list.
+        if not self._allocations or loaded_memories:
             system_prompt = ""
             for m in messages:
                 if m.role == Role.SYSTEM:
