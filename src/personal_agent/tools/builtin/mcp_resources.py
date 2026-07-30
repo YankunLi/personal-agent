@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import logging
 import mimetypes
 from pathlib import Path
@@ -170,10 +171,15 @@ def create_read_mcp_resource_tool(
                     if text is not None:
                         output_parts.append(text)
                     elif blob is not None:
-                        # Save binary blob to file
+                        # Save binary blob to file. Append a short hash of
+                        # the URI so distinct URIs that collapse to the same
+                        # _safe_name (e.g. file:///a/b and file:///a-b both
+                        # become file_a_b) don't silently overwrite each
+                        # other's blob files.
                         ext = _guess_extension(mime_type, uri)
                         blob_dir = Path(workspace_dir) if workspace_dir else Path.cwd()
-                        blob_path = blob_dir / f".mcp_blob_{_safe_name(uri)}{ext}"
+                        uri_hash = hashlib.sha256(uri.encode("utf-8")).hexdigest()[:8]
+                        blob_path = blob_dir / f".mcp_blob_{_safe_name(uri)}_{uri_hash}{ext}"
                         validate_within_workspace(blob_path, str(blob_dir))
                         try:
                             blob_data = base64.b64decode(blob) if isinstance(blob, str) else blob
