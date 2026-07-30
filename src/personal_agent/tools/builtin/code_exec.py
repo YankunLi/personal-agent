@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import sys
 import tempfile
 
 from personal_agent.tools.base import FunctionTool, Tool
@@ -150,8 +151,12 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
 
             tmp_path = await asyncio.to_thread(_write_temp)
             try:
+                # Use sys.executable rather than a hardcoded "python3": on
+                # Windows the interpreter is typically `python.exe` and
+                # `python3` is not on PATH, so the previous hardcoded name
+                # raised FileNotFoundError from create_subprocess_exec.
                 stdout, stderr, code_ = await _run_command(
-                    ["python3", "-I", tmp_path], timeout=timeout,
+                    [sys.executable, "-I", tmp_path], timeout=timeout,
                 )
             finally:
                 try:
