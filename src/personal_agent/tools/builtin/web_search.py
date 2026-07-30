@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import html
+import re
 import time
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 
@@ -21,6 +24,71 @@ WEB_SEARCH_PARAMETERS = {
     },
     "required": ["query"],
 }
+
+
+_TAG_RE = re.compile(r"<[^>]+>")
+_RESULT_LINK_RE = re.compile(
+    r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
+    re.DOTALL,
+)
+_RESULT_SNIPPET_RE = re.compile(
+    r'<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>',
+    re.DOTALL,
+)
+
+
+def _decode_ddg_redirect(href: str) -> str:
+    """DuckDuckGo wraps result URLs in a redirect like
+    //duckduckgo.com/l/?uddg=<encoded_url>&rut=... — unwrap to the real URL.
+    """
+    if not href:
+        return href
+    if href.startswith("//"):
+        href = "https:" + href
+    try:
+        parsed = urlparse(href)
+        if parsed.path.startswith("/l/"):
+            qs = parse_qs(parsed.query)
+            real = qs.get("uddg", [None])[0]
+            if real:
+                return unquote(real)
+        return href
+    except Exception:
+        return href
+
+
+def _strip_tags(s: str) -> str:
+    return html.unescape(_TAG_RE.sub("", s)).strip()
+
+
+def _extract_results(html_text: str) -> str:
+    """Extract search result titles, URLs, and snippets from DuckDuckGo's
+    HTML endpoint into a readable text summary.
+
+    The previous implementation returned the raw HTML page, so the LLM
+    received markup tags instead of usable result text — wasting tokens
+    and making the tool far less useful. Parse out result links and
+    snippets into a compact format.
+    """
+    links = _RESULT_LINK_RE.findall(html_text)
+    snippets = _RESULT_SNIPPET_RE.findall(html_text)
+
+    if not links:
+        # Fallback: strip all tags so the caller at least gets plain text
+        # instead of raw markup when the DDG structure changes.
+        return _strip_tags(html_text)[:20000]
+
+    lines = [f"Search results ({len(links)} found):", ""]
+    for i, (raw_href, title_html) in enumerate(links, 1):
+        title = _strip_tags(title_html)
+        url = _decode_ddg_redirect(raw_href)
+        snippet = _strip_tags(snippets[i - 1]) if i - 1 < len(snippets) else ""
+        lines.append(f"{i}. {title}")
+        lines.append(f"   {url}")
+        if snippet:
+            lines.append(f"   {snippet}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def create_web_search_tool(
@@ -51,7 +119,7 @@ def create_web_search_tool(
                     headers={"User-Agent": "personal-agent/0.1.0"},
                 )
                 response.raise_for_status()
-                return response.text[:20000]
+                return _extract_results(response.text)[:20000]
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
             if 400 <= status < 500:
