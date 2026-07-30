@@ -45,10 +45,23 @@ async def run_one_shot(
         if project_root:
             project_data = load_project(path=project_root)
 
+    project_session_ok = False
     if project_data:
         sid = project_data.get("session_id")
         if sid and session_mgr.has_session(sid):
             session_mgr.switch(sid)
+            project_session_ok = True
+        elif sid:
+            # The project references a session that no longer exists (file
+            # deleted, different machine, etc.). Without this guard the run
+            # silently falls back to session_mgr.current — which load_all()
+            # set to whatever session was loaded last, an UNRELATED session
+            # — wiring the agent's memory to it and then overwriting that
+            # unrelated session's memory with this run's output. Skip
+            # session wiring entirely instead.
+            logger.warning(
+                "Project session '%s' not found; running without session memory", sid
+            )
 
     # Build header panel
     header_lines: list[Text] = []
@@ -94,7 +107,7 @@ async def run_one_shot(
     try:
         agent = await create_agent(settings, task=task, **(overrides or {}))
 
-        current = session_mgr.current
+        current = session_mgr.current if project_session_ok else None
         if current:
             agent.short_term = current.short_term
             agent.working = current.working
