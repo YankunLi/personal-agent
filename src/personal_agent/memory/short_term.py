@@ -24,8 +24,12 @@ class ShortTermMemory:
 
     def add_many(self, messages: list[Message]) -> None:
         """Add multiple messages at once."""
-        for msg in messages:
-            self.add(msg)
+        # Extend then trim once, rather than calling add() per message.
+        # Each add() re-slices the list when over capacity (O(n) per call),
+        # so adding N messages to a full buffer was O(N*max_messages).
+        self._messages.extend(messages)
+        if len(self._messages) > self.max_messages:
+            self._messages = self._messages[-self.max_messages:]
 
     def get_recent(self, n: int = 20) -> list[Message]:
         """Return the most recent N messages."""
