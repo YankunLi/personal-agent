@@ -59,31 +59,41 @@ def create_list_mcp_resources_tool(mcp_source: Any = None) -> Tool:
         all_resources: list[dict[str, Any]] = []
         errors: list[str] = []
 
+        # Filter sessions by server name first (no I/O), then query the
+        # remaining ones in parallel. The previous sequential loop with a
+        # 30s per-session timeout meant N servers took up to 30*N seconds —
+        # a single slow/dead MCP server stalled the whole listing.
+        filtered = []
         for session in sessions:
-            # Same filter as read_mcp_resource: when a specific server is
-            # requested, skip any session whose name doesn't match — including
-            # unnamed sessions. The previous `session_name and ...` guard left
-            # unnamed sessions in the loop, listing their resources under a
-            # server filter that should have excluded them.
             session_name = getattr(session, "_server_name", None)
             if server is not None and session_name != server:
                 continue
+            filtered.append((session, session_name or "unnamed"))
+
+        async def _list_one(session: Any, label: str) -> tuple[list[dict[str, Any]], str | None]:
             try:
                 result = await asyncio.wait_for(
                     session.list_resources(), timeout=30.0,
                 )
+                items = []
                 for resource in result.resources:
-                    resource_info = {
+                    items.append({
                         "uri": str(resource.uri) if resource.uri else "",
                         "name": resource.name,
                         "description": getattr(resource, "description", None),
                         "mimeType": getattr(resource, "mimeType", None),
-                    }
-                    all_resources.append(resource_info)
+                    })
+                return items, None
             except asyncio.TimeoutError:
-                errors.append("Timeout listing resources from server")
+                return [], f"Timeout listing resources from server '{label}'"
             except Exception as e:
-                errors.append(f"Error listing resources: {e}")
+                return [], f"Error listing resources from '{label}': {e}"
+
+        results = await asyncio.gather(*[_list_one(s, label) for s, label in filtered])
+        for items, err in results:
+            if err is not None:
+                errors.append(err)
+            all_resources.extend(items)
 
         if not all_resources:
             msg = "No resources found"
