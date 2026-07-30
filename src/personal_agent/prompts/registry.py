@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from personal_agent.prompts.base import PromptTemplate
+
+logger = logging.getLogger(__name__)
 
 
 class PromptRegistry:
@@ -38,14 +41,23 @@ class PromptRegistry:
 
     @classmethod
     def from_directory(cls, path: str | Path) -> "PromptRegistry":
-        """Load all .j2 templates from a directory."""
+        """Load all .j2 templates from a directory.
+
+        Non-recursive: only top-level ``*.j2`` files are loaded. A missing
+        directory or one with no matching templates logs a warning so a
+        typo in the path doesn't silently produce an empty registry.
+        """
         registry = cls()
         p = Path(path)
         if not p.is_dir():
+            logger.warning("Prompt template directory not found: %s", p)
             return registry
 
         for file in p.glob("*.j2"):
             template = PromptTemplate.from_file(file)
             registry.register(template)
+
+        if not registry._templates:
+            logger.warning("No .j2 templates found in %s", p)
 
         return registry
