@@ -163,20 +163,28 @@ class ContextBudgetManager:
         # 2. Inject loaded memories (on-demand, as system messages)
         if loaded_memories:
             mem_budget = self._allocations.get("loaded_memories", 2000)
-            per_mem_budget = max(mem_budget // max(len(loaded_memories), 1), 200)
-            inserted = 0
-            for mem in loaded_memories:
-                mem_text = (
-                    f"{SECTION_MEMORY_OPEN}\n"
-                    f"### {mem.get('name', 'Memory')}\n"
-                    f"{mem.get('content', '')}"
-                    f"\n{SECTION_MEMORY_CLOSE}"
-                )
-                if estimate_tokens(mem_text) <= per_mem_budget:
-                    # Use inserted (not the loop index) so skipped memories
-                    # don't leave gaps or push later inserts out of order.
-                    messages.insert(1 + inserted, Message(role=Role.SYSTEM, content=mem_text))
-                    inserted += 1
+            # If the budget for loaded memories is 0 (e.g. the user set
+            # loaded_memories_pct=0), skip insertion entirely. The previous
+            # max(..., 200) floor gave each memory 200 tokens even when the
+            # total budget was 0, inserting memories with no allocated space
+            # and blowing the context window.
+            if mem_budget <= 0:
+                pass
+            else:
+                per_mem_budget = max(mem_budget // max(len(loaded_memories), 1), 200)
+                inserted = 0
+                for mem in loaded_memories:
+                    mem_text = (
+                        f"{SECTION_MEMORY_OPEN}\n"
+                        f"### {mem.get('name', 'Memory')}\n"
+                        f"{mem.get('content', '')}"
+                        f"\n{SECTION_MEMORY_CLOSE}"
+                    )
+                    if estimate_tokens(mem_text) <= per_mem_budget:
+                        # Use inserted (not the loop index) so skipped memories
+                        # don't leave gaps or push later inserts out of order.
+                        messages.insert(1 + inserted, Message(role=Role.SYSTEM, content=mem_text))
+                        inserted += 1
 
         # 3. Wrap the last user message (task) with attention markers
         if messages:
