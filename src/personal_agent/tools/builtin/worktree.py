@@ -79,10 +79,17 @@ def create_enter_worktree_tool(
 
         # Generate a name if not provided
         if name is not None:
-            if not _WT_NAME_RE.match(name):
+            # The documented contract allows "/"-separated segments (e.g.
+            # "feature/foo"); validate each segment against the character
+            # class rather than rejecting "/" outright. The previous regex
+            # ^[a-zA-Z0-9._-]+$ rejected "/", so an agent following the
+            # spec got "Invalid worktree name" for a perfectly valid input.
+            segments = name.split("/")
+            if not segments or not all(_WT_NAME_RE.match(s) for s in segments):
                 return (
                     f"Error: Invalid worktree name '{name}'. "
-                    "Name may contain only letters, digits, dots, underscores, and dashes."
+                    "Each '/'-separated segment may contain only letters, "
+                    "digits, dots, underscores, and dashes."
                 )
             if len(name) > 64:
                 return f"Error: Worktree name must be 64 characters or fewer."
