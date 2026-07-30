@@ -328,11 +328,15 @@ def _glob_to_regex(pattern: str) -> str:
 def _match_paths(file_paths: list[str], patterns: list[str]) -> bool:
     """Check if any file path matches any of the given glob patterns."""
     import re
-
+    # Pre-compile each pattern once. The previous form called
+    # _glob_to_regex + re.search inside the nested loop, recompiling the
+    # same regex N*M times (once per file_path×pattern pair). With many
+    # touched files and many skill patterns this was a recompile storm on
+    # every activate_for_paths call.
+    compiled = [re.compile(_glob_to_regex(p)) for p in patterns]
     for file_path in file_paths:
-        for pattern in patterns:
-            regex = _glob_to_regex(pattern)
-            if re.search(regex, file_path):
+        for rx in compiled:
+            if rx.search(file_path):
                 return True
     return False
 
