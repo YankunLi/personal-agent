@@ -330,7 +330,10 @@ class PlanAndExecuteAgent(BaseAgent):
                             f"what went wrong and move on.]"
                         )
                         state.messages.append(self._make_message(Role.SYSTEM, hint))
-                        consecutive_failures.pop(tool_name)
+                        # Do NOT pop the counter — see react.py for rationale.
+                        # Resetting let the LLM burn MAX more failing calls before
+                        # the next hint fired; keeping it elevated re-triggers on
+                        # every subsequent failure of the same tool.
             else:
                 return {
                     "step": step.get("step", "?"),

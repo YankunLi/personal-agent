@@ -114,7 +114,12 @@ class ReActAgent(BaseAgent):
                             f"the problem, or provide a partial answer explaining what went wrong.]"
                         )
                         state.messages.append(self._make_message(Role.SYSTEM, hint))
-                        consecutive_failures.pop(tool_name)
+                        # Do NOT pop the counter. The previous code reset it to 0 here,
+                        # so if the LLM ignored the hint and called the tool again, the
+                        # counter had to climb back to MAX (3 more failing calls) before
+                        # the next hint fired — wasting steps on a persistently broken
+                        # tool. Keeping the counter elevated means every subsequent
+                        # failure of the same tool re-triggers the hint immediately.
                         logger.warning(
                             "Tool '%s' failed %d times consecutively — injecting stop hint",
                             tool_name, fail_count,
