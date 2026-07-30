@@ -113,11 +113,15 @@ class ContextConfig(BaseModel):
 
 class BudgetConfig(BaseModel):
     context_window: int = 128000
-    system_prompt_pct: float = 0.15
-    loaded_memories_pct: float = 0.10
-    conversation_pct: float = 0.45
-    tool_definitions_pct: float = 0.05
-    response_reserve_pct: float = 0.25
+    # Each pct must be in [0.0, 1.0]; without bounds, a negative value
+    # (or one over 1.0) could pass the sum check if offset by others,
+    # corrupting budget allocation (negative budget for a section, or a
+    # section claiming >100% of the context window).
+    system_prompt_pct: float = Field(0.15, ge=0.0, le=1.0)
+    loaded_memories_pct: float = Field(0.10, ge=0.0, le=1.0)
+    conversation_pct: float = Field(0.45, ge=0.0, le=1.0)
+    tool_definitions_pct: float = Field(0.05, ge=0.0, le=1.0)
+    response_reserve_pct: float = Field(0.25, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
     def _check_pct_sum(self) -> "BudgetConfig":
