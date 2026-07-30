@@ -31,9 +31,22 @@ class LLMCompressor(ContextCompressor):
 
     async def summarize(self, messages: list[Message]) -> str:
         """Summarize messages using a lightweight LLM call."""
+        # Cap total conversation size. The per-message [:1000] truncation
+        # doesn't bound the total — 500 messages produced a 500KB+ string
+        # that blew the provider's context window or cost tokens for text
+        # the model couldn't use. Keep the first and last portions (opening
+        # context + recent detail) and drop the middle.
+        MAX_CONVERSATION_CHARS = 50_000
         conversation = "\n".join(
             f"[{m.role.value}]: {(m.content or '')[:1000]}" for m in messages
         )
+        if len(conversation) > MAX_CONVERSATION_CHARS:
+            keep = MAX_CONVERSATION_CHARS // 2
+            conversation = (
+                conversation[:keep]
+                + f"\n[… {len(conversation) - MAX_CONVERSATION_CHARS} chars truncated …]\n"
+                + conversation[-keep:]
+            )
 
         prompt = (
             "Summarize the following conversation concisely. "
