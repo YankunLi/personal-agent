@@ -127,11 +127,17 @@ class ToolExecutor:
                 if tool.inputs_equivalent(arguments, prev_args):
                     return prev_result
             except Exception:
+                # One bad entry shouldn't blind the check to the rest. The
+                # previous code returned None here, so a single entry whose
+                # schema mismatched (e.g. an older call from before a tool
+                # parameter was renamed) silently disabled duplicate
+                # detection for every subsequent entry too. Continue so the
+                # remaining entries still get a chance.
                 logger.warning(
                     "inputs_equivalent callback failed for tool '%s'",
                     tool_name, exc_info=True,
                 )
-                return None
+                continue
         return None
 
     def _record_recent_call(self, tool_name: str, arguments: dict[str, Any], result: ToolResult) -> None:
