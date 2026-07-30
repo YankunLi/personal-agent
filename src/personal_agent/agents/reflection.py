@@ -262,10 +262,18 @@ class ReflectionAgent(BaseAgent):
                     "overall": 0.0,
                     "summary": "Critique returned empty content",
                 }
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
+            if "```" in content:
+                # Use first/last fence rather than split("```json")[1]...split("```")[0]:
+                # the latter truncates at the first closing fence, which breaks
+                # when the critique body itself contains a ``` run (e.g. a
+                # strengths/weaknesses entry quoting code). Mirrors the
+                # _extract_json_block helper used by plan_execute.
+                first = content.find("```")
+                last = content.rfind("```")
+                if first != last:
+                    content = content[first + 3:last].strip()
+                    if content.startswith("json"):
+                        content = content[4:].strip()
             parsed = json.loads(content)
             if not isinstance(parsed, dict):
                 logger.warning("Critique parsed as %s instead of dict. Response: %s", type(parsed).__name__, result.content[:200])
