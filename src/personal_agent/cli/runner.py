@@ -324,6 +324,15 @@ def _load_toml(path: Path) -> dict:
         try:
             import tomli as tomllib  # type: ignore
         except ImportError:
+            # Silent fallback masked a real environment problem: on
+            # Python < 3.11 without tomli installed, project detection
+            # silently produced an empty result and the user got a
+            # project named after the directory with no description.
+            logger.warning(
+                "Cannot parse %s: tomllib (Python 3.11+) and tomli are both "
+                "unavailable. Install tomli or upgrade to Python 3.11+.",
+                path,
+            )
             return {}
     with open(path, "rb") as f:
         try:
