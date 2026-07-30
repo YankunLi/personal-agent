@@ -116,11 +116,13 @@ class BaseAgent(ABC):
                 role=Role.USER,
                 content=f"[Cron job triggered] {prompt}",
             ))
-            if self.short_term:
-                self.short_term.add(Message(
-                    role=Role.USER,
-                    content=f"[Cron job triggered] {prompt}",
-                ))
+            # Do NOT persist cron prompts to short_term. _init_state replays
+            # short_term into state.messages on every subsequent run as
+            # "PREVIOUS CONVERSATION" context, so a one-time cron trigger
+            # would permanently pollute future turns with stale
+            # "[Cron job triggered]" messages. Cron prompts are transient
+            # context for the current LLM call only — state.messages is the
+            # per-run list and is not persisted.
 
         if self._streaming_enabled:
             return await self._call_llm_stream(state)
