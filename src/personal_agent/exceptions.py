@@ -47,7 +47,7 @@ class ContextError(PersonalAgentError):
     """Raised for context management issues."""
 
 
-class MemoryError(PersonalAgentError):
+class MemoryStoreError(PersonalAgentError):
     """Raised for memory system errors."""
 
 
