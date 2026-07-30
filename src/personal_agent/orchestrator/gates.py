@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,7 +64,7 @@ async def run_tests(workdir: Path) -> GateResult:
     # actually exist and one of them fails.
     if not (workdir / "tests").is_dir():
         return GateResult("tests", True, "no tests/ directory — skipped")
-    code, out = await _run(["python3", "-m", "pytest", "tests/", "-x", "-q"], workdir)
+    code, out = await _run([sys.executable, "-m", "pytest", "tests/", "-x", "-q"], workdir)
     # pytest exit code 5 = "no tests collected" (e.g. empty tests/ dir, or
     # files don't match the test_*.py pattern). Treat as a pass — same
     # rationale as the missing-tests/ case above. Without this, an empty
@@ -76,12 +77,17 @@ async def run_tests(workdir: Path) -> GateResult:
 
 
 async def run_lint(workdir: Path) -> GateResult:
-    code, out = await _run(["ruff", "check", "src/"], workdir)
+    # Invoke via `sys.executable -m ruff` so the gate uses the same
+    # interpreter/environment as the agent. Calling `ruff` directly relies
+    # on the script being on PATH, which is unreliable on Windows where
+    # Scripts/ may not be in PATH — the gate would fail forever with
+    # code 127 and trap the orchestrator in an unfixable loop.
+    code, out = await _run([sys.executable, "-m", "ruff", "check", "src/"], workdir)
     return GateResult("lint", code == 0, out)
 
 
 async def run_typecheck(workdir: Path) -> GateResult:
-    code, out = await _run(["mypy", "src/"], workdir, timeout=180.0)
+    code, out = await _run([sys.executable, "-m", "mypy", "src/"], workdir, timeout=180.0)
     return GateResult("typecheck", code == 0, out)
 
 
