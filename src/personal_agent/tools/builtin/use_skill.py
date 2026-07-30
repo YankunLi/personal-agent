@@ -53,8 +53,18 @@ def create_use_skill_tool(skill_manager: Any = None) -> Any:
         if skill in skill_manager:
             try:
                 skill_manager.activate(skill)
-            except Exception:
+            except Exception as e:
+                # Previously this logged a warning but still returned
+                # "skill loaded, follow the instructions" — sending the
+                # agent to follow instructions whose tools are unavailable.
+                # The agent would then attempt tool calls that don't exist.
                 logger.warning("Failed to activate skill '%s'", skill, exc_info=True)
+                return (
+                    f"Error: Skill '{skill}' prompt was loaded but its tools "
+                    f"could not be activated ({e}). The instructions may reference "
+                    f"tools that are not available — proceed with caution or use "
+                    f"a different approach."
+                )
 
         return (
             f"The following skill has been loaded. "
