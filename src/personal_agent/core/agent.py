@@ -224,10 +224,23 @@ class BaseAgent(ABC):
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
             )
+            # Compute the stream deadline once so the per-chunk wait_for
+            # below uses the remaining budget rather than resetting each chunk.
+            deadline = time.monotonic() + self._llm_timeout if self._llm_timeout is not None else None
             while True:
                 if self._llm_timeout is not None:
+                    # Apply the timeout across the WHOLE stream, not per
+                    # chunk. The previous per-chunk wait_for reset the timer
+                    # on every token, so a provider that dribbled one token
+                    # every (timeout-1)s never tripped the guard and a
+                    # pathological stream could run indefinitely. Track a
+                    # single deadline and use the remaining budget for each
+                    # chunk's wait.
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise asyncio.TimeoutError()
                     try:
-                        chunk = await asyncio.wait_for(aiter.__anext__(), timeout=self._llm_timeout)
+                        chunk = await asyncio.wait_for(aiter.__anext__(), timeout=remaining)
                     except StopAsyncIteration:
                         break
                 else:
