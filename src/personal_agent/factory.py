@@ -285,9 +285,16 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     # File-based memory store (Claude Code style)
     # When user_id is provided, scope memory to that user for multi-user isolation
     if user_id:
-        import os
-        safe_id = user_id.replace(os.sep, "_").replace("..", "_").strip(".")
-        if not safe_id.strip():
+        # Sanitize as a single path component: reject anything that isn't
+        # a bare filename. The previous ad-hoc replace(os.sep, "_")
+        # .replace("..", "_") only handled the platform's native separator
+        # (so "/" survived on Windows where os.sep == "\\"), and could be
+        # fooled by crafted inputs into producing a path that escaped the
+        # users/ directory. Path.name extracts the final component and the
+        # identity check rejects anything containing a separator or
+        # traversal — same approach task_manager._sanitize_id uses.
+        safe_id = Path(user_id).name
+        if not safe_id or safe_id != user_id or safe_id in (".", "..") or safe_id.startswith("-"):
             safe_id = "default"
         store_dir = str(Path(memory_cfg.memory_dir).expanduser() / "users" / safe_id)
     else:
