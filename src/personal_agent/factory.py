@@ -42,6 +42,7 @@ from personal_agent.tools.builtin import (
     create_task_list_tool,
     create_task_stop_tool,
     create_task_update_tool,
+    create_todo_read_tool,
     create_todo_tool,
     create_web_search_tool,
     create_web_fetch_tool,
@@ -479,8 +480,6 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     tool_registry.register(create_ask_user_tool())
 
     # Register todo tools (agent can manage its own todo list)
-    from personal_agent.tools.builtin.todo import create_todo_read_tool, create_todo_tool
-
     tool_registry.register(create_todo_tool())
     tool_registry.register(create_todo_read_tool())
 
