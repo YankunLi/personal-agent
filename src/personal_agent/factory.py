@@ -205,8 +205,12 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     if workspace_dir:
         Path(workspace_dir).expanduser().mkdir(parents=True, exist_ok=True)
 
-    # Create provider
-    creds = settings.get_provider_credentials()
+    # Create provider. Credentials must come from the resolved provider_name
+    # (which may be an override), not settings.agent.provider: the previous
+    # get_provider_credentials() looked the key up by the config's provider, so
+    # create_agent(provider="deepseek", ...) sent the openai API key (or none)
+    # to DeepSeek and the configured providers.deepseek.api_key was never used.
+    creds = settings.providers.get(provider_name, ProviderCredentials())
     if "api_key" in overrides:
         creds = creds.model_copy()
         creds.api_key = overrides["api_key"]
