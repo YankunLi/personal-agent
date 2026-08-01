@@ -15,10 +15,13 @@ Layered design:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 SECTION_HEADER_RE = re.compile(r"^## (.+)$", re.MULTILINE)
 
