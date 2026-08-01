@@ -160,6 +160,11 @@ def create_code_exec_tool(timeout: float = 30.0) -> Tool:
                 )
             finally:
                 try:
+                    # The temp file was chmod'd read-only (0o400) for safety.
+                    # On Windows the read-only attribute blocks deletion, so
+                    # restore owner write permission before unlinking — otherwise
+                    # every python run leaks a file in the temp dir.
+                    await asyncio.to_thread(os.chmod, tmp_path, 0o600)
                     await asyncio.to_thread(os.unlink, tmp_path)
                 except OSError:
                     pass
