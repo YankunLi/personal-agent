@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from personal_agent.cron_scheduler import CronScheduler
 from personal_agent.tools.base import FunctionTool, Tool
 from personal_agent.types import ToolSpec
 
@@ -52,7 +53,7 @@ CRON_LIST_PARAMETERS = {
 }
 
 
-def create_cron_create_tool(scheduler: "CronScheduler") -> Tool:
+def create_cron_create_tool(scheduler: CronScheduler) -> Tool:
     """Create a CronCreate tool bound to a CronScheduler instance."""
 
     async def _cron_create(
