@@ -276,6 +276,14 @@ class ContextBudgetManager:
             kept_older.insert(0, msg)
             older_tokens += t
 
+        # The greedy fill starts from the tail of ``older``, so it can keep a
+        # ``tool`` run whose parent assistant message did not fit in the budget.
+        # A leading ``tool`` message has no preceding tool_calls in the returned
+        # list and is rejected by provider APIs — drop it (mirrors the leading
+        # tool guard in _truncate_recent).
+        while kept_older and kept_older[0].role.value == "tool":
+            kept_older.pop(0)
+
         # Identify dropped messages by identity, not value equality: Message is
         # a dataclass with value-based __eq__, so duplicate messages (e.g. two
         # identical "continue" turns) would be miscounted with ``in``.
