@@ -86,8 +86,12 @@ class ParallelJudgeAgent(BaseAgent):
         agent_answers: dict[str, str] = {}
         all_failed = True
 
-        for cfg, result in zip(self._agent_configs, results):
-            name = cfg.name or cfg.provider
+        for idx, (cfg, result) in enumerate(zip(self._agent_configs, results)):
+            # Disambiguate unnamed agents by index: two agents sharing a
+            # provider and no name would otherwise collide as dict keys and
+            # the earlier answer would be silently overwritten (and never
+            # reach the judge).
+            name = cfg.name or f"{cfg.provider}-{idx}"
             if isinstance(result, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
                 raise result
             if isinstance(result, BaseException):
