@@ -272,7 +272,13 @@ class CLIChannel(Channel):
         async with self._task_lock:
             start = time.time()
 
-            if self._settings.agent.pattern == "auto":
+            # Check the EFFECTIVE pattern, not the base config value: an
+            # explicit -p/--pattern flag or /pattern command stores the
+            # override in self._overrides and never writes it back into
+            # _settings.agent.pattern, so checking the settings value would
+            # re-run auto-classification and silently discard the user's
+            # explicit pattern choice on the very first task.
+            if self._overrides.get("pattern", self._settings.agent.pattern) == "auto":
                 suggested = classify(task)
                 console.print(
                     Text.assemble(
@@ -796,6 +802,10 @@ class CLIChannel(Channel):
 
         await self._agent.close()
         self._agent = new_agent
+        # Keep the tracked pattern in sync with the recreated agent, otherwise
+        # auto-mode comparisons and /pattern display show a stale value (e.g.
+        # "react") after the user switches patterns and restarts.
+        self._current_pattern = self._overrides.get("pattern", self._settings.agent.pattern)
 
         if self._current_session:
             async with self._current_session.memory_lock:
