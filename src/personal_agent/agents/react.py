@@ -134,6 +134,23 @@ class ReActAgent(BaseAgent):
                 await self._fire("on_answer", response.content)
                 logger.info("ReAct complete after %d steps", step_count)
 
+        # Check LLM failure BEFORE the max-steps fallback: when the last step's
+        # LLM call raises, step_count == max_steps and the generic "unable to
+        # complete" branch would swallow the real error and mark done, so the
+        # failure branch below never runs. The error message is more useful.
+        if llm_failure and not state.done:
+            last_answer = "No output produced."
+            for msg in reversed(state.messages):
+                if msg.role == Role.ASSISTANT and msg.content:
+                    last_answer = msg.content
+                    break
+            state.final_answer = (
+                f"I encountered an error while processing the task: {llm_failure}\n\n"
+                "Here is what I have so far:\n\n" + last_answer
+            )
+            state.done = True
+            await self._fire("on_answer", state.final_answer)
+
         if step_count >= self.max_steps and not state.done:
             # Find the last assistant message without tool calls (a final answer),
             # falling back to the last assistant message with content.
@@ -149,19 +166,6 @@ class ReActAgent(BaseAgent):
                         break
             state.final_answer = (
                 "I was unable to complete the task within the maximum number of steps. "
-                "Here is what I have so far:\n\n" + last_answer
-            )
-            state.done = True
-            await self._fire("on_answer", state.final_answer)
-
-        if llm_failure and not state.done:
-            last_answer = "No output produced."
-            for msg in reversed(state.messages):
-                if msg.role == Role.ASSISTANT and msg.content:
-                    last_answer = msg.content
-                    break
-            state.final_answer = (
-                f"I encountered an error while processing the task: {llm_failure}\n\n"
                 "Here is what I have so far:\n\n" + last_answer
             )
             state.done = True
