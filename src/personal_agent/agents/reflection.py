@@ -143,7 +143,14 @@ class ReflectionAgent(BaseAgent):
                 if m.role == Role.ASSISTANT:
                     last_assistant = m
                     break
-            state.messages = state.messages[:msg_count_before]
+            # Reset to the pre-iteration snapshot, dropping all prior
+            # assistant responses. Each prior response was already refined
+            # into the latest one, so keeping them only adds one message per
+            # iteration (the previous slice-to-msg_count_before left every
+            # earlier response in place, so the list still grew linearly).
+            state.messages = [
+                m for m in state.messages[:msg_count_before] if m.role != Role.ASSISTANT
+            ]
             # Prune full_messages in lockstep so consolidation input does not
             # grow unbounded across iterations.
             if hasattr(state, "full_messages") and len(state.full_messages) > msg_count_before:
