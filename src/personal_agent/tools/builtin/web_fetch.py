@@ -210,6 +210,7 @@ def create_web_fetch_tool(
                     await _reverify_host_ip(current_url, pinned_ip)
                     response = await client.send(
                         client.build_request(
+                            "GET",
                             current_url,
                             headers={"User-Agent": "personal-agent/0.1.0"},
                         ),
