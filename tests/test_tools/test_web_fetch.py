@@ -126,9 +126,11 @@ async def test_http_upgrade(executor):
         result = await executor.execute(tc)
         assert result.error is None
         assert "Secure content" in result.output
-        # Verify the URL was upgraded to HTTPS
-        req = mock_client.build_request.call_args[0][0] if mock_client.build_request.call_args else ""
-        assert "https://" in req
+        # Verify the URL was upgraded to HTTPS. build_request is invoked as
+        # build_request("GET", url, ...), so the URL is the second positional arg.
+        assert mock_client.build_request.call_args
+        req_url = mock_client.build_request.call_args[0][1]
+        assert req_url == "https://example.com/page"
 
 
 @pytest.mark.asyncio
