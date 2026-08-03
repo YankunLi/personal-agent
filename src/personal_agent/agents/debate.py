@@ -267,6 +267,18 @@ class DebateAgent(BaseAgent):
                 for key, val in result.token_usage.items():
                     self._total_usage[key] = self._total_usage.get(key, 0) + val
             return result.answer
+        except Exception as e:
+            # The role agents are protected by gather(return_exceptions=True)
+            # and converted to "[Error: ...]" entries, but an unguarded judge
+            # run lets a ProviderTimeoutError/ProviderRateLimitError (a
+            # ProviderError, not an AgentError) escape react.run and crash the
+            # whole debate mid-turn. Degrade to a best-effort answer instead.
+            logger.warning("Debate judge failed: %s", e)
+            first = next(iter(responses.values()))
+            return (
+                f"[Judge evaluation failed: {e}]\n\n"
+                f"Returning the best available response:\n\n{first}"
+            )
         finally:
             try:
                 await judge_agent.close()
