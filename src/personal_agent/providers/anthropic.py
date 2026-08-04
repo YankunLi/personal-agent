@@ -217,12 +217,6 @@ class AnthropicProvider(Provider):
                         # stays 0 and token accounting undercounts in streaming.
                         if event.message and event.message.usage:
                             stream_usage["input_tokens"] = event.message.usage.input_tokens or 0
-                    elif event.type == "text":
-                        content += event.text
-                        yield ChatResponse(
-                            content=event.text,
-                            model=self._model,
-                        )
                     elif event.type == "content_block_start":
                         if event.content_block is not None and event.content_block.type == "tool_use":
                             current_tool = {
@@ -233,6 +227,19 @@ class AnthropicProvider(Provider):
                     elif event.type == "content_block_delta":
                         if event.delta.type == "input_json_delta" and current_tool:
                             current_tool["input_json"] += event.delta.partial_json
+                        elif event.delta.type == "text_delta":
+                            # Anthropic has no top-level "text" stream event —
+                            # text arrives as a content_block_delta with
+                            # delta.type == "text_delta". Without this branch,
+                            # every streaming Claude response yields zero text
+                            # and the final answer comes back empty.
+                            text = getattr(event.delta, "text", "") or ""
+                            content += text
+                            if text:
+                                yield ChatResponse(
+                                    content=text,
+                                    model=self._model,
+                                )
                     elif event.type == "content_block_stop":
                         if current_tool:
                             try:
