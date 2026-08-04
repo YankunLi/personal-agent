@@ -240,6 +240,18 @@ async def review_files(
     return _parse_report(data, resp.content)
 
 
+def _norm_path(p: str) -> str:
+    """Normalize a repo-relative path to forward slashes.
+
+    ``str(Path)`` uses backslashes on Windows, so a module prefix built from
+    ``module_dir.relative_to(repo_root)`` becomes ``src\\personal_agent/`` — a
+    hybrid that never matches the reviewer's ``/``-separated bug locations
+    (or their backslash copies of the file headers). Normalize both sides so
+    scoping works identically on every platform.
+    """
+    return p.replace("\\", "/")
+
+
 def _bugs_for_module(bugs: list[Bug], module_prefix: str) -> list[Bug]:
     """Filter bugs to those whose location is within ``module_prefix``.
 
@@ -248,8 +260,13 @@ def _bugs_for_module(bugs: list[Bug], module_prefix: str) -> list[Bug]:
     directory are relevant — passing bugs from other modules adds noise and
     risks the reviewer "verifying" fixes in code it isn't looking at.
     """
-    prefix = module_prefix.rstrip("/") + "/"
-    return [b for b in bugs if b.location.startswith(prefix) or b.location == module_prefix]
+    normalized = _norm_path(module_prefix)
+    prefix = normalized.rstrip("/") + "/"
+    return [
+        b for b in bugs
+        if _norm_path(b.location).startswith(prefix)
+        or _norm_path(b.location) == normalized
+    ]
 
 
 async def review_module(
@@ -319,7 +336,16 @@ async def review_tree(
     # Run per-module reviews in parallel — each is an independent LLM call,
     # so serializing them multiplied wall-clock time by the module count.
     async def _review_one(d: Path) -> BugReport:
-        return await review_module(provider, d, repo_root, prev_bugs, applied_fixes, guide)
+        try:
+            return await review_module(provider, d, repo_root, prev_bugs, applied_fixes, guide)
+        except Exception as e:
+            # review_module only guards read_text; rglob can raise
+            # PermissionError and relative_to can raise ValueError (a symlinked
+            # dir escaping the repo root). One unreadable directory must not
+            # kill the whole session — degrade to an error report that the
+            # loop escalates to BLOCKED.
+            logger.exception("Module review failed for %s: %s", d, e)
+            return BugReport(bugs=[], error=True)
 
     reports = await asyncio.gather(*[_review_one(d) for d in top_dirs])
     for d, report in zip(top_dirs, reports):
@@ -339,10 +365,10 @@ async def review_tree(
         if files:
             # Top-level .py files: scope to bugs whose location matches the file exactly
             scoped_prev = [b for b in (prev_bugs or []) if any(
-                b.location.startswith(str(f[0])) for f in files
+                _norm_path(b.location).startswith(_norm_path(str(f[0]))) for f in files
             )]
             scoped_applied = [b for b in (applied_fixes or []) if any(
-                b.location.startswith(str(f[0])) for f in files
+                _norm_path(b.location).startswith(_norm_path(str(f[0]))) for f in files
             )]
             report = await review_files(provider, files, scoped_prev, scoped_applied, guide)
             if report.error:
