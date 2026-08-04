@@ -91,6 +91,12 @@ class ReflectionAgent(BaseAgent):
         # Load relevant memories
         await self._load_memories(state, task)
 
+        # Boundary of pre-run messages (system prompt, replayed short-term
+        # history, task). Iteration pruning below must never touch these:
+        # the replayed history contains assistant messages from previous
+        # turns, and stripping them corrupts the context for multi-turn use.
+        run_start_count = len(state.messages)
+
         current_response = ""
         critique = None
         llm_failure: str | None = None
@@ -148,9 +154,18 @@ class ReflectionAgent(BaseAgent):
             # into the latest one, so keeping them only adds one message per
             # iteration (the previous slice-to-msg_count_before left every
             # earlier response in place, so the list still grew linearly).
-            state.messages = [
-                m for m in state.messages[:msg_count_before] if m.role != Role.ASSISTANT
-            ]
+            # Only in-run assistant responses are pruned: replayed short-term
+            # history (before run_start_count) contains assistant messages
+            # from previous turns and must be preserved, otherwise the
+            # assistant half of the prior conversation is silently dropped
+            # in every multi-turn refinement.
+            state.messages = (
+                state.messages[:run_start_count]
+                + [
+                    m for m in state.messages[run_start_count:msg_count_before]
+                    if m.role != Role.ASSISTANT
+                ]
+            )
             # Prune full_messages in lockstep so consolidation input does not
             # grow unbounded across iterations.
             if hasattr(state, "full_messages") and len(state.full_messages) > msg_count_before:
