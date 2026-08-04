@@ -12,7 +12,7 @@ import time
 from typing import Any
 
 from personal_agent.core.agent import BaseAgent
-from personal_agent.exceptions import AgentError
+from personal_agent.exceptions import PersonalAgentError
 from personal_agent.types import AgentResult, AgentState, AgentStep, Role
 
 logger = logging.getLogger(__name__)
@@ -122,7 +122,18 @@ class PlanAndExecuteAgent(BaseAgent):
         base_msg_count = len(state.messages)
 
         # Phase 1: Generate plan
-        plan = await self._generate_plan(state)
+        try:
+            plan = await self._generate_plan(state)
+        except PersonalAgentError as e:
+            # A provider failure during plan generation must not crash the run.
+            # Without this guard, ProviderTimeoutError/ProviderRateLimitError
+            # (PersonalAgentError subclasses, not AgentError) escape run() and
+            # the caller gets an exception instead of a degraded answer.
+            logger.warning("Plan generation LLM call failed: %s", e)
+            state.final_answer = f"Failed to generate a plan: {e}"
+            state.done = True
+            await self._fire("on_answer", state.final_answer)
+            return await self._finalize(state, start_time, task=task)
         if not plan:
             state.final_answer = "Failed to generate a plan."
             state.done = True
@@ -213,7 +224,7 @@ class PlanAndExecuteAgent(BaseAgent):
                             "max replans reached" if replan_count >= self.MAX_REPLAN_ATTEMPTS else "last step failed",
                         )
                 i += 1
-        except AgentError as e:
+        except PersonalAgentError as e:
             logger.warning("Plan execution LLM call failed: %s", e)
             llm_failure = str(e)
 
@@ -225,7 +236,7 @@ class PlanAndExecuteAgent(BaseAgent):
             try:
                 final_answer = await self._synthesize(state, plan, step_results)
                 llm_calls += 1
-            except AgentError as e:
+            except PersonalAgentError as e:
                 logger.warning("Synthesis LLM call failed: %s", e)
                 llm_failure = str(e)
                 final_answer = None

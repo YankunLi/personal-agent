@@ -13,7 +13,7 @@ import time
 from typing import Any
 
 from personal_agent.core.agent import BaseAgent
-from personal_agent.exceptions import AgentError
+from personal_agent.exceptions import PersonalAgentError
 from personal_agent.types import AgentResult, AgentState, AgentStep, Role
 
 logger = logging.getLogger(__name__)
@@ -106,7 +106,7 @@ class ReflectionAgent(BaseAgent):
             # Phase 1: Generate
             try:
                 current_response = await self._generate(state, task, critique)
-            except AgentError as e:
+            except PersonalAgentError as e:
                 logger.warning("Reflection generate failed at iteration %d: %s", iteration + 1, e)
                 llm_failure = str(e)
                 break

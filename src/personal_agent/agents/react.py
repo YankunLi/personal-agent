@@ -11,7 +11,7 @@ import time
 from typing import Any
 
 from personal_agent.core.agent import BaseAgent
-from personal_agent.exceptions import AgentError
+from personal_agent.exceptions import PersonalAgentError
 from personal_agent.types import AgentResult, AgentState, AgentStep, Role
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ class ReActAgent(BaseAgent):
             # 1. Call the LLM
             try:
                 response = await self._call_llm(state)
-            except AgentError as e:
+            except PersonalAgentError as e:
                 logger.warning("ReAct LLM call failed at step %d: %s", step_count, e)
                 llm_failure = str(e)
                 break
