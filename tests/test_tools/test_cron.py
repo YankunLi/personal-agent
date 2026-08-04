@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from personal_agent.cron_scheduler import CronScheduler, _cron_matches, _next_cron_match
+from personal_agent.cron_scheduler import CronJob, CronScheduler, _cron_matches, _next_cron_match
 from personal_agent.tools.builtin.cron import (
     create_cron_create_tool,
     create_cron_delete_tool,
@@ -161,6 +161,48 @@ class TestCronList:
         assert "Afternoon reminder" in result.output
         assert "recurring" in result.output
         assert "one-shot" in result.output
+
+
+class TestCronFromDictCoercion:
+    """from_dict must coerce string booleans defensively."""
+
+    def test_string_false_is_not_truthy(self):
+        # bool("false") is True — a tampered/foreign-written durable job file
+        # with a string value would otherwise reload a one-shot job as
+        # recurring and it would fire forever.
+        job = CronJob.from_dict({
+            "cron": "0 9 * * *",
+            "prompt": "test",
+            "recurring": "false",
+            "durable": "true",
+        })
+        assert job.recurring is False
+        assert job.durable is True
+
+    def test_boolean_values_preserved(self):
+        job = CronJob.from_dict({
+            "cron": "0 9 * * *",
+            "prompt": "test",
+            "recurring": True,
+            "durable": False,
+        })
+        assert job.recurring is True
+        assert job.durable is False
+
+    def test_missing_flags_fall_back_to_defaults(self):
+        job = CronJob.from_dict({"cron": "0 9 * * *", "prompt": "test"})
+        assert job.recurring is True
+        assert job.durable is False
+
+    def test_numeric_booleans(self):
+        job = CronJob.from_dict({
+            "cron": "0 9 * * *",
+            "prompt": "test",
+            "recurring": 1,
+            "durable": 0,
+        })
+        assert job.recurring is True
+        assert job.durable is False
 
 
 class TestCronSchedulerMaxJobs:

@@ -159,6 +159,25 @@ class CronJob:
             "fired_count": self.fired_count,
         }
 
+    @staticmethod
+    def _coerce_bool(value: Any, default: bool) -> bool:
+        """Coerce a durable-storage JSON value to bool defensively.
+
+        ``bool("false")`` is True, so a tampered job file with a string
+        ``"recurring": "false"`` would reload a one-shot job as recurring and
+        it would fire forever. Accept booleans and the common truthy/falsy
+        string and numeric representations; anything else falls back.
+        """
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return default
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CronJob":
         """Build a CronJob from a dict, coercing types from (possibly tampered)
@@ -168,8 +187,8 @@ class CronJob:
             job = cls(
                 cron=str(data["cron"]),
                 prompt=str(data["prompt"]),
-                recurring=bool(data.get("recurring", True)),
-                durable=bool(data.get("durable", False)),
+                recurring=cls._coerce_bool(data.get("recurring"), True),
+                durable=cls._coerce_bool(data.get("durable"), False),
                 job_id=str(data["id"]) if data.get("id") else None,
             )
         except (KeyError, TypeError) as e:
