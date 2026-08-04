@@ -37,9 +37,9 @@ class ReActAgent(BaseAgent):
     # Max consecutive failures of the same tool before forcing a stop
     MAX_CONSECUTIVE_TOOL_FAILURES = 3
 
-    def __init__(self, system_prompt: str = "", **kwargs):
+    def __init__(self, system_prompt: str | None = None, **kwargs):
         super().__init__(
-            system_prompt=system_prompt if system_prompt is not None else DEFAULT_REACT_SYSTEM_PROMPT,
+            system_prompt=system_prompt or DEFAULT_REACT_SYSTEM_PROMPT,
             **kwargs,
         )
 

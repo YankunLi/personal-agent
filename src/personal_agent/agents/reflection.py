@@ -69,14 +69,14 @@ class ReflectionAgent(BaseAgent):
 
     def __init__(
         self,
-        system_prompt: str = "",
+        system_prompt: str | None = None,
         critique_threshold: float = 8.0,
         max_iterations: int = 3,
         min_score: float = 6.0,
         **kwargs,
     ):
         super().__init__(
-            system_prompt=system_prompt if system_prompt is not None else DEFAULT_REFLECTION_SYSTEM_PROMPT,
+            system_prompt=system_prompt or DEFAULT_REFLECTION_SYSTEM_PROMPT,
             **kwargs,
         )
         self._critique_threshold = critique_threshold

@@ -48,7 +48,7 @@ class ParallelJudgeAgent(BaseAgent):
     ):
         sp = kwargs.pop("system_prompt", None)
         super().__init__(
-            system_prompt=sp if sp is not None else PARALLEL_JUDGE_SYSTEM_PROMPT,
+            system_prompt=sp or PARALLEL_JUDGE_SYSTEM_PROMPT,
             **kwargs,
         )
         self._agent_configs = agents or []

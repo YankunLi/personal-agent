@@ -103,9 +103,9 @@ class PlanAndExecuteAgent(BaseAgent):
     # Max replan attempts before giving up
     MAX_REPLAN_ATTEMPTS = 3
 
-    def __init__(self, system_prompt: str = "", max_substeps: int = 5, **kwargs):
+    def __init__(self, system_prompt: str | None = None, max_substeps: int = 5, **kwargs):
         super().__init__(
-            system_prompt=system_prompt if system_prompt is not None else DEFAULT_PLAN_EXECUTE_SYSTEM_PROMPT,
+            system_prompt=system_prompt or DEFAULT_PLAN_EXECUTE_SYSTEM_PROMPT,
             **kwargs,
         )
         self._max_substeps = max_substeps

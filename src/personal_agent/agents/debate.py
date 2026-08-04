@@ -62,7 +62,7 @@ class DebateAgent(BaseAgent):
     ):
         sp = kwargs.pop("system_prompt", None)
         super().__init__(
-            system_prompt=sp if sp is not None else DEBATE_SYSTEM_PROMPT,
+            system_prompt=sp or DEBATE_SYSTEM_PROMPT,
             **kwargs,
         )
         self._roles = roles or []

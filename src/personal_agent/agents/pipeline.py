@@ -32,7 +32,7 @@ class PipelineAgent(BaseAgent):
     def __init__(self, stages: list[PipelineStageConfig] | None = None, providers: dict[str, ProviderCredentials] | None = None, **kwargs):
         sp = kwargs.pop("system_prompt", None)
         super().__init__(
-            system_prompt=sp if sp is not None else DEFAULT_PIPELINE_SYSTEM_PROMPT,
+            system_prompt=sp or DEFAULT_PIPELINE_SYSTEM_PROMPT,
             **kwargs,
         )
         self._stage_configs = stages or []
