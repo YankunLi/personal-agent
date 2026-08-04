@@ -96,8 +96,14 @@ def create_self_upgrade_tool(
                     results.append("Working memory not available.")
             if memory_type in ("long_term", "both"):
                 if _long_term_memory:
-                    await _long_term_memory.forget(key)
-                    results.append(f"Key '{key}' removed from long-term memory.")
+                    # The set path stores the memory under the key as its name,
+                    # so forget(key) can find it. Report honestly instead of
+                    # claiming success when nothing was actually removed.
+                    deleted = await _long_term_memory.forget(key)
+                    if deleted:
+                        results.append(f"Key '{key}' removed from long-term memory.")
+                    else:
+                        results.append(f"No long-term memory found for key '{key}'.")
                 else:
                     results.append("Long-term memory not available.")
             if memory_type in ("agent_knowledge", "both"):
@@ -114,9 +120,14 @@ def create_self_upgrade_tool(
 
         if memory_type in ("long_term", "both"):
             if _long_term_memory:
+                # Store under a name derived from the key so a later
+                # delete-by-key can find it. remember() would otherwise derive
+                # the name from a content hash (metadata has no "name" field),
+                # making forget(key) a silent no-op while the delete path below
+                # still reported "removed".
                 name = await _long_term_memory.remember(
                     content=instruction,
-                    metadata={"source": "self_upgrade", "key": key},
+                    metadata={"source": "self_upgrade", "key": key, "name": key},
                 )
                 results.append(f"Stored in long-term memory (name: {name})")
             else:

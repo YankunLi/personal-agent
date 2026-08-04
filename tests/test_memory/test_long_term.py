@@ -82,6 +82,32 @@ class TestLongTermMemory:
         assert await ltm.count() == 0
 
     @pytest.mark.asyncio
+    async def test_key_named_memory_deletable_by_key(self, temp_memory_dir):
+        """update_instruction stores long-term memories under the key as name,
+        so forget(key) must find and delete them."""
+        store = FileMemoryStore(storage_dir=temp_memory_dir)
+        ltm = LongTermMemory(store)
+
+        name = await ltm.remember(
+            "Remember to use ruff for linting.",
+            metadata={"source": "self_upgrade", "key": "style", "name": "style"},
+        )
+        assert name == "style"
+        assert await ltm.count() == 1
+
+        assert await ltm.forget("style")
+        assert await ltm.count() == 0
+
+    @pytest.mark.asyncio
+    async def test_forget_missing_key_returns_false(self, temp_memory_dir):
+        store = FileMemoryStore(storage_dir=temp_memory_dir)
+        ltm = LongTermMemory(store)
+
+        await ltm.remember("Some memory.", metadata={"name": "x"})
+        assert await ltm.forget("nonexistent") is False
+        assert await ltm.count() == 1
+
+    @pytest.mark.asyncio
     async def test_clear(self, temp_memory_dir):
         store = FileMemoryStore(storage_dir=temp_memory_dir)
         ltm = LongTermMemory(store)
