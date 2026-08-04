@@ -126,7 +126,10 @@ class DebateAgent(BaseAgent):
 
                 # Collect responses; only update previous_responses if this round
                 # has at least one success, so failed rounds don't overwrite valid
-                # responses from earlier rounds.
+                # responses from earlier rounds. The merge is per-role: a role that
+                # succeeded in an earlier round but fails in this one keeps its
+                # prior answer — overwriting it with "[Error: ...]" would silently
+                # drop a valid perspective from the judge's synthesis.
                 new_responses: dict[str, str] = {}
                 round_has_success = False
                 for role, result in zip(self._roles, round_results):
@@ -134,7 +137,11 @@ class DebateAgent(BaseAgent):
                         raise result
                     if isinstance(result, BaseException):
                         logger.error("Role %s failed: %s", role.name, result)
-                        new_responses[role.name] = f"[Error: {result}]"
+                        prior = previous_responses.get(role.name)
+                        if prior and not prior.startswith("[Error: "):
+                            new_responses[role.name] = prior
+                        else:
+                            new_responses[role.name] = f"[Error: {result}]"
                     else:
                         round_has_success = True
                         all_failed = False
