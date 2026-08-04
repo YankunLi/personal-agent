@@ -799,6 +799,19 @@ class DevReviewLoop:
                 # the per-bug retry cap will escalate to BLOCKED.
                 logger.exception("Fix agent failed for %s: %s", bug.location, e)
                 console.print(Text(f"  ⚠ 修复 agent 失败（计入重试次数）: {e}", "warning"))
+                # Discard whatever the failed fix left in the worktree. A fix
+                # agent that crashed mid-edit leaves partial uncommitted
+                # changes behind; the next bug's commit_all runs git add -A
+                # and would sweep them into the NEXT bug's commit, mislabeling
+                # bug A's half-applied work under bug B's message — the same
+                # failure mode the commit-failure branch below guards against.
+                try:
+                    await reset_worktree(wt_path)
+                except Exception as reset_err:
+                    logger.exception(
+                        "Worktree reset failed after fix-agent error for %s: %s",
+                        bug.location, reset_err,
+                    )
                 continue
 
             # Commit the fix. commit_all raises on `git commit` failure (hook,
