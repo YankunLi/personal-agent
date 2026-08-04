@@ -7,14 +7,12 @@ ran with an empty base system prompt and the ReAct/PlanExecute/Reflection
 framework instructions were never used.
 """
 
-import pytest
-
+from personal_agent.agents.debate import DEBATE_SYSTEM_PROMPT, DebateAgent
+from personal_agent.agents.parallel_judge import PARALLEL_JUDGE_SYSTEM_PROMPT, ParallelJudgeAgent
 from personal_agent.agents.pipeline import PipelineAgent
+from personal_agent.agents.plan_execute import PlanAndExecuteAgent
 from personal_agent.agents.react import ReActAgent
 from personal_agent.agents.reflection import ReflectionAgent
-from personal_agent.agents.plan_execute import PlanAndExecuteAgent
-from personal_agent.agents.debate import DebateAgent, DEBATE_SYSTEM_PROMPT
-from personal_agent.agents.parallel_judge import PARALLEL_JUDGE_SYSTEM_PROMPT, ParallelJudgeAgent
 
 
 class _DummyProvider:

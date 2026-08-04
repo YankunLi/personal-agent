@@ -6,7 +6,7 @@ short-term history by _init_state. In multi-turn use this wiped the
 assistant half of the prior conversation, corrupting refinement context.
 """
 
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
 
 import pytest
 

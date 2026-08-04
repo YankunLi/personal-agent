@@ -6,7 +6,7 @@ AgentError, so a ProviderTimeoutError/ProviderRateLimitError crashed run()
 instead of producing the partial-answer fallback.
 """
 
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
 
 import pytest
 

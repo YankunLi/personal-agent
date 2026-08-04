@@ -48,7 +48,9 @@ class DummySubAgent:
 
 
 def _role(name: str) -> DebateRoleConfig:
-    return DebateRoleConfig(name=name, provider="openai", model="m", system_prompt="", max_tokens=1000)
+    return DebateRoleConfig(
+        name=name, provider="openai", model="m", system_prompt="", max_tokens=1000
+    )
 
 
 @pytest.mark.asyncio
@@ -59,7 +61,9 @@ async def test_debate_preserves_earlier_round_success(monkeypatch):
         max_rounds=2,
     )
 
-    async def fake_create_sub_agent(cfg, providers=None, extra_tools=None, consolidation_provider=None):
+    async def fake_create_sub_agent(
+        cfg, providers=None, extra_tools=None, consolidation_provider=None
+    ):
         return DummySubAgent(cfg.description or cfg.provider)
 
     monkeypatch.setattr(debate_module, "create_sub_agent", fake_create_sub_agent)
@@ -97,7 +101,9 @@ async def test_debate_all_roles_fail_second_round_keeps_round_one(monkeypatch):
         max_rounds=2,
     )
 
-    async def fake_create_sub_agent(cfg, providers=None, extra_tools=None, consolidation_provider=None):
+    async def fake_create_sub_agent(
+        cfg, providers=None, extra_tools=None, consolidation_provider=None
+    ):
         return DummySubAgent(cfg.description or cfg.provider)
 
     monkeypatch.setattr(debate_module, "create_sub_agent", fake_create_sub_agent)

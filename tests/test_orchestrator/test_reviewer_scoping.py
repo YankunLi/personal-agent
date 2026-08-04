@@ -7,8 +7,6 @@ result, prev_bugs/applied_fixes context was silently dropped on Windows and
 already-fixed bugs were re-reported every round.
 """
 
-import pytest
-
 from personal_agent.orchestrator.reviewer import _bugs_for_module, _norm_path
 from personal_agent.orchestrator.state import Bug
 

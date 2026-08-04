@@ -7,7 +7,6 @@ the earlier answer before it reached the judge.
 
 import pytest
 
-from personal_agent.agents import parallel_judge as pj_module
 from personal_agent.agents.parallel_judge import ParallelJudgeAgent
 from personal_agent.config import ParallelAgentConfig
 from personal_agent.providers.base import ChatResponse, Provider
@@ -30,7 +29,9 @@ class DummyProvider(Provider):
 
 
 def _cfg(name: str) -> ParallelAgentConfig:
-    return ParallelAgentConfig(name=name, pattern="react", provider="openai", model="m", system_prompt="")
+    return ParallelAgentConfig(
+        name=name, pattern="react", provider="openai", model="m", system_prompt=""
+    )
 
 
 @pytest.mark.asyncio
