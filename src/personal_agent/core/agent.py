@@ -89,6 +89,7 @@ class BaseAgent(ABC):
         self._streaming_enabled = False
         self._cached_system_prompt: str | None = None
         self._cached_self_instruction: str | None = None
+        self._cached_knowledge_revision: int | None = None
         self._cached_memory_index: str | None = None
         self._memory_index_valid: bool = False
 
@@ -370,10 +371,22 @@ class BaseAgent(ABC):
     async def _build_system_prompt(self) -> str:
         """Build the full system prompt from base prompt + skills + agent knowledge.
 
-        Results are cached until self_instruction changes in working memory.
+        Results are cached until self_instruction changes in working memory OR
+        the agent-knowledge file is rewritten. The knowledge revision is an
+        in-memory counter on AgentKnowledge (no I/O), so the cache check stays
+        cheap while still picking up mid-run AGENT.md updates (e.g. via
+        update_instruction memory_type=agent_knowledge or background
+        consolidation).
         """
         self_instruction = self.working.get("self_instruction")
-        if self._cached_system_prompt is not None and self_instruction == self._cached_self_instruction:
+        knowledge_revision = (
+            self.agent_knowledge.revision if self.agent_knowledge else None
+        )
+        if (
+            self._cached_system_prompt is not None
+            and self_instruction == self._cached_self_instruction
+            and knowledge_revision == self._cached_knowledge_revision
+        ):
             return self._cached_system_prompt
 
         parts = [self._base_system_prompt] if self._base_system_prompt else []
@@ -398,6 +411,7 @@ class BaseAgent(ABC):
 
         self._cached_system_prompt = "\n\n".join(parts)
         self._cached_self_instruction = self_instruction
+        self._cached_knowledge_revision = knowledge_revision
         return self._cached_system_prompt
 
     async def _rebuild_system_message(self, state: AgentState) -> None:

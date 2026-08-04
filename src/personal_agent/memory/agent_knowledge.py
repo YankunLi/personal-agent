@@ -55,6 +55,20 @@ class AgentKnowledge:
         self._global_path = Path(global_path).expanduser()
         self._project_dir = Path(project_dir) if project_dir else None
         self._lock = asyncio.Lock()
+        self._revision = 0
+
+    @property
+    def revision(self) -> int:
+        """Bumped on every write; lets the system-prompt cache detect changes.
+
+        BaseAgent caches the assembled system prompt (which embeds this file's
+        content) keyed on self_instruction only. Without a revision, an agent
+        updating its own AGENT.md mid-run (update_instruction agent_knowledge,
+        or background consolidation) would keep reading the stale cached prompt
+        until some unrelated self_instruction change. Reading the revision is
+        free (an in-memory int) unlike re-reading the file every LLM call.
+        """
+        return self._revision
 
     @property
     def project_path(self) -> Path | None:
@@ -104,6 +118,7 @@ class AgentKnowledge:
 
             new_text = self._build_file(sections)
             await asyncio.to_thread(self._write_file, self._global_path, new_text)
+            self._revision += 1
 
     async def append_learnings(self, learnings: list[dict]) -> int:
         """Append learnings from consolidation to the global AGENT.md.
@@ -167,6 +182,7 @@ class AgentKnowledge:
             # Rebuild the file
             new_text = self._build_file(existing)
             await asyncio.to_thread(self._write_file, self._global_path, new_text)
+            self._revision += 1
             return added
 
     # ── Internal helpers ────────────────────────────────────────────────────
