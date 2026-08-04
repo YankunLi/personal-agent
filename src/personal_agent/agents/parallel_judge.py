@@ -90,8 +90,15 @@ class ParallelJudgeAgent(BaseAgent):
             # Disambiguate unnamed agents by index: two agents sharing a
             # provider and no name would otherwise collide as dict keys and
             # the earlier answer would be silently overwritten (and never
-            # reach the judge).
-            name = cfg.name or f"{cfg.provider}-{idx}"
+            # reach the judge). The same collision happens for two agents
+            # configured with the SAME explicit name — keep disambiguating
+            # until the key is unique so no answer is dropped.
+            base_name = cfg.name or f"{cfg.provider}-{idx}"
+            name = base_name
+            suffix = 1
+            while name in agent_answers:
+                suffix += 1
+                name = f"{base_name}#{suffix}"
             if isinstance(result, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
                 raise result
             if isinstance(result, BaseException):
