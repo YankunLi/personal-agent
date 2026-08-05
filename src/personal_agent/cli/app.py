@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from pathlib import Path
 
 from rich.table import Table
@@ -22,72 +23,82 @@ from personal_agent.cli.runner import (
 from personal_agent.cli.theme import console
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Personal Agent - Multi-pattern AI agent framework",
-    )
-    subparsers = parser.add_subparsers(dest="command", help="Subcommands")
+# Main-parser options that consume a following value. When scanning argv for
+# the first bare token, these must skip their value, otherwise the value would
+# be mistaken for the task/command token.
+_INIT_SPLIT_VALUE_OPTIONS = {
+    "-c", "-w", "-p", "-m",
+    "--config", "--workdir", "--pattern", "--provider", "--model", "--api-key",
+    "--req", "--review-guide", "--ws-host", "--ws-port",
+    "--feishu-port", "--feishu-path",
+}
 
-    # pa init
-    init_parser = subparsers.add_parser("init", help="Initialize current directory for personal-agent")
+
+def _split_init_command(argv: list[str]) -> tuple[str | None, list[str]]:
+    """Return ("init", remaining_args) if the first bare token is the init
+    subcommand, otherwise (None, argv).
+
+    The `init` subcommand cannot share an argparse parser with the `task`
+    positional: argparse treats the first bare token as a subcommand choice,
+    so `pa "What is the capital of France?"` fails with `invalid choice`
+    instead of running the task. Detect it manually before argparse.
+    """
+    i = 0
+    after_sep = False
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--":
+            after_sep = True
+            i += 1
+            continue
+        if not after_sep and arg.startswith("-") and arg != "-":
+            if arg.startswith("--"):
+                name = arg.split("=", 1)[0]
+                if name in _INIT_SPLIT_VALUE_OPTIONS and "=" not in arg:
+                    i += 2  # skip the option's value
+                    continue
+            elif arg in _INIT_SPLIT_VALUE_OPTIONS:
+                i += 2  # skip the option's value
+                continue
+            i += 1
+            continue
+        if arg == "init":
+            return "init", argv[:i] + argv[i + 1:]
+        return None, argv
+    return None, argv
+
+
+def _run_init(argv: list[str]) -> None:
+    """Handle the `pa init ...` subcommand."""
+    init_parser = argparse.ArgumentParser(
+        prog="pa init",
+        description="Initialize current directory for personal-agent",
+    )
     init_parser.add_argument("--name", "-n", help="Project name (defaults to directory name)")
     init_parser.add_argument("--description", "-d", default="", help="Project description")
     init_parser.add_argument("-w", "--workdir", help="Working directory (defaults to current directory)")
+    args = init_parser.parse_args(argv)
+    workdir = Path.cwd()
+    if args.workdir:
+        workdir = Path(args.workdir).resolve()
+    cmd_init(args, workdir)
 
-    # pa (default: run task or interactive)
-    parser.add_argument("task", nargs="?", help="Task for the agent to execute")
-    parser.add_argument("-c", "--config", help="Path to config file (JSON or YAML)")
-    parser.add_argument("-w", "--workdir", help="Working directory (defaults to current directory)")
-    parser.add_argument(
-        "-p",
-        "--pattern",
-        choices=["auto", "react", "plan_execute", "reflection", "pipeline", "debate", "parallel_judge"],
-        help="Agent pattern (default: auto)",
-    )
-    parser.add_argument(
-        "--provider",
-        help="LLM provider (openai, deepseek, qwen, zhipu, hunyuan, anthropic, wenxin)",
-    )
-    parser.add_argument("-m", "--model", help="Model name")
-    parser.add_argument("--api-key", help="API key")
-    parser.add_argument("--list-providers", action="store_true", help="List available providers and exit")
-    parser.add_argument("--interactive", "-i", action="store_true", help="Run in interactive mode")
-    parser.add_argument(
-        "--serve", action="store_true", help="Start WebSocket server for web UI access (use with -i)"
-    )
-    parser.add_argument("--ws-host", default="localhost", help="WebSocket server host (default: localhost)")
-    parser.add_argument("--ws-port", type=int, default=8765, help="WebSocket server port (default: 8765)")
-    parser.add_argument(
-        "--feishu", action="store_true", help="Start Feishu bot webhook server (use with -i)"
-    )
-    parser.add_argument("--feishu-port", type=int, default=8080, help="Feishu webhook port (default: 8080)")
-    parser.add_argument(
-        "--feishu-path", default="/feishu/webhook", help="Feishu webhook path (default: /feishu/webhook)"
-    )
-    parser.add_argument(
-        "--loop", action="store_true",
-        help="Autonomous dev-review loop: develop → review → fix → review → ... until zero bugs",
-    )
-    parser.add_argument(
-        "--req", default="requirements.md",
-        help="Path to requirements file for --loop mode (default: requirements.md in workdir)",
-    )
-    parser.add_argument(
-        "--review-guide",
-        help="Path to a file with supplementary review-focus guidance for --loop mode. "
-             "Contents are injected into every reviewer call as '本次审查重点', supplementing "
-             "(not replacing) the base review checklist. Optional.",
-    )
 
-    args = parser.parse_args()
+def main(argv: list[str] | None = None) -> None:
+    if argv is None:
+        argv = sys.argv[1:]
+
+    command, command_args = _split_init_command(argv)
+    if command == "init":
+        _run_init(command_args)
+        return
+
+    parser = _build_main_parser()
+    args = parser.parse_args(argv)
 
     workdir = Path.cwd()
-    if hasattr(args, "workdir") and args.workdir:
+    if getattr(args, "workdir", None):
         workdir = Path(args.workdir).resolve()
-
-    if args.command == "init":
-        cmd_init(args, workdir)
-        return
 
     if args.list_providers:
         _print_providers()
@@ -132,6 +143,63 @@ def main() -> None:
         asyncio.run(run_one_shot(args.task, args.config, workdir, overrides))
     else:
         parser.print_help()
+
+
+def _build_main_parser() -> argparse.ArgumentParser:
+    """Build the main CLI parser.
+
+    Deliberately has NO subparsers: a `task` positional cannot coexist with
+    subparsers on one parser because argparse consumes the first bare token as
+    the subcommand choice, breaking the documented `pa "task"` usage. The
+    `init` subcommand is dispatched separately in main().
+    """
+    parser = argparse.ArgumentParser(
+        description="Personal Agent - Multi-pattern AI agent framework",
+    )
+    parser.add_argument("task", nargs="?", help="Task for the agent to execute")
+    parser.add_argument("-c", "--config", help="Path to config file (JSON or YAML)")
+    parser.add_argument("-w", "--workdir", help="Working directory (defaults to current directory)")
+    parser.add_argument(
+        "-p",
+        "--pattern",
+        choices=["auto", "react", "plan_execute", "reflection", "pipeline", "debate", "parallel_judge"],
+        help="Agent pattern (default: auto)",
+    )
+    parser.add_argument(
+        "--provider",
+        help="LLM provider (openai, deepseek, qwen, zhipu, hunyuan, anthropic, wenxin)",
+    )
+    parser.add_argument("-m", "--model", help="Model name")
+    parser.add_argument("--api-key", help="API key")
+    parser.add_argument("--list-providers", action="store_true", help="List available providers and exit")
+    parser.add_argument("--interactive", "-i", action="store_true", help="Run in interactive mode")
+    parser.add_argument(
+        "--serve", action="store_true", help="Start WebSocket server for web UI access (use with -i)"
+    )
+    parser.add_argument("--ws-host", default="localhost", help="WebSocket server host (default: localhost)")
+    parser.add_argument("--ws-port", type=int, default=8765, help="WebSocket server port (default: 8765)")
+    parser.add_argument(
+        "--feishu", action="store_true", help="Start Feishu bot webhook server (use with -i)"
+    )
+    parser.add_argument("--feishu-port", type=int, default=8080, help="Feishu webhook port (default: 8080)")
+    parser.add_argument(
+        "--feishu-path", default="/feishu/webhook", help="Feishu webhook path (default: /feishu/webhook)"
+    )
+    parser.add_argument(
+        "--loop", action="store_true",
+        help="Autonomous dev-review loop: develop → review → fix → review → ... until zero bugs",
+    )
+    parser.add_argument(
+        "--req", default="requirements.md",
+        help="Path to requirements file for --loop mode (default: requirements.md in workdir)",
+    )
+    parser.add_argument(
+        "--review-guide",
+        help="Path to a file with supplementary review-focus guidance for --loop mode. "
+             "Contents are injected into every reviewer call as '本次审查重点', supplementing "
+             "(not replacing) the base review checklist. Optional.",
+    )
+    return parser
 
 
 def _print_providers() -> None:
