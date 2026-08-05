@@ -444,6 +444,14 @@ class BaseAgent(ABC):
 
     async def _init_state(self, task: str, include_history: bool = True) -> AgentState:
         """Initialize agent state with system prompt, memory index, history, and user task."""
+        # Start each run with a fresh tool cache. The executor caches non-
+        # mutating tool results for the duration of a run (mutating calls
+        # invalidate it), so without clearing here an interactive agent would
+        # serve stale reads from the previous run (read → write → read returns
+        # the pre-write content across runs).
+        if self.tool_executor is not None:
+            await self.tool_executor.clear_cache()
+
         system_prompt = await self._build_system_prompt()
 
         # Load MEMORY.md index into system prompt (Claude Code style)

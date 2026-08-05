@@ -235,6 +235,15 @@ class ToolExecutor:
                             output=cached.output,
                             error=cached.error,
                         )
+                else:
+                    # A mutating tool can change the state that read tools
+                    # observe (write_file then read_file, etc.). Invalidate the
+                    # entire read cache BEFORE running it, so a subsequent read
+                    # never returns pre-write content even if the write fails
+                    # partway. This is done here (under _cache_lock) rather than
+                    # after the call so the mutating tool's own execution is
+                    # never raced by a concurrent cached read.
+                    self._cache.clear()
             except ToolNotFoundError:
                 pass  # Will be handled in the execution attempt below
 

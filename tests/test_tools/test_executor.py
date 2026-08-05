@@ -122,6 +122,57 @@ class TestCaching:
         assert r2.output == "result-2"  # cache was cleared, so function called again
         assert call_count[0] == 2
 
+    @pytest.mark.asyncio
+    async def test_mutating_call_invalidates_read_cache(self):
+        """A write must invalidate cached reads so read-after-write is fresh.
+
+        Previously the per-run cache kept read results forever and mutating
+        tools never invalidated it, so an agent's edit-then-re-read loop
+        verified against stale pre-write content.
+        """
+        state = {"content": "ORIGINAL"}
+
+        async def read_tool(path: str = "f") -> str:
+            return state["content"]
+
+        async def write_tool(path: str = "f", content: str = "x") -> str:
+            state["content"] = content
+            return "ok"
+
+        read = make_tool("read_file", read_tool, mutating=False, path={"type": "string"})
+        write = make_tool("write_file", write_tool, mutating=True, path={"type": "string"}, content={"type": "string"})
+        executor = make_executor([read, write])
+
+        r1 = await executor.execute(ToolCall(id="1", name="read_file", arguments={"path": "f"}))
+        assert r1.output == "ORIGINAL"
+        await executor.execute(ToolCall(id="2", name="write_file", arguments={"path": "f", "content": "UPDATED"}))
+        r2 = await executor.execute(ToolCall(id="3", name="read_file", arguments={"path": "f"}))
+
+        assert r2.output == "UPDATED"  # not the stale cached "ORIGINAL"
+
+    @pytest.mark.asyncio
+    async def test_failed_mutating_call_invalidates_read_cache(self):
+        """A mutating call that errors still invalidates the cache: the write
+        may have partially applied, so cached reads must not be trusted."""
+        state = {"content": "ORIGINAL"}
+
+        async def read_tool(path: str = "f") -> str:
+            return state["content"]
+
+        async def write_tool(path: str = "f", content: str = "x") -> str:
+            state["content"] = content
+            raise ToolExecutionError("disk full")
+
+        read = make_tool("read_file", read_tool, mutating=False, path={"type": "string"})
+        write = make_tool("write_file", write_tool, mutating=True, path={"type": "string"}, content={"type": "string"})
+        executor = make_executor([read, write])
+
+        await executor.execute(ToolCall(id="1", name="read_file", arguments={"path": "f"}))
+        await executor.execute(ToolCall(id="2", name="write_file", arguments={"path": "f", "content": "PARTIAL"}))
+        r2 = await executor.execute(ToolCall(id="3", name="read_file", arguments={"path": "f"}))
+
+        assert r2.output == "PARTIAL"
+
 
 # ── Tests: Transient Error Detection ─────────────────────────────────────────
 
