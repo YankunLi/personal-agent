@@ -200,10 +200,15 @@ async def create_agent(settings: Settings | None = None, task: str = "", user_id
     if pattern == "auto":
         pattern = classify(task) if task else "react"
 
-    # Create workspace directory
+    # Create workspace directory. Normalize to a Path early: AgentConfig
+    # stores workspace as a str, and downstream callers (discover_all's
+    # project_root / dir, worktree tools) do Path operations on it — passing
+    # the raw str crashed every create_agent() with
+    # TypeError: unsupported operand type(s) for /: 'str' and 'str'.
     workspace_dir = agent_cfg.workspace
     if workspace_dir:
-        Path(workspace_dir).expanduser().mkdir(parents=True, exist_ok=True)
+        workspace_dir = Path(workspace_dir).expanduser()
+        workspace_dir.mkdir(parents=True, exist_ok=True)
 
     # Create provider. Credentials must come from the resolved provider_name
     # (which may be an override), not settings.agent.provider: the previous
