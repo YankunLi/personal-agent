@@ -122,8 +122,15 @@ def create_web_search_tool(
                 return _extract_results(response.text)[:20000]
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
+            if status == 429:
+                # Rate limited — transient. Re-raise so the executor's retry
+                # logic (which classifies "\b429\b" / rate-limit as transient)
+                # can retry. Previously this was wrapped in ToolExecutionError,
+                # which the executor treats as permanent, so a rate-limited
+                # search never recovered.
+                raise
             if 400 <= status < 500:
-                # Client errors (bad query, auth) are permanent — don't retry.
+                # Other client errors (bad query, auth) are permanent — don't retry.
                 raise ToolExecutionError(f"Web search failed with HTTP {status}") from e
             # 5xx are transient — re-raise so the executor's retry logic can
             # classify and retry them instead of treating them as permanent.
