@@ -203,10 +203,18 @@ def _python_fallback(
                 # Python docs, ** is only special in glob.glob), so the most
                 # common pattern "**/*.py" matched nothing. Use a translator
                 # that handles ** as a recursive wildcard.
-                try:
-                    rel = os.path.relpath(fpath, search_root)
-                except ValueError:
-                    rel = fpath
+                if os.path.isfile(search_root):
+                    # Single-file search: relpath(file, file) == ".", which
+                    # never matches any glob filter. Match against the bare
+                    # filename so "*.py" on a single file works.
+                    rel = fname
+                else:
+                    try:
+                        rel = os.path.relpath(fpath, search_root)
+                    except ValueError:
+                        rel = fpath
+                # _glob_match normalizes backslash separators (os.path.relpath
+                # on Windows) to "/", so patterns like "src/*.py" match.
                 if not _glob_match(rel, glob_filter):
                     continue
             # Skip symlinks to prevent workspace traversal
@@ -343,7 +351,12 @@ def _glob_match(path: str, pattern: str) -> bool:
     Unlike PurePath.match, this treats ``**`` as a recursive wildcard that
     crosses directory separators, so ``**/*.py`` matches ``src/foo/bar.py``.
     A single ``*`` does not cross ``/``, and ``?`` matches one non-slash char.
+
+    Backslash separators (as produced by os.path.relpath on Windows) are
+    normalized to ``/`` so patterns written with forward slashes work on every
+    platform.
     """
+    path = path.replace("\\", "/")
     # Build a regex from the glob pattern.
     i = 0
     regex: list[str] = ["^"]

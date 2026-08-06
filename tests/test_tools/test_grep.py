@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
-from personal_agent.tools.builtin.grep import create_grep_tool
+from personal_agent.tools.builtin.grep import _glob_match, _python_fallback, create_grep_tool
 from personal_agent.tools.executor import ToolExecutor
 from personal_agent.tools.registry import ToolRegistry
 from personal_agent.types import ToolCall
@@ -144,3 +146,57 @@ async def test_head_limit(executor, tmp_path):
     assert result.error is None
     output_lines = result.output.strip().split("\n")
     assert len(output_lines) <= 6  # 5 results + possible truncation message
+
+
+def test_glob_match_forward_and_backslash_separators():
+    """_glob_match must treat both / and backslash as separators.
+
+    The Python fallback passes os.path.relpath() output, which is
+    backslash-separated on Windows. A pattern like "src/*.py" must match
+    "src\\x.py", not just "src/x.py".
+    """
+    assert _glob_match("src/x.py", "src/*.py")
+    assert _glob_match("src\\x.py", "src/*.py")
+    assert _glob_match("src/a/b.py", "**/*.py")
+    assert _glob_match("src\\a\\b.py", "**/*.py")
+    assert not _glob_match("src/a/b.py", "src/*.py")
+
+
+def test_python_fallback_glob_filter_windows_separators(tmp_path):
+    """Fallback glob filtering must work with OS-native path separators."""
+    sub = tmp_path / "src"
+    sub.mkdir()
+    (sub / "x.py").write_text("needle\n")
+    (tmp_path / "root.py").write_text("needle\n")
+
+    out = _python_fallback(
+        "needle", str(tmp_path), glob_filter="src/*.py",
+        output_mode="content", case_insensitive=None,
+        show_line_numbers=False, head_limit=None, offset=None,
+    )
+    assert "x.py" in out, out
+    assert "root.py" not in out, out
+
+
+def test_python_fallback_glob_filter_single_file(tmp_path):
+    """Glob filter on a single-file search must match the filename.
+
+    relpath(file, file) == ".", which no glob filter matches, so previously
+    "*.py" on a single .py file returned "(no matches)".
+    """
+    f = tmp_path / "only.py"
+    f.write_text("needle\n")
+
+    out = _python_fallback(
+        "needle", str(f), glob_filter="*.py",
+        output_mode="content", case_insensitive=None,
+        show_line_numbers=False, head_limit=None, offset=None,
+    )
+    assert "only.py" in out, out
+
+    out = _python_fallback(
+        "needle", str(f), glob_filter="*.txt",
+        output_mode="content", case_insensitive=None,
+        show_line_numbers=False, head_limit=None, offset=None,
+    )
+    assert "(no matches)" in out, out
