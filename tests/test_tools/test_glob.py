@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from personal_agent.tools.builtin.glob import create_glob_tool
@@ -101,3 +103,38 @@ async def test_max_results_truncation(executor, tmp_path):
     assert result.error is None
     assert "truncated" in result.output
     assert "3 of 10" in result.output
+
+
+@pytest.mark.asyncio
+async def test_symlink_directory_cannot_escape_workspace(tmp_path):
+    """A symlinked directory inside the workspace must not leak outside files.
+
+    Path.glob follows symlinked directories under ** (and when the pattern
+    names the symlink explicitly), reaching files whose own path is not a
+    symlink. Previously only the leaf was checked, so a symlink like
+    ws/sub -> /outside let glob("sub/**/*.txt") return /outside/secret.txt —
+    a workspace escape. Now any symlink in the component chain triggers a
+    resolve() containment check that drops the match.
+    """
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("TOP SECRET")
+
+    try:
+        os.symlink(outside, ws / "sub", target_is_directory=True)
+    except (OSError, NotImplementedError, PermissionError):
+        pytest.skip("symlinks not supported on this platform")
+
+    tool = create_glob_tool(workspace_dir=str(ws))
+    registry = ToolRegistry()
+    registry.register(tool)
+    executor2 = ToolExecutor(registry=registry)
+
+    for pattern in ("sub/**/*.txt", "sub/*.txt"):
+        tc = ToolCall(id="1", name="glob", arguments={"pattern": pattern})
+        result = await executor2.execute(tc)
+        assert result.error is None, result.error
+        assert "no matching files" in result.output, (pattern, result.output)
+        assert "secret" not in result.output, (pattern, result.output)

@@ -34,6 +34,32 @@ GLOB_PARAMETERS = {
 DEFAULT_MAX_RESULTS = 500
 
 
+def _path_has_symlink_component(search_dir: Path, target: Path) -> bool:
+    """True if any path component between search_dir and target is a symlink.
+
+    ``Path.glob`` follows symlinked *directories* — both under ``**`` recursion
+    and when the pattern names a symlinked directory explicitly (``sub/*``) —
+    so a match whose LEAF is not a symlink can still resolve outside the
+    workspace. ``search_dir`` itself is already fully resolved (via
+    ``resolve_path``), so walking its relative components and detecting a
+    symlink anywhere in the chain is enough to flag a path that needs a full
+    ``resolve()`` containment check.
+    """
+    try:
+        rel = target.relative_to(search_dir)
+    except ValueError:
+        return True  # Not even under search_dir — caller must verify.
+    cur = search_dir
+    for part in rel.parts:
+        cur = cur / part
+        try:
+            if cur.is_symlink():
+                return True
+        except OSError:
+            return True
+    return False
+
+
 def create_glob_tool(
     workspace_dir: str | None = None,
     max_results: int = DEFAULT_MAX_RESULTS,
@@ -61,18 +87,18 @@ def create_glob_tool(
             results: list[Path] = []
             ws_resolved = Path(workspace_dir).expanduser().resolve() if workspace_dir else None
             for p in raw:
-                # Path.glob with ** follows symlinks, which can reach files
-                # outside the workspace via a symlinked directory inside it.
-                # Only symlinks can escape, though — non-symlink results are
-                # guaranteed to be under search_dir (already validated within
-                # ws_resolved). Calling p.resolve() on every match stats every
-                # path component; skipping it for the common non-symlink case
-                # saves a stat storm on large result sets.
+                # Path.glob with ** follows symlinked directories, which can
+                # reach files outside the workspace via a symlinked directory
+                # inside it — and those files are NOT themselves symlinks, so
+                # a leaf-only is_symlink() check misses the escape. Only
+                # resolve the expensive full path when a symlink appears in
+                # the chain; otherwise the match is guaranteed to be under the
+                # already-resolved search_dir, saving a stat storm on large
+                # result sets.
                 if ws_resolved is not None:
                     try:
-                        if p.is_symlink():
-                            resolved = p.resolve()
-                            resolved.relative_to(ws_resolved)
+                        if _path_has_symlink_component(search_dir, p):
+                            p.resolve().relative_to(ws_resolved)
                     except (OSError, ValueError):
                         continue
                 results.append(p)
