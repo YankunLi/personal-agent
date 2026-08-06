@@ -70,21 +70,44 @@ class AgentServer:
             logger.info("Starting channel: %s", channel.name)
             tasks.append(asyncio.create_task(channel.start()))
 
-        # Wait for all channels to complete. Use return_exceptions so a single
-        # channel failure (e.g. WebSocket port already bound) does not abort the
-        # whole server and orphan the still-running channel tasks — the failed
-        # channel is logged and the remaining ones keep serving.
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        any_failed = False
-        for channel, result in zip(self._channels, results):
-            if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
-                any_failed = True
-                logger.error("Channel '%s' failed: %s", channel.name, result)
+        # Wait for channels to complete. Use FIRST_COMPLETED with explicit
+        # result inspection rather than gather(): blocking channels (WebSocket
+        # on server.wait_closed(), Feishu on stop_event.wait()) never return on
+        # their own, so when the primary channel exits normally (e.g. the user
+        # quits the interactive CLI) a bare gather would block forever on them
+        # and server.stop() would never run — the process hangs.
+        try:
+            pending = set(tasks)
+            while pending:
+                done, pending = await asyncio.wait(
+                    pending, return_when=asyncio.FIRST_COMPLETED,
+                )
+                for task in done:
+                    idx = tasks.index(task)
+                    channel = self._channels[idx]
+                    if task.cancelled():
+                        continue
+                    exc = task.exception()
+                    if exc is None:
+                        # Channel exited normally (e.g. CLI quit) — shut the
+                        # server down and let the remaining blocking channels
+                        # be stopped.
+                        logger.info("Channel '%s' exited", channel.name)
+                        pending = set()
+                        break
+                    if not isinstance(exc, asyncio.CancelledError):
+                        # A single channel failure (e.g. WebSocket port already
+                        # bound) must not abort the whole server — log it and
+                        # keep the remaining channels serving.
+                        logger.error("Channel '%s' failed: %s", channel.name, exc)
+        finally:
+            # Cancel any channel that is still blocking (WebSocket/Feishu) so
+            # start() returns; their real cleanup happens in stop() below.
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-        # When all channels have exited (normally or via failure), run cleanup
-        # so the cleanup task is cancelled and sessions are persisted. Without
-        # this, a full channel failure would leave the cleanup task orphaned
-        # and never save sessions. stop() is idempotent with the _running guard.
         if self._running:
             await self.stop()
 
