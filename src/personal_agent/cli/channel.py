@@ -804,8 +804,15 @@ class CLIChannel(Channel):
         self._agent = new_agent
         # Keep the tracked pattern in sync with the recreated agent, otherwise
         # auto-mode comparisons and /pattern display show a stale value (e.g.
-        # "react") after the user switches patterns and restarts.
+        # "react") after the user switches patterns and restarts. Mirror the
+        # normalization _create_agent applies ("auto" -> "react" when there is
+        # no task to classify): without it, _process_task's
+        # `suggested != self._current_pattern` is always true (classify never
+        # returns "auto"), so the very first task needlessly tears down and
+        # rebuilds the agent.
         self._current_pattern = self._overrides.get("pattern", self._settings.agent.pattern)
+        if self._current_pattern == "auto":
+            self._current_pattern = "react"
 
         if self._current_session:
             async with self._current_session.memory_lock:
