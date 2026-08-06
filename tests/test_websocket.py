@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from personal_agent.channels.base import ChannelMessage, SessionKey
+from personal_agent.channels.base import SessionKey
 from personal_agent.channels.websocket import WS_CHANNEL, WebSocketChannel
 from personal_agent.server.router import MessageRouter
 from personal_agent.session import SessionManager

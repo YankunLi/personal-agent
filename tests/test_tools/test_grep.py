@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from personal_agent.tools.builtin.grep import _glob_match, _python_fallback, create_grep_tool
