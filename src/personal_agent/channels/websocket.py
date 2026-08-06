@@ -317,6 +317,12 @@ class WebSocketChannel(Channel):
             session.channel = WS_CHANNEL
             session.user_id = "web-user"
             session.conversation_id = f"conn-{conn_id}"
+        # Persist the routing identity. create() already saved the session, but
+        # with the EMPTY channel/user_id/conversation_id defaults; the fields
+        # above are in-memory only, so a restart before the session's first
+        # task would reload it without routing and router.resolve() would
+        # create a fresh session, orphaning this one's history.
+        await asyncio.to_thread(session_mgr.save_session, session)
         self._conn_sessions[conn_id] = session
         # Reset agent for new session (under lock to prevent races with _get_or_create_agent)
         async with self._agent_lock:
