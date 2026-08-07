@@ -346,6 +346,17 @@ def _parse_config_file(path: Path) -> Settings:
 
     if data is None:
         data = {}
+    if not isinstance(data, dict):
+        # A config file whose top level is a list (or any other non-mapping)
+        # previously leaked a raw TypeError: Settings() argument after **
+        # must be a mapping — masking the actual config problem. Wrap it in a
+        # clean ConfigError so the caller sees "invalid configuration", not an
+        # internal exception type.
+        raise ConfigError(
+            f"Invalid configuration in '{path}': top-level value must be an "
+            f"object (got {type(data).__name__}). A config file maps section "
+            f"names to settings, e.g. {{\"agent\": {{...}}}}."
+        )
     try:
         return Settings(**data)
     except ValidationError as e:
