@@ -312,9 +312,27 @@ class DevReviewLoop:
                 continue
 
             last_req_hash = req_hash
-            await self._run_iteration(req_content)
+            merged = await self._run_iteration(req_content)
 
             if self._stopped:
+                break
+
+            if not merged:
+                # The iteration did NOT reach CLEAN (develop/commit/merge
+                # failure, or the inner review-fix loop gave up) — the work is
+                # stranded in a kept worktree and state is BLOCKED. Do NOT
+                # fall through to the unchanged-requirements check above, which
+                # would prompt "本轮需求已开发并通过审查" as if the requirement
+                # shipped (a user answering "n" would exit believing the work
+                # is in main). Stop the outer loop so the user can intervene
+                # (inspect the kept worktree, fix the main repo, etc.) and
+                # re-run pa --loop afterwards. Resetting last_req_hash to None
+                # alone would spin: the next iteration would re-develop the SAME
+                # requirement and fail again forever.
+                console.print(Text(
+                    "本轮迭代未到 CLEAN（BLOCKED），停止外层循环。处理完保留的 worktree 后重跑 pa --loop。",
+                    "warning",
+                ))
                 break
 
     async def _wait_for_req_change(self, old_hash: str) -> str:
@@ -336,7 +354,7 @@ class DevReviewLoop:
 
     # ── single iteration: develop + inner review-fix loop ────────────────
 
-    async def _run_iteration(self, req_content: str) -> None:
+    async def _run_iteration(self, req_content: str) -> bool:
         """One outer iteration: setup worktree → develop → review-fix loop → merge.
 
         Cleans up its own worktree at the end: auto-removes on successful
@@ -345,6 +363,11 @@ class DevReviewLoop:
         afterward so the next iteration starts fresh — without this, outer
         loop iterations would leak worktrees (only the last one would be
         cleaned by ``run()``'s finally).
+
+        Returns True if the iteration merged to main (reached CLEAN), False
+        otherwise. The caller uses this to decide whether the requirement was
+        actually developed and shipped — a False result means the work is
+        stranded in a kept worktree and must NOT be treated as CLEAN.
         """
         # Create worktree
         try:
@@ -359,7 +382,7 @@ class DevReviewLoop:
             # fix .git/index.lock, check permissions) before progress can
             # resume.
             self.state = LoopState.BLOCKED
-            return
+            return False
 
         self._wt_path = wt_path
         self._wt_branch = branch
@@ -386,7 +409,7 @@ class DevReviewLoop:
                 # must intervene (re-run, fix config, or edit requirements)
                 # before progress can resume.
                 self.state = LoopState.BLOCKED
-                return
+                return False
             try:
                 developed = await commit_all(
                     wt_path, f"feat: implement requirement per {self.req_path.name}"
@@ -404,7 +427,7 @@ class DevReviewLoop:
                 logger.exception("Develop commit failed: %s", e)
                 console.print(Text(f"开发提交失败: {e}", "error"))
                 self.state = LoopState.BLOCKED
-                return
+                return False
             if not developed:
                 # develop produced no changes — either the agent failed or the
                 # requirement was already implemented. Either way, proceeding to
@@ -415,7 +438,7 @@ class DevReviewLoop:
                     "开发阶段未产生任何改动，跳过审查（worktree 保留以供检查）。", "warning",
                 ))
                 self.state = LoopState.BLOCKED
-                return
+                return False
 
             # Inner loop: review-fix
             self.state = LoopState.REVIEWING
@@ -502,6 +525,13 @@ class DevReviewLoop:
             self._wt_path = None
             self._wt_branch = None
 
+        # Report whether the iteration actually reached CLEAN and merged to
+        # main. The caller (outer loop) only asks "new requirement?" when this
+        # is True — a False means the work is stranded in a kept worktree
+        # (develop/commit/merge failure, or the inner review loop gave up),
+        # and presenting it as "已开发并通过审查" would mislead the user.
+        return merged
+
     async def _inner_loop(self, wt_path: Path) -> tuple[bool, int | None]:
         """Run review-fix until CLEAN or BLOCKED-not-resolved.
 
@@ -541,14 +571,28 @@ class DevReviewLoop:
                 border_style="dim", expand=False,
             ))
 
-            report = await review_tree(
-                self._reviewer_provider(),
-                wt_path / "src" if (wt_path / "src").is_dir() else wt_path,
-                wt_path,
-                prev_bugs=prev_bugs,
-                applied_fixes=applied_fixes,
-                guide=self.review_guide,
-            )
+            try:
+                report = await review_tree(
+                    self._reviewer_provider(),
+                    wt_path / "src" if (wt_path / "src").is_dir() else wt_path,
+                    wt_path,
+                    prev_bugs=prev_bugs,
+                    applied_fixes=applied_fixes,
+                    guide=self.review_guide,
+                )
+            except Exception as e:
+                # review_tree's LLM errors become report.error, but the
+                # filesystem probes (src_root.iterdir/glob) are unguarded — a
+                # deleted src/ or a permission error would otherwise escape
+                # here and crash the whole loop (its caller's finally only
+                # cleans up the worktree). Convert to the same reviewer-error
+                # path below so it escalates to BLOCKED instead.
+                logger.exception("review_tree raised unexpectedly: %s", e)
+                report = BugReport(
+                    bugs=[],
+                    raw_output=f"reviewer crash: {e}",
+                    error=True,
+                )
 
             if report.error:
                 # Reviewer itself failed (LLM exception, JSON unparseable, or
