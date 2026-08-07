@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from personal_agent.exceptions import ConfigError
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from personal_agent.exceptions import ConfigError
 
 # ── Providers ──────────────────────────────────────────────────────────────────
 

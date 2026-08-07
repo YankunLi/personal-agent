@@ -24,6 +24,9 @@ import logging
 import sys
 from pathlib import Path
 
+from rich.panel import Panel
+from rich.text import Text
+
 from personal_agent.cli.theme import console
 from personal_agent.config import Settings, load_config
 from personal_agent.factory import create_agent
@@ -42,8 +45,6 @@ from personal_agent.orchestrator.worktree_isolation import (
     revert_last_commit,
 )
 from personal_agent.providers.registry import ProviderCredentials, create_provider
-from rich.panel import Panel
-from rich.text import Text
 
 logger = logging.getLogger(__name__)
 
