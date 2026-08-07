@@ -215,18 +215,37 @@ class Skill:
         name = data.get("name")
         if not name:
             raise SkillError("Skill definition is missing required 'name' field")
+
+        def _as_list(value):
+            """Normalize a list field to a list of strings.
+
+            A SKILL.md frontmatter value like ``dependencies: web-search``
+            (a YAML scalar) or ``dependencies: "web_search"`` (a JSON string)
+            previously stayed a str, so ``activate()``/``resolve_tools()``
+            iterated it character-by-character — a one-char "dependency" like
+            'w' was looked up and failed with SkillError. Coerce scalars to
+            single-element lists; pass lists through unchanged.
+            """
+            if value is None:
+                return []
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, (list, tuple)):
+                return [str(v) for v in value]
+            return [str(value)]
+
         return cls(
             name=name,
             description=data.get("description", ""),
             prompt=data.get("prompt", ""),
             when_to_use=data.get("when_to_use", ""),
             version=data.get("version", ""),
-            dependencies=data.get("dependencies", []),
+            dependencies=_as_list(data.get("dependencies")),
             tools=[],  # Resolved by factory via resolve_tools()
-            tool_names=data.get("tool_names", []),
+            tool_names=_as_list(data.get("tool_names")),
             license=data.get("license", ""),
-            compatibility=data.get("compatibility", []),
-            allowed_tools=data.get("allowed_tools", data.get("allowed-tools", [])),
+            compatibility=_as_list(data.get("compatibility")),
+            allowed_tools=_as_list(data.get("allowed_tools", data.get("allowed-tools"))),
             paths=_parse_paths(data.get("paths")),
             metadata=data.get("metadata", {}),
         )
