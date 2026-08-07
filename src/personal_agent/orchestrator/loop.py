@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import sys
 from pathlib import Path
 
 from personal_agent.cli.theme import console
@@ -521,9 +522,17 @@ class DevReviewLoop:
                 console.print(Text.assemble(
                     ("worktree 保留以供检查: ", "warning"), (str(wt_path), "value"),
                 ))
-            # Clear so run()'s finally doesn't double-clean, and next iteration starts fresh
-            self._wt_path = None
-            self._wt_branch = None
+            # Clear so run()'s finally doesn't double-clean, and next iteration
+            # starts fresh — BUT only when no exception is propagating. If an
+            # exception (e.g. Ctrl+C) escapes this try block, leave _wt_path
+            # set so run()'s _cleanup_worktree safety net can prompt "keep
+            # worktree?" and clean up. Previously the unconditional clear ran
+            # even on the exception path, so _cleanup_worktree always saw None
+            # and interrupted iterations leaked their worktree+branch forever
+            # with no prompt.
+            if sys.exc_info()[0] is None:
+                self._wt_path = None
+                self._wt_branch = None
 
         # Report whether the iteration actually reached CLEAN and merged to
         # main. The caller (outer loop) only asks "new requirement?" when this

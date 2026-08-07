@@ -114,3 +114,34 @@ def test_run_iteration_returns_true_when_clean_and_merged(tmp_path, monkeypatch)
         loop._run_iteration("requirement text")
     )
     assert result is True
+
+
+def test_run_iteration_exception_keeps_wt_path_for_safety_net(tmp_path, monkeypatch):
+    """On a propagating exception, _wt_path must stay set so run()'s
+    _cleanup_worktree safety net can prompt/clean up.
+
+    The finally block previously cleared _wt_path unconditionally, so an
+    interrupted iteration (Ctrl+C) left _wt_path=None and _cleanup_worktree —
+    which only fires when _wt_path is still set — never prompted "keep
+    worktree?"; the worktree and branch leaked forever.
+    """
+    loop = _make_loop(tmp_path)
+
+    async def fake_create_worktree(repo_root):
+        wt = tmp_path / "wt"
+        wt.mkdir()
+        return wt, "dev-review-test"
+
+    async def fake_develop(req, wt):
+        raise KeyboardInterrupt()  # Ctrl+C mid-develop
+
+    monkeypatch.setattr(loop_mod, "create_worktree", fake_create_worktree)
+    loop._develop = fake_develop
+
+    with pytest.raises(KeyboardInterrupt):
+        asyncio.run(loop._run_iteration("requirement text"))
+
+    # The exception propagated through the finally, which must NOT have
+    # cleared the pointer — run()'s safety net needs it to clean up.
+    assert loop._wt_path is not None
+    assert loop._wt_branch is not None
