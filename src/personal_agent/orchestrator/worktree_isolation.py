@@ -185,15 +185,19 @@ async def delete_branch(repo_root: Path, branch: str, force: bool = False) -> No
 async def commit_all(wt_path: Path, message: str) -> bool:
     """Stage all changes and commit. Returns True if a commit was created.
 
-    Returns False (no-op) if there were no changes to commit, or if
-    ``git add -A`` itself failed (permission issue, lock file, etc.) — in
-    the latter case committing would either no-op or capture a partial
-    state, so we bail and let the caller decide.
+    Returns False (no-op) only when there were genuinely no changes to
+    commit. ``git add -A`` failure (permission issue, lock file, etc.) RAISES
+    instead — it is NOT the same as "no changes": the fix agent's edits are
+    still sitting in the working tree, and if the caller treated this as a
+    no-op, the next ``commit_all`` would run ``git add -A`` again and sweep
+    those abandoned changes into the next commit, mislabeling them. Callers
+    already wrap commit_all in try/except and reset the worktree on
+    exceptions, so raising routes the failure to the cleanup path.
     """
     add_code, add_out = await _git("add", "-A", cwd=wt_path, check=False)
     if add_code != 0:
         logger.warning("git add -A failed (code=%s): %s", add_code, add_out)
-        return False
+        raise RuntimeError(f"git add -A failed ({add_code}): {add_out.strip()}")
     # Check if anything is staged
     code, _ = await _git("diff", "--cached", "--quiet", cwd=wt_path, check=False)
     if code == 0:
