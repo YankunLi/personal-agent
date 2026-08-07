@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
-from personal_agent.exceptions import SkillError
 from personal_agent.skills.base import Skill, SkillManager
 
 

@@ -216,7 +216,7 @@ class Skill:
         if not name:
             raise SkillError("Skill definition is missing required 'name' field")
 
-        def _as_list(value):
+        def _as_list(value: object) -> list[str]:
             """Normalize a list field to a list of strings.
 
             A SKILL.md frontmatter value like ``dependencies: web-search``

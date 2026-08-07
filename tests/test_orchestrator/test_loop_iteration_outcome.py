@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 
 import pytest
 
 import personal_agent.orchestrator.loop as loop_mod
 from personal_agent.orchestrator.loop import DevReviewLoop
-from personal_agent.orchestrator.state import BugReport, LoopState
+from personal_agent.orchestrator.state import LoopState
 
 
 class _NullConsole:
     def print(self, *args, **kwargs):
         pass
+
+
+async def _noop(*args, **kwargs):
+    return None
 
 
 def _make_loop(tmp_path) -> DevReviewLoop:
@@ -63,8 +66,8 @@ def test_run_iteration_returns_false_when_inner_loop_not_clean(tmp_path, monkeyp
         raise RuntimeError("should not merge on not-clean")
 
     monkeypatch.setattr(loop_mod, "create_worktree", fake_create_worktree)
-    monkeypatch.setattr(loop_mod, "remove_worktree", lambda *a, **k: asyncio.coroutine(lambda: None)())
-    monkeypatch.setattr(loop_mod, "delete_branch", lambda *a, **k: asyncio.coroutine(lambda: None)())
+    monkeypatch.setattr(loop_mod, "remove_worktree", _noop)
+    monkeypatch.setattr(loop_mod, "delete_branch", _noop)
     loop._develop = fake_develop
     loop._inner_loop = fake_inner_loop
     monkeypatch.setattr(loop_mod, "commit_all", fake_commit_all)
@@ -102,8 +105,8 @@ def test_run_iteration_returns_true_when_clean_and_merged(tmp_path, monkeypatch)
             return None
 
     monkeypatch.setattr(loop_mod, "create_worktree", fake_create_worktree)
-    monkeypatch.setattr(loop_mod, "remove_worktree", lambda *a, **k: asyncio.coroutine(lambda: None)())
-    monkeypatch.setattr(loop_mod, "delete_branch", lambda *a, **k: asyncio.coroutine(lambda: None)())
+    monkeypatch.setattr(loop_mod, "remove_worktree", _noop)
+    monkeypatch.setattr(loop_mod, "delete_branch", _noop)
     loop._develop = fake_develop
     loop._inner_loop = fake_inner_loop
     loop.last_clean = _FakeLastClean()

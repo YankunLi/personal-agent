@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 import personal_agent.orchestrator.worktree_isolation as wti
