@@ -44,15 +44,18 @@ class StdioTransport(MCPTransport):
         config: MCPServerConfig,
         auth: Any = None,
     ) -> tuple[Any, Any, Any]:
-        from mcp.client.stdio import stdio_client
+        from mcp.client.stdio import StdioServerParameters, stdio_client
 
-        cmd = [config.command] + config.args if config.command else []
-        if not cmd:
+        if not config.command:
             raise ValueError(f"stdio transport requires 'command' for server '{config.name}'")
 
-        env = {**config.env} if config.env else None
+        params = StdioServerParameters(
+            command=config.command,
+            args=list(config.args),
+            env=dict(config.env) if config.env else None,
+        )
 
-        ctx = stdio_client(command=cmd, env=env)
+        ctx = stdio_client(params)
         # If __aenter__ raises after partially initializing (subprocess
         # spawned but handshake failed), ctx.__aexit__ must still run so
         # the subprocess is reaped — otherwise it leaks as an orphan.
