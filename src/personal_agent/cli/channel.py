@@ -79,7 +79,7 @@ class _StdinLineReader:
     def _put(self, line: str | None) -> None:
         self._loop.call_soon_threadsafe(self._queue.put_nowait, line)
 
-    async def readline(self, prompt: Text | str) -> str | None:
+    async def readline(self, prompt: Text) -> str | None:
         """Print the prompt (via rich) and wait for the next line; None on EOF."""
         console.print(prompt, end="")
         return await self._queue.get()

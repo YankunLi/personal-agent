@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rich.console import Console
+from rich.text import Text
 from rich.theme import Theme
 
 # Semantic styles used across all CLI modules. Keeping them in one place
@@ -40,8 +41,9 @@ def term_width() -> int:
     return max(60, min(w, 120))
 
 
-# ANSI escape sequences for input() prompts. rich's Console.input() cannot be
-# used here because the REPL reads via asyncio.to_thread(input, ...), so we
-# embed raw escapes that the terminal interprets directly.
-PROMPT_PRIMARY = "\033[32m▶\033[0m "  # green
-PROMPT_MULTILINE = "\033[2m... \033[0m"  # dim
+# REPL prompt glyphs. Printed through the shared console (not passed to
+# input()), so rich applies the theme styles and handles ANSI emulation on
+# legacy Windows consoles. rich's Console.input() can't be used because the
+# REPL reads stdin on a dedicated daemon thread (see channel._StdinLineReader).
+PROMPT_PRIMARY = Text("▶ ", style="success")
+PROMPT_MULTILINE = Text("... ", style="dim")

@@ -42,7 +42,7 @@
 
 ### theme.py 主题
 
-定义全局 `Theme` 与共享 `Console` 实例。语义样式包括 `info`/`dim`/`success`/`warning`/`error`/`tool.name`/`tool.args`/`thought`/`step.header`/`answer.title`/`banner`/`label`/`value`/`muted.value`，统一所有 CLI 输出的配色。`term_width()` 返回 clamp 到 `[60, 120]` 的终端宽度。`PROMPT_PRIMARY`（绿色 `▶`）与 `PROMPT_MULTILINE`（dim `...`）为 `input()` 提示符的 ANSI 转义序列。
+定义全局 `Theme` 与共享 `Console` 实例。语义样式包括 `info`/`dim`/`success`/`warning`/`error`/`tool.name`/`tool.args`/`thought`/`step.header`/`answer.title`/`banner`/`label`/`value`/`muted.value`，统一所有 CLI 输出的配色。`term_width()` 返回 clamp 到 `[60, 120]` 的终端宽度。`PROMPT_PRIMARY`（绿色 `▶`）与 `PROMPT_MULTILINE`（dim `...`）为 rich `Text` 提示符，由 `CLIChannel` 通过 `console.print(..., end="")` 输出（而非传给 `input()`），使配色与旧版 Windows 控制台的 ANSI 模拟都由 rich 处理。
 
 ## 内部结构
 
