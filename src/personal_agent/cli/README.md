@@ -102,7 +102,8 @@
 ## 关键设计点
 
 - **cmd_init 失败回滚**：`init_project()` 失败时调用 `session_mgr.delete(session.name, force=True)` 删除已创建的孤儿会话。`force=True` 是必需的，因为 `create()` 已将该会话设为当前会话，而 `delete()` 默认拒绝删除活动会话——不加 `force` 会静默遗留孤儿会话，导致重试时累积。
-- **KeyboardInterrupt 重新抛出**：`_process_task` 中捕获 `KeyboardInterrupt` 后打印 `Interrupted` 并 `return`（不退出 REPL）；`interactive_loop` 与 `run_one_shot` 顶层捕获后退出。`CLIChannel.start()` 的 `input()` 调用捕获 `EOFError`/`KeyboardInterrupt` 后打印 `Goodbye!` 退出循环。
+- **KeyboardInterrupt 重新抛出**：`_process_task` 中捕获 `KeyboardInterrupt` 后打印 `Interrupted` 并 `return`（不退出 REPL）；`interactive_loop` 与 `run_one_shot` 顶层捕获后退出。`CLIChannel.start()` 读取输入时捕获 `KeyboardInterrupt` 后打印 `Goodbye!` 退出循环。
+- **守护线程 stdin 读取**：`CLIChannel` 不再用 `asyncio.to_thread(input, ...)` 逐行读取——每次读行都会向默认 executor 申请新线程，且 Ctrl+C 时工作线程仍阻塞在 `input()` 内，`asyncio.run()` 关闭 loop 时会 join 该线程导致进程挂起直到用户再按回车。改为单一持久守护线程（`_StdinLineReader`，daemon 且从不 join）配合 `asyncio.Queue` 投递到事件循环，任务运行期间输入的行会被排队而不丢失。
 - **build_overrides 安全告警**：`--api-key` 传入时发出 warning，提示该值在 `ps aux` 进程列表中可见，建议改用 `PA_PROVIDERS__<NAME>__API_KEY` 环境变量。
 - **自动项目检测**：`_detect_project_info()` 按优先级探测 `pyproject.toml`（`[project]`）、`package.json`、`Cargo.toml`（`[package]`）、`setup.cfg`（`[metadata]`），提取 `name`/`description`；全部缺失时回退到目录名、空描述。TOML 解析优先 `tomllib`，回退 `tomli`，再回退空字典。
 - **答案幂等渲染**：`RichDisplay.on_answer` 设 `_answer_shown` 标志位，ReAct 模式在 `run()` 中已通过回调渲染答案，runner 显式调用 `on_answer` 对 ReAct 是 no-op，对其他模式（plan_execute/reflection/pipeline 等）则是唯一渲染点。

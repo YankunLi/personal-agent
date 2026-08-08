@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,58 @@ logger = logging.getLogger(__name__)
 CLI_CHANNEL = "cli"
 CLI_USER = "local"
 CLI_CONVERSATION = "default"
+
+
+class _StdinLineReader:
+    """Read lines from stdin on a dedicated daemon thread.
+
+    The REPL previously read each line with `asyncio.to_thread(input, prompt)`,
+    which had two problems:
+
+    * Every line spawned a fresh thread from the default executor.
+    * On Ctrl+C the worker thread stayed blocked inside ``input()`` while
+      ``asyncio.run()``'s loop close joined the default executor — the process
+      hung until the user pressed Enter before it could exit.
+
+    A single persistent daemon thread (never joined at shutdown) fixes both,
+    and lets lines typed while a long task runs be queued instead of lost.
+    Lines are delivered on the event loop via ``call_soon_threadsafe``.
+    """
+
+    def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
+        self._loop = loop
+        self._queue: asyncio.Queue[str | None] = asyncio.Queue()
+        self._thread = threading.Thread(
+            target=self._read, name="cli-stdin-reader", daemon=True
+        )
+        self._thread.start()
+
+    def _read(self) -> None:
+        while True:
+            try:
+                line = input()
+            except EOFError:
+                self._put(None)
+                return
+            except KeyboardInterrupt:
+                self._put(None)
+                return
+            except OSError:
+                # stdin closed (e.g. process detached) — treat as EOF.
+                self._put(None)
+                return
+            except UnicodeDecodeError:
+                # Invalid input bytes — skip the line rather than killing the REPL.
+                continue
+            self._put(line)
+
+    def _put(self, line: str | None) -> None:
+        self._loop.call_soon_threadsafe(self._queue.put_nowait, line)
+
+    async def readline(self, prompt: Text | str) -> str | None:
+        """Print the prompt (via rich) and wait for the next line; None on EOF."""
+        console.print(prompt, end="")
+        return await self._queue.get()
 
 
 class CLIChannel(Channel):
@@ -70,6 +123,7 @@ class CLIChannel(Channel):
         self._current_session: Any = None
         self._commands = build_default_registry()
         self._current_pattern: str = ""
+        self._stdin_reader: _StdinLineReader | None = None
 
     # ── Channel interface ────────────────────────────────────────────────────
 
@@ -79,16 +133,17 @@ class CLIChannel(Channel):
         await self._create_agent()
         self._print_banner()
 
+        self._stdin_reader = _StdinLineReader(asyncio.get_running_loop())
+
         while True:
             try:
-                if self._in_multiline:
-                    prompt = PROMPT_MULTILINE
-                else:
-                    prompt = PROMPT_PRIMARY
-
-                line = await asyncio.to_thread(input, prompt)
-            except (EOFError, KeyboardInterrupt):
-                console.print(Text("Goodbye!", style="warning"))
+                prompt = PROMPT_MULTILINE if self._in_multiline else PROMPT_PRIMARY
+                line = await self._stdin_reader.readline(prompt)
+                if line is None:
+                    console.print(Text("Goodbye!", style="warning"))
+                    break
+            except KeyboardInterrupt:
+                console.print(Text("\nGoodbye!", style="warning"))
                 break
 
             try:
