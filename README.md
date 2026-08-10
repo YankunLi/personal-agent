@@ -14,7 +14,7 @@
 - **工具系统**：装饰器式工具定义、并行执行、超时重试、JSON Schema 验证、重复调用检测与缓存
 - **定时任务**：cron 表达式调度，POSIX 语义（DOM/DOW 同时受限时取并集），支持持久化和一次性任务
 - **任务管理**：子任务派发、阻塞依赖、每任务独立锁、安全排序避免死锁
-- **多通道接入**：CLI 交互、WebSocket（含 Web UI）、飞书机器人（HMAC-SHA256 签名校验 + 重放保护）
+- **多通道接入**：CLI 交互（守护线程安全输入，Ctrl+C 不挂起、长任务期间输入不丢失）、WebSocket（含 Web UI）、飞书机器人（HMAC-SHA256 签名校验 + 重放保护）
 - **会话与项目**：会话持久化、按 (channel, user, conversation) 路由、`pa.json` 项目根标记、自动检测项目信息
 - **自主开发-审查循环**：`pa --loop` 一键启动需求→开发→审查→修复→再审查的自动循环，直到零 bug 才退出；两层循环（需求演进 + 审查修复）、worktree 隔离、每 fix 单独 commit、BLOCKED 交互诊断
 - **异步优先**：全异步设计，支持 async context manager 资源清理
@@ -96,11 +96,11 @@ src/personal_agent/
 ├── cli/
 │   ├── app.py            # CLI 应用入口
 │   ├── runner.py         # 一次性任务 / 交互循环
-│   ├── channel.py        # CLI 通道适配
+│   ├── channel.py        # CLIChannel：REPL 循环，含 _StdinLineReader 守护线程输入
 │   ├── commands.py       # pa init 等子命令
 │   ├── callbacks.py      # 流式回调
 │   ├── display.py        # Rich 显示
-│   └── theme.py          # 终端主题
+│   └── theme.py          # 终端主题（含 rich Text 提示符）
 └── web/
     └── index.html        # WebSocket 通道配套 Web UI
 ```
@@ -130,6 +130,7 @@ src/personal_agent/
 5. **自我记忆升级**：`update_instruction` 工具允许代理在运行中修改自身记忆
 6. **会话按路由键隔离**：`(channel, user_id, conversation_id)` 三元组唯一确定一个会话，跨通道共享时由 `SessionManager.find_or_create_for_key` 原子化
 7. **定时任务持久化可选**：durable 任务落盘 `~/.personal-agent/scheduled_tasks.json`，重启自动恢复；一次性任务触发后即移除
+8. **守护线程 stdin 读取**：`CLIChannel` 用单一持久 daemon 线程（`_StdinLineReader`，从不 join）配合 `asyncio.Queue` 读取用户输入，替代 `asyncio.to_thread(input, ...)` 逐行申请线程、并在 Ctrl+C 时阻塞进程退出（`asyncio.run()` 会 join 阻塞中的工作线程）的旧做法；提示符用 rich `Text` 经共享 console 输出，长任务运行期间输入的行排队不丢失
 
 ## 安装
 
