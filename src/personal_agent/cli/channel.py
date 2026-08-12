@@ -199,11 +199,7 @@ class CLIChannel(Channel):
             if self._background_tasks:
                 await asyncio.gather(*self._background_tasks, return_exceptions=True)
             if self._agent:
-                if self._current_session:
-                    async with self._current_session.memory_lock:
-                        self._current_session.short_term = self._agent.short_term
-                        self._current_session.working = self._agent.working
-                    self._router.session_manager.save_session(self._current_session)
+                await self._persist_session()
                 await self._agent.close()
                 self._agent = None
         except Exception:
@@ -318,6 +314,23 @@ class CLIChannel(Channel):
                 self._agent.short_term = self._current_session.short_term
                 self._agent.working = self._current_session.working
 
+    async def _persist_session(self) -> None:
+        """Copy agent memory into the current session and save it to disk.
+
+        Called after every task, on /clear, and on session switch/restart so
+        a long REPL session's latest conversation survives a crash. Idempotent
+        when there is no active session or agent.
+        """
+        if not self._current_session or not self._agent:
+            return
+        async with self._current_session.memory_lock:
+            self._current_session.short_term = self._agent.short_term
+            self._current_session.working = self._agent.working
+        try:
+            self._router.session_manager.save_session(self._current_session)
+        except Exception:
+            logger.warning("Failed to save session", exc_info=True)
+
     # ── Task processing ──────────────────────────────────────────────────────
 
     async def _process_task(self, task: str) -> None:
@@ -402,13 +415,7 @@ class CLIChannel(Channel):
                 self._session_tasks = self._session_tasks[-self.MAX_SESSION_TASKS:]
 
             if self._current_session:
-                async with self._current_session.memory_lock:
-                    self._current_session.short_term = self._agent.short_term
-                    self._current_session.working = self._agent.working
-                try:
-                    self._router.session_manager.save_session(self._current_session)
-                except Exception:
-                    logger.warning("Failed to save session", exc_info=True)
+                await self._persist_session()
 
     # ── Multiline input ──────────────────────────────────────────────────────
 
@@ -498,14 +505,7 @@ class CLIChannel(Channel):
         async with self._task_lock:
             self._agent.short_term.clear()
             self._agent.working.clear()
-            if self._current_session:
-                async with self._current_session.memory_lock:
-                    self._current_session.short_term = self._agent.short_term
-                    self._current_session.working = self._agent.working
-                try:
-                    self._router.session_manager.save_session(self._current_session)
-                except Exception:
-                    logger.warning("Failed to save session", exc_info=True)
+            await self._persist_session()
         console.print(Text("✓ Memory cleared.", style="success"))
 
     # ── Session helpers (called by slash-command handlers) ───────────────────
@@ -564,18 +564,7 @@ class CLIChannel(Channel):
         """
         async with self._task_lock:
             session_mgr = self._router.session_manager
-            # Persist the old session's state before switching, otherwise
-            # its latest conversation is lost (the agent's short_term/working
-            # are the same objects, so they're already up to date — but the
-            # session needs to be saved to disk).
-            if self._current_session and self._agent:
-                async with self._current_session.memory_lock:
-                    self._current_session.short_term = self._agent.short_term
-                    self._current_session.working = self._agent.working
-                try:
-                    session_mgr.save_session(self._current_session)
-                except Exception:
-                    logger.warning("Failed to save old session", exc_info=True)
+            await self._persist_session()
 
             session = session_mgr.create(name)
             self._current_session = session
@@ -594,14 +583,7 @@ class CLIChannel(Channel):
         """Switch to a different session. Serializes with _process_task."""
         async with self._task_lock:
             session_mgr = self._router.session_manager
-            if self._current_session and self._agent:
-                async with self._current_session.memory_lock:
-                    self._current_session.short_term = self._agent.short_term
-                    self._current_session.working = self._agent.working
-                try:
-                    session_mgr.save_session(self._current_session)
-                except Exception:
-                    logger.warning("Failed to save session", exc_info=True)
+            await self._persist_session()
 
             target = session_mgr.switch(name)
             if target is None:
@@ -834,15 +816,7 @@ class CLIChannel(Channel):
             await asyncio.gather(*self._background_tasks, return_exceptions=True)
             self._background_tasks.clear()
 
-        session_mgr = self._router.session_manager
-        if self._current_session:
-            async with self._current_session.memory_lock:
-                self._current_session.short_term = self._agent.short_term
-                self._current_session.working = self._agent.working
-            try:
-                session_mgr.save_session(self._current_session)
-            except Exception:
-                logger.warning("Failed to save session before restart", exc_info=True)
+        await self._persist_session()
 
         # Create the new agent BEFORE closing the old one, so a creation
         # failure leaves the existing (still-open) agent usable instead of
