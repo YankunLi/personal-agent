@@ -10,7 +10,6 @@ import json
 from typing import Any
 
 from rich.markdown import Markdown
-from rich.panel import Panel
 from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.text import Text
@@ -184,17 +183,6 @@ class RichDisplay:
         parts.append(f"{elapsed_ms:.0f}ms")
         console.print(Text("  ·  ".join(parts), style="dim"))
         console.print()
-
-    def print_header(self, lines: list[tuple[str, str]]) -> None:
-        """Print a labeled key/value header panel.
-
-        Each tuple is (label, value). Values are rendered in 'value' style.
-        """
-        text = Text()
-        for label, value in lines:
-            text.append(f"{label}: ", style="label")
-            text.append(value + "\n", style="value")
-        console.print(Panel(text.rstrip(), border_style="dim", expand=False))
 
 
 # Backward-compat alias: old code/tests import TerminalDisplay.
