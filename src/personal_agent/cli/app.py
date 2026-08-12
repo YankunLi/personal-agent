@@ -52,12 +52,9 @@ def _split_init_command(argv: list[str]) -> tuple[str | None, list[str]]:
             i += 1
             continue
         if not after_sep and arg.startswith("-") and arg != "-":
-            if arg.startswith("--"):
-                name = arg.split("=", 1)[0]
-                if name in _INIT_SPLIT_VALUE_OPTIONS and "=" not in arg:
-                    i += 2  # skip the option's value
-                    continue
-            elif arg in _INIT_SPLIT_VALUE_OPTIONS:
+            # arg.split("=", 1)[0] works for both short and long options,
+            # so a single branch covers -c, --config, and --config=value.
+            if arg.split("=", 1)[0] in _INIT_SPLIT_VALUE_OPTIONS and "=" not in arg:
                 i += 2  # skip the option's value
                 continue
             i += 1
