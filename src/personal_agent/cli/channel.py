@@ -413,8 +413,7 @@ class CLIChannel(Channel):
             )
             # Trim to the cap so memory and save time stay bounded over a
             # long REPL session.
-            if len(self._session_tasks) > self.MAX_SESSION_TASKS:
-                self._session_tasks = self._session_tasks[-self.MAX_SESSION_TASKS:]
+            self._trim_session_tasks()
 
             if self._current_session:
                 await self._persist_session()
@@ -475,6 +474,16 @@ class CLIChannel(Channel):
         console.print()
 
     # ── History ──────────────────────────────────────────────────────────────
+
+    def _trim_session_tasks(self) -> None:
+        """Keep session history within MAX_SESSION_TASKS entries.
+
+        The whole list is serialized to disk on every save_session, so an
+        unbounded list grows memory and save time without limit. /load feeds
+        the same list, so it must apply the same cap.
+        """
+        if len(self._session_tasks) > self.MAX_SESSION_TASKS:
+            self._session_tasks = self._session_tasks[-self.MAX_SESSION_TASKS:]
 
     def _print_history(self) -> None:
         """Print session task history."""

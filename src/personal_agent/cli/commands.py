@@ -407,6 +407,7 @@ async def _cmd_load(channel: CLIChannel, arg: str) -> bool:
     loaded = channel._load_session(arg)
     if loaded is not None:
         channel._session_tasks.extend(loaded)
+        channel._trim_session_tasks()
         console.print(
             Text.assemble(
                 ("✓ Loaded ", "success"),
