@@ -220,20 +220,14 @@ class CLIChannel(Channel):
 
     async def _setup_session(self) -> None:
         """Detect project, load/create session via the router."""
-        from personal_agent.project import PA_FILE, find_project_root, load_project, save_project
+        from personal_agent.project import load_project_at, save_project
 
         session_mgr = self._router.session_manager
         session_mgr.load_all()
 
         wd = self._workdir
 
-        project_data = None
-        if (wd / PA_FILE).exists():
-            project_data = load_project(path=wd)
-        else:
-            project_root = find_project_root(start=wd)
-            if project_root:
-                project_data = load_project(path=project_root)
+        project_data = load_project_at(wd)
 
         if project_data:
             self._project_data = project_data

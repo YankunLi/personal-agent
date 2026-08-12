@@ -26,7 +26,7 @@ async def run_one_shot(
     overrides: dict | None = None,
 ) -> None:
     """Run a one-shot agent task, optionally with project session context."""
-    from personal_agent.project import PA_FILE, find_project_root, load_project
+    from personal_agent.project import load_project_at
     from personal_agent.session import SessionManager
 
     settings = load_config(config_path)
@@ -37,13 +37,7 @@ async def run_one_shot(
     session_mgr = SessionManager()
     session_mgr.load_all()
 
-    project_data = None
-    if (wd / PA_FILE).exists():
-        project_data = load_project(path=wd)
-    else:
-        project_root = find_project_root(start=wd)
-        if project_root:
-            project_data = load_project(path=project_root)
+    project_data = load_project_at(wd)
 
     project_session_ok = False
     if project_data:
@@ -157,20 +151,14 @@ async def interactive_loop(
 ) -> None:
     """Run an interactive agent session using AgentServer + CLIChannel."""
     from personal_agent.cli.channel import CLIChannel
-    from personal_agent.project import PA_FILE, find_project_root, load_project
+    from personal_agent.project import load_project_at
     from personal_agent.server import AgentServer
 
     settings = load_config(config_path)
     loaded_path = config_path or _find_config_file()
 
     wd = workdir
-    project_data = None
-    if (wd / PA_FILE).exists():
-        project_data = load_project(path=wd)
-    else:
-        project_root = find_project_root(start=wd)
-        if project_root:
-            project_data = load_project(path=project_root)
+    project_data = load_project_at(wd)
 
     if not project_data:
         _prompt_init(workdir)

@@ -24,6 +24,19 @@ def find_project_root(start: Path | None = None) -> Path | None:
     return None
 
 
+def load_project_at(start: Path | None = None) -> dict[str, Any] | None:
+    """Load pa.json from start or its nearest parent project root.
+
+    find_project_root already includes start in its upward search, so this is
+    equivalent to the "(start / PA_FILE).exists() then walk up" block that CLI
+    entry points used to duplicate.
+    """
+    root = find_project_root(start)
+    if root is None:
+        return None
+    return load_project(path=root)
+
+
 def load_project(path: Path | None = None) -> dict[str, Any] | None:
     """Load pa.json from the given directory or auto-discover."""
     if path:
