@@ -180,7 +180,8 @@ class CLIChannel(Channel):
                     self._in_multiline = True
                     console.print(
                         Text(
-                            "Entering multiline mode. Type your task, then empty line to submit, '%%' to cancel.",
+                            "Entering multiline mode. Type your task, then empty line to submit, "
+                            "'%%' to cancel.",
                             style="dim",
                         )
                     )
@@ -235,7 +236,9 @@ class CLIChannel(Channel):
             if sid and session_mgr.has_session(sid):
                 session_mgr.switch(sid)
 
-        cli_key = SessionKey(channel=CLI_CHANNEL, user_id=CLI_USER, conversation_id=CLI_CONVERSATION)
+        cli_key = SessionKey(
+            channel=CLI_CHANNEL, user_id=CLI_USER, conversation_id=CLI_CONVERSATION
+        )
         # Use the atomic find_or_create_for_key rather than find_by_key +
         # create_for_key as separate calls: the split form races under
         # concurrent startup (two CLIChannel instances sharing a
@@ -448,7 +451,9 @@ class CLIChannel(Channel):
             lines.append(Text.assemble(("Config:   ", "label"), (self._config_path, "dim")))
         if self._project_data:
             proj = self._project_data.get("project", {})
-            lines.append(Text.assemble(("Project:  ", "label"), (proj.get("name", "unknown"), "value")))
+            lines.append(
+                Text.assemble(("Project:  ", "label"), (proj.get("name", "unknown"), "value"))
+            )
         if self._current_session:
             lines.append(
                 Text.assemble(
@@ -463,7 +468,9 @@ class CLIChannel(Channel):
                 Text.assemble(("Model:    ", "label"), (self._agent.provider.model_name, "value"))
             )
         lines.append(Text.assemble(("Provider: ", "label"), (settings.agent.provider, "value")))
-        lines.append(Text.assemble(("Memory:   ", "label"), (settings.memory.long_term_backend, "value")))
+        lines.append(
+            Text.assemble(("Memory:   ", "label"), (settings.memory.long_term_backend, "value"))
+        )
         lines.append(Text.assemble(("Context:  ", "label"), (settings.context.strategy, "value")))
         lines.append(Text.assemble(("Workspace:", "label"), (settings.agent.workspace, "value")))
         lines.append(Text(""))
@@ -535,9 +542,15 @@ class CLIChannel(Channel):
         if current.channel:
             console.print(Text.assemble(("  Channel: ", "label"), (current.channel, "value")))
             console.print(Text.assemble(("  User:  ", "label"), (current.user_id, "dim")))
-            console.print(Text.assemble(("  Conversation: ", "label"), (current.conversation_id, "dim")))
-        console.print(Text.assemble(("  Messages: ", "label"), (f"{len(current.short_term)}", "value")))
-        console.print(Text.assemble(("  Working keys: ", "label"), (f"{len(current.working)}", "value")))
+            console.print(
+                Text.assemble(("  Conversation: ", "label"), (current.conversation_id, "dim"))
+            )
+        console.print(
+            Text.assemble(("  Messages: ", "label"), (f"{len(current.short_term)}", "value"))
+        )
+        console.print(
+            Text.assemble(("  Working keys: ", "label"), (f"{len(current.working)}", "value"))
+        )
         import datetime
 
         created = datetime.datetime.fromtimestamp(current.created_at).strftime("%Y-%m-%d %H:%M")
@@ -623,7 +636,10 @@ class CLIChannel(Channel):
         current = self._current_session
         if current and (current.name == name or current.id == name):
             console.print(
-                Text("Cannot delete the active session. Switch to another session first.", style="error")
+                Text(
+                    "Cannot delete the active session. Switch to another session first.",
+                    style="error",
+                )
             )
             return
         if session_mgr.delete(name):
@@ -695,7 +711,9 @@ class CLIChannel(Channel):
             else:
                 console.print(Text(f"No skills found in {url}", style="warning"))
         except Exception as e:
-            console.print(Text.assemble(("Failed to install from git: ", "error"), (str(e), "error")))
+            console.print(
+                Text.assemble(("Failed to install from git: ", "error"), (str(e), "error"))
+            )
 
     def _install_skill(self, path: str) -> None:
         from personal_agent.skills.base import Skill, SkillError
@@ -750,7 +768,11 @@ class CLIChannel(Channel):
         except SkillError as e:
             console.print(Text.assemble(("Invalid skill: ", "error"), (str(e), "error")))
         except KeyError as e:
-            console.print(Text.assemble(("Missing required field in skill file: ", "error"), (str(e), "error")))
+            console.print(
+                Text.assemble(
+                    ("Missing required field in skill file: ", "error"), (str(e), "error")
+                )
+            )
         except Exception as e:
             console.print(Text.assemble(("Failed to install skill: ", "error"), (str(e), "error")))
 
@@ -762,7 +784,10 @@ class CLIChannel(Channel):
         if self._agent.skill_manager.is_builtin(name):
             console.print(
                 Text.assemble(
-                    (f"Cannot remove builtin skill '{name}'. Use /skill deactivate instead.", "warning"),
+                    (
+                        f"Cannot remove builtin skill '{name}'. Use /skill deactivate instead.",
+                        "warning",
+                    ),
                 )
             )
             return

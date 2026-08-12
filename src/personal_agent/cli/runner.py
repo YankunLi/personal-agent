@@ -84,12 +84,19 @@ async def run_one_shot(
             )
         )
     else:
-        header_lines.append(Text.assemble(("Pattern: ", "label"), (settings.agent.pattern, "value")))
+        header_lines.append(
+            Text.assemble(("Pattern: ", "label"), (settings.agent.pattern, "value"))
+        )
     header_lines.append(
-        Text.assemble(("Provider: ", "label"), (f"{settings.agent.provider} / {settings.agent.model}", "value"))
+        Text.assemble(
+            ("Provider: ", "label"),
+            (f"{settings.agent.provider} / {settings.agent.model}", "value"),
+        )
     )
     header_lines.append(Text.assemble(("Context: ", "label"), (settings.context.strategy, "value")))
-    header_lines.append(Text.assemble(("Memory: ", "label"), (settings.memory.long_term_backend, "value")))
+    header_lines.append(
+        Text.assemble(("Memory: ", "label"), (settings.memory.long_term_backend, "value"))
+    )
 
     body = Text("\n").join(header_lines)
     console.print(Panel(body, border_style="dim", expand=False))
@@ -383,7 +390,9 @@ def _prompt_init(workdir: Path) -> None:
     pa_path = workdir / PA_FILE
     console.print(Text(f"No pa.json found in {workdir}", style="warning"))
     console.print()
-    console.print(Text("  This directory has not been initialized for personal-agent.", style="dim"))
+    console.print(
+        Text("  This directory has not been initialized for personal-agent.", style="dim")
+    )
     console.print(Text("  Run pa init to initialize it with a project session.", style="dim"))
     console.print()
     console.print(Text(f"  Expected config file: {pa_path}", style="dim"))

@@ -22,7 +22,6 @@ from personal_agent.cli.runner import (
 )
 from personal_agent.cli.theme import console
 
-
 # Main-parser options that consume a following value. When scanning argv for
 # the first bare token, these must skip their value, otherwise the value would
 # be mistaken for the task/command token.
@@ -73,7 +72,8 @@ def _run_init(argv: list[str]) -> None:
     )
     init_parser.add_argument("--name", "-n", help="Project name (defaults to directory name)")
     init_parser.add_argument("--description", "-d", default="", help="Project description")
-    init_parser.add_argument("-w", "--workdir", help="Working directory (defaults to current directory)")
+    init_parser.add_argument("-w", "--workdir",
+                             help="Working directory (defaults to current directory)")
     args = init_parser.parse_args(argv)
     workdir = Path.cwd()
     if args.workdir:
@@ -155,11 +155,15 @@ def _build_main_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("task", nargs="?", help="Task for the agent to execute")
     parser.add_argument("-c", "--config", help="Path to config file (JSON or YAML)")
-    parser.add_argument("-w", "--workdir", help="Working directory (defaults to current directory)")
+    parser.add_argument("-w", "--workdir",
+                        help="Working directory (defaults to current directory)")
     parser.add_argument(
         "-p",
         "--pattern",
-        choices=["auto", "react", "plan_execute", "reflection", "pipeline", "debate", "parallel_judge"],
+        choices=[
+            "auto", "react", "plan_execute", "reflection",
+            "pipeline", "debate", "parallel_judge",
+        ],
         help="Agent pattern (default: auto)",
     )
     parser.add_argument(
@@ -168,19 +172,29 @@ def _build_main_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("-m", "--model", help="Model name")
     parser.add_argument("--api-key", help="API key")
-    parser.add_argument("--list-providers", action="store_true", help="List available providers and exit")
+    parser.add_argument(
+        "--list-providers", action="store_true", help="List available providers and exit"
+    )
     parser.add_argument("--interactive", "-i", action="store_true", help="Run in interactive mode")
     parser.add_argument(
-        "--serve", action="store_true", help="Start WebSocket server for web UI access (use with -i)"
+        "--serve", action="store_true",
+        help="Start WebSocket server for web UI access (use with -i)",
     )
-    parser.add_argument("--ws-host", default="localhost", help="WebSocket server host (default: localhost)")
-    parser.add_argument("--ws-port", type=int, default=8765, help="WebSocket server port (default: 8765)")
+    parser.add_argument(
+        "--ws-host", default="localhost", help="WebSocket server host (default: localhost)"
+    )
+    parser.add_argument(
+        "--ws-port", type=int, default=8765, help="WebSocket server port (default: 8765)"
+    )
     parser.add_argument(
         "--feishu", action="store_true", help="Start Feishu bot webhook server (use with -i)"
     )
-    parser.add_argument("--feishu-port", type=int, default=8080, help="Feishu webhook port (default: 8080)")
     parser.add_argument(
-        "--feishu-path", default="/feishu/webhook", help="Feishu webhook path (default: /feishu/webhook)"
+        "--feishu-port", type=int, default=8080, help="Feishu webhook port (default: 8080)"
+    )
+    parser.add_argument(
+        "--feishu-path", default="/feishu/webhook",
+        help="Feishu webhook path (default: /feishu/webhook)",
     )
     parser.add_argument(
         "--loop", action="store_true",
