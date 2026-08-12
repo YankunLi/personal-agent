@@ -270,14 +270,22 @@ class CLIChannel(Channel):
 
         # Track the actual pattern used so "auto" mode can detect when a
         # task's classified pattern differs and recreate the agent.
-        self._current_pattern = self._overrides.get("pattern", self._settings.agent.pattern)
-        if self._current_pattern == "auto":
-            self._current_pattern = "react"  # auto without task defaults to react
+        self._current_pattern = self._normalize_current_pattern()
 
         if self._current_session:
             async with self._current_session.memory_lock:
                 self._agent.short_term = self._current_session.short_term
                 self._agent.working = self._current_session.working
+
+    def _normalize_current_pattern(self) -> str:
+        """Resolve the effective pattern, mapping "auto" -> "react".
+
+        At agent creation/restart there is no task to classify, so "auto"
+        falls back to react; _process_task classifies per-task and switches
+        the agent when the classification differs.
+        """
+        pattern = self._overrides.get("pattern", self._settings.agent.pattern)
+        return "react" if pattern == "auto" else pattern
 
     async def _recreate_agent_with_pattern(self, pattern: str) -> None:
         """Recreate the agent with a specific pattern (for auto-mode).
@@ -839,9 +847,7 @@ class CLIChannel(Channel):
         # `suggested != self._current_pattern` is always true (classify never
         # returns "auto"), so the very first task needlessly tears down and
         # rebuilds the agent.
-        self._current_pattern = self._overrides.get("pattern", self._settings.agent.pattern)
-        if self._current_pattern == "auto":
-            self._current_pattern = "react"
+        self._current_pattern = self._normalize_current_pattern()
 
         if self._current_session:
             async with self._current_session.memory_lock:
