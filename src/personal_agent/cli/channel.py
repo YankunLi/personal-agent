@@ -220,7 +220,7 @@ class CLIChannel(Channel):
 
     async def _setup_session(self) -> None:
         """Detect project, load/create session via the router."""
-        from personal_agent.project import load_project_at, save_project
+        from personal_agent.project import find_project_root, load_project_at, save_project
 
         session_mgr = self._router.session_manager
         session_mgr.load_all()
