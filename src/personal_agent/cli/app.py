@@ -13,6 +13,7 @@ from pathlib import Path
 
 from rich.table import Table
 
+from personal_agent.cli.commands import AGENT_PATTERNS
 from personal_agent.cli.runner import (
     build_overrides,
     cmd_init,
@@ -160,10 +161,7 @@ def _build_main_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-p",
         "--pattern",
-        choices=[
-            "auto", "react", "plan_execute", "reflection",
-            "pipeline", "debate", "parallel_judge",
-        ],
+        choices=["auto", *AGENT_PATTERNS],
         help="Agent pattern (default: auto)",
     )
     parser.add_argument(

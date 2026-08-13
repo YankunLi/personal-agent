@@ -18,6 +18,18 @@ from rich.text import Text
 
 from personal_agent.cli.theme import console
 
+# Single source of truth for the agent patterns exposed through the CLI.
+# Also referenced by cli/app.py for the -p/--pattern choices so the two
+# never drift apart.
+AGENT_PATTERNS: tuple[str, ...] = (
+    "react",
+    "plan_execute",
+    "reflection",
+    "pipeline",
+    "debate",
+    "parallel_judge",
+)
+
 
 def _track_background_task(channel: CLIChannel, coro: Coroutine[Any, Any, Any]) -> None:
     """Spawn a fire-and-forget task on the channel, surfacing failures.
@@ -145,10 +157,10 @@ async def _cmd_pattern(channel: CLIChannel, arg: str) -> bool:
         console.print(
             Text.assemble(
                 ("Available: ", "dim"),
-                ("react, plan_execute, reflection, pipeline, debate, parallel_judge", "info"),
+                (", ".join(AGENT_PATTERNS), "info"),
             )
         )
-    elif arg in ("react", "plan_execute", "reflection", "pipeline", "debate", "parallel_judge"):
+    elif arg in AGENT_PATTERNS:
         channel._overrides["pattern"] = arg
         console.print(
             Text.assemble(
