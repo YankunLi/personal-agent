@@ -8,6 +8,7 @@ through rich via cli/display.py and cli/theme.py.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import logging
 import threading
@@ -551,7 +552,6 @@ class CLIChannel(Channel):
         console.print(
             Text.assemble(("  Working keys: ", "label"), (f"{len(current.working)}", "value"))
         )
-        import datetime
 
         created = datetime.datetime.fromtimestamp(current.created_at).strftime("%Y-%m-%d %H:%M")
         updated = datetime.datetime.fromtimestamp(current.updated_at).strftime("%Y-%m-%d %H:%M")
