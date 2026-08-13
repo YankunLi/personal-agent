@@ -32,15 +32,6 @@ THEME = Theme(
 console = Console(theme=THEME)
 
 
-def term_width() -> int:
-    """Return the console's current usable width, clamped to a sane range."""
-    try:
-        w = console.width
-    except Exception:
-        return 80
-    return max(60, min(w, 120))
-
-
 # REPL prompt glyphs. Printed through the shared console (not passed to
 # input()), so rich applies the theme styles and handles ANSI emulation on
 # legacy Windows consoles. rich's Console.input() can't be used because the
