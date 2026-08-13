@@ -734,17 +734,17 @@ class CLIChannel(Channel):
                         )
                     )
                     return
-                skill = Skill.from_markdown(skill_md.read_text(), base_path=p)
+                skill = Skill.from_markdown(skill_md.read_text(encoding="utf-8"), base_path=p)
             elif p.suffix == ".md":
-                skill = Skill.from_markdown(p.read_text())
+                skill = Skill.from_markdown(p.read_text(encoding="utf-8"))
             elif p.suffix == ".json":
-                with open(p) as f:
+                with open(p, encoding="utf-8") as f:
                     data = json.load(f)
                 skill = Skill.from_dict(data)
             elif p.suffix in (".yaml", ".yml"):
                 import yaml
 
-                with open(p) as f:
+                with open(p, encoding="utf-8") as f:
                     data = yaml.safe_load(f)
                 skill = Skill.from_dict(data)
             else:
@@ -891,7 +891,7 @@ class CLIChannel(Channel):
         p = Path(path).expanduser().resolve()
         try:
             p.parent.mkdir(parents=True, exist_ok=True)
-            with open(p, "w") as f:
+            with open(p, "w", encoding="utf-8") as f:
                 json.dump(self._session_tasks, f, ensure_ascii=False, indent=2)
         except OSError as e:
             console.print(Text.assemble(("Failed to save: ", "error"), (str(e), "error")))
@@ -910,7 +910,7 @@ class CLIChannel(Channel):
             console.print(Text.assemble(("File not found: ", "error"), (path, "error")))
             return None
         try:
-            with open(p) as f:
+            with open(p, encoding="utf-8") as f:
                 data = json.load(f)
         except json.JSONDecodeError as e:
             console.print(Text.assemble(("Invalid JSON: ", "error"), (str(e), "error")))
