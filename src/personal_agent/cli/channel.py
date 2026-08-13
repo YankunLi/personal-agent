@@ -114,12 +114,12 @@ class CLIChannel(Channel):
         self._workdir = workdir or Path.cwd()
         self._config_path = config_path
         self._agent: Any = None
-        self._session_tasks: list[dict] = []
+        self._session_tasks: list[dict[str, Any]] = []
         self._multiline_buffer: list[str] = []
         self._in_multiline = False
-        self._project_data: dict | None = None
+        self._project_data: dict[str, Any] | None = None
         self._task_lock = asyncio.Lock()
-        self._background_tasks: set[asyncio.Task] = set()
+        self._background_tasks: set[asyncio.Task[Any]] = set()
         self._current_session: Any = None
         self._commands = build_default_registry()
         self._current_pattern: str = ""
@@ -716,7 +716,8 @@ class CLIChannel(Channel):
             )
 
     def _install_skill(self, path: str) -> None:
-        from personal_agent.skills.base import Skill, SkillError
+        from personal_agent.exceptions import SkillError
+        from personal_agent.skills.base import Skill
 
         p = Path(path).expanduser()
         if not p.exists():
@@ -903,7 +904,7 @@ class CLIChannel(Channel):
             )
         )
 
-    def _load_session(self, path: str) -> list[dict] | None:
+    def _load_session(self, path: str) -> list[dict[str, Any]] | None:
         p = Path(path).expanduser()
         if not p.exists():
             console.print(Text.assemble(("File not found: ", "error"), (path, "error")))

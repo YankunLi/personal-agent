@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from rich.panel import Panel
 from rich.text import Text
@@ -23,7 +25,7 @@ async def run_one_shot(
     task: str,
     config_path: str | None = None,
     workdir: Path | None = None,
-    overrides: dict | None = None,
+    overrides: dict[str, Any] | None = None,
 ) -> None:
     """Run a one-shot agent task, optionally with project session context."""
     from personal_agent.project import load_project_at
@@ -147,7 +149,7 @@ async def run_one_shot(
 
 async def interactive_loop(
     config_path: str | None,
-    overrides: dict,
+    overrides: dict[str, Any],
     workdir: Path,
     serve: bool = False,
     ws_host: str = "localhost",
@@ -225,7 +227,7 @@ async def interactive_loop(
 
 async def run_dev_review_loop(
     config_path: str | None,
-    overrides: dict,
+    overrides: dict[str, Any],
     workdir: Path,
     req_path: Path,
     review_guide: str | None = None,
@@ -252,7 +254,7 @@ async def run_dev_review_loop(
 # ── Init helpers (moved from __main__.py) ────────────────────────────────────
 
 
-def cmd_init(args, workdir: Path) -> None:
+def cmd_init(args: argparse.Namespace, workdir: Path) -> None:
     """Handle the `pa init` command."""
     from personal_agent.project import PA_FILE, init_project
     from personal_agent.session import SessionManager
@@ -311,7 +313,7 @@ def cmd_init(args, workdir: Path) -> None:
     console.print(Text("  Run pa -i to start interactive mode with this session.", style="dim"))
 
 
-def _load_toml(path: Path) -> dict:
+def _load_toml(path: Path) -> dict[str, Any]:
     """Load a TOML file, returning a dict or empty dict on failure."""
     try:
         import tomllib
@@ -398,9 +400,9 @@ def _prompt_init(workdir: Path) -> None:
     console.print(Text(f"  Expected config file: {pa_path}", style="dim"))
 
 
-def build_overrides(args) -> dict:
+def build_overrides(args: argparse.Namespace) -> dict[str, str]:
     """Build provider/agent overrides from argparse args."""
-    overrides: dict = {}
+    overrides: dict[str, str] = {}
     if args.pattern:
         overrides["pattern"] = args.pattern
     if args.provider:

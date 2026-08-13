@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import TYPE_CHECKING, Any
 
 from rich.panel import Panel
 from rich.table import Table
@@ -19,7 +19,7 @@ from rich.text import Text
 from personal_agent.cli.theme import console
 
 
-def _track_background_task(channel, coro) -> None:
+def _track_background_task(channel: CLIChannel, coro: Coroutine[Any, Any, Any]) -> None:
     """Spawn a fire-and-forget task on the channel, surfacing failures.
 
     Without the exception-printing callback, a failure in _session_create,
@@ -27,10 +27,10 @@ def _track_background_task(channel, coro) -> None:
     exception was never retrieved), so the user saw no feedback when a
     /session or /skill command failed.
     """
-    t = asyncio.create_task(coro)
+    t: asyncio.Task[Any] = asyncio.create_task(coro)
     channel._background_tasks.add(t)
 
-    def _on_done(task: asyncio.Task) -> None:
+    def _on_done(task: asyncio.Task[Any]) -> None:
         channel._background_tasks.discard(task)
         if task.cancelled():
             return
