@@ -18,6 +18,9 @@ from rich.text import Text
 
 from personal_agent.cli.theme import console
 
+if TYPE_CHECKING:
+    from personal_agent.cli.channel import CLIChannel
+
 # Single source of truth for the agent patterns exposed through the CLI.
 # Also referenced by cli/app.py for the -p/--pattern choices so the two
 # never drift apart.
@@ -52,8 +55,6 @@ def _track_background_task(channel: CLIChannel, coro: Coroutine[Any, Any, Any]) 
 
     t.add_done_callback(_on_done)
 
-if TYPE_CHECKING:
-    from personal_agent.cli.channel import CLIChannel
 
 Handler = Callable[["CLIChannel", str], Awaitable[bool]]
 
