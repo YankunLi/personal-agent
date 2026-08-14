@@ -270,10 +270,7 @@ class CLIChannel(Channel):
         # task's classified pattern differs and recreate the agent.
         self._current_pattern = self._normalize_current_pattern()
 
-        if self._current_session:
-            async with self._current_session.memory_lock:
-                self._agent.short_term = self._current_session.short_term
-                self._agent.working = self._current_session.working
+        await self._bind_agent_memory(self._agent)
 
     def _normalize_current_pattern(self) -> str:
         """Resolve the effective pattern, mapping "auto" -> "react".
@@ -303,10 +300,7 @@ class CLIChannel(Channel):
 
         if self._agent is not None:
             # Persist current memory before closing
-            if self._current_session:
-                async with self._current_session.memory_lock:
-                    self._current_session.short_term = self._agent.short_term
-                    self._current_session.working = self._agent.working
+            await self._snapshot_agent_memory()
             try:
                 await self._agent.close()
             except Exception:
@@ -315,10 +309,7 @@ class CLIChannel(Channel):
         self._agent = new_agent
         self._current_pattern = pattern
 
-        if self._current_session:
-            async with self._current_session.memory_lock:
-                self._agent.short_term = self._current_session.short_term
-                self._agent.working = self._current_session.working
+        await self._bind_agent_memory(self._agent)
 
     async def _persist_session(self) -> None:
         """Copy agent memory into the current session and save it to disk.
@@ -329,13 +320,35 @@ class CLIChannel(Channel):
         """
         if not self._current_session or not self._agent:
             return
-        async with self._current_session.memory_lock:
-            self._current_session.short_term = self._agent.short_term
-            self._current_session.working = self._agent.working
+        await self._snapshot_agent_memory()
         try:
             self._router.session_manager.save_session(self._current_session)
         except Exception:
             logger.warning("Failed to save session", exc_info=True)
+
+    async def _snapshot_agent_memory(self) -> None:
+        """Copy the active agent's memory buffers into the current session.
+
+        No-op when there is no active session or agent. Used before closing or
+        replacing an agent so the session keeps the latest conversation.
+        """
+        if not self._current_session or not self._agent:
+            return
+        async with self._current_session.memory_lock:
+            self._current_session.short_term = self._agent.short_term
+            self._current_session.working = self._agent.working
+
+    async def _bind_agent_memory(self, agent: Any) -> None:
+        """Restore the current session's memory buffers onto an agent.
+
+        No-op when there is no active session. Used after creating or
+        switching agents so the agent continues the session's conversation.
+        """
+        if not self._current_session or not agent:
+            return
+        async with self._current_session.memory_lock:
+            agent.short_term = self._current_session.short_term
+            agent.working = self._current_session.working
 
     # ── Task processing ──────────────────────────────────────────────────────
 
@@ -592,9 +605,7 @@ class CLIChannel(Channel):
 
             session = session_mgr.create(name)
             self._current_session = session
-            async with session.memory_lock:
-                self._agent.short_term = session.short_term
-                self._agent.working = session.working
+            await self._bind_agent_memory(self._agent)
         console.print(
             Text.assemble(
                 ("✓ Session created: ", "success"),
@@ -614,9 +625,7 @@ class CLIChannel(Channel):
                 console.print(Text.assemble(("Session not found: ", "error"), (name, "error")))
                 return
             self._current_session = target
-            async with target.memory_lock:
-                self._agent.short_term = target.short_term
-                self._agent.working = target.working
+            await self._bind_agent_memory(self._agent)
             console.print(
                 Text.assemble(
                     ("✓ Switched to: ", "success"),
@@ -878,10 +887,7 @@ class CLIChannel(Channel):
         # rebuilds the agent.
         self._current_pattern = self._normalize_current_pattern()
 
-        if self._current_session:
-            async with self._current_session.memory_lock:
-                self._agent.short_term = self._current_session.short_term
-                self._agent.working = self._current_session.working
+        await self._bind_agent_memory(self._agent)
 
         console.print(Text("✓ Agent restarted with current settings.", style="success"))
 
