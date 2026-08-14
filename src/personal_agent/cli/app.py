@@ -65,6 +65,11 @@ def _split_init_command(argv: list[str]) -> tuple[str | None, list[str]]:
     return None, argv
 
 
+def _resolve_workdir(workdir_arg: str | None) -> Path:
+    """Resolve the -w/--workdir argument, defaulting to the current directory."""
+    return Path(workdir_arg).resolve() if workdir_arg else Path.cwd()
+
+
 def _run_init(argv: list[str]) -> None:
     """Handle the `pa init ...` subcommand."""
     init_parser = argparse.ArgumentParser(
@@ -76,10 +81,7 @@ def _run_init(argv: list[str]) -> None:
     init_parser.add_argument("-w", "--workdir",
                              help="Working directory (defaults to current directory)")
     args = init_parser.parse_args(argv)
-    workdir = Path.cwd()
-    if args.workdir:
-        workdir = Path(args.workdir).resolve()
-    cmd_init(args, workdir)
+    cmd_init(args, _resolve_workdir(args.workdir))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -94,9 +96,7 @@ def main(argv: list[str] | None = None) -> None:
     parser = _build_main_parser()
     args = parser.parse_args(argv)
 
-    workdir = Path.cwd()
-    if getattr(args, "workdir", None):
-        workdir = Path(args.workdir).resolve()
+    workdir = _resolve_workdir(getattr(args, "workdir", None))
 
     if args.list_providers:
         _print_providers()
