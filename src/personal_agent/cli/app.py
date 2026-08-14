@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from rich.table import Table
+from rich.text import Text
 
 from personal_agent.cli.commands import AGENT_PATTERNS
 from personal_agent.cli.runner import (
@@ -130,7 +131,9 @@ def main(argv: list[str] | None = None) -> None:
             try:
                 review_guide = guide_path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as e:
-                console.print(f"[error]无法读取 review guide 文件: {e}[/error]")
+                console.print(
+                    Text.assemble(("Error reading review guide file: ", "error"), (str(e), "error"))
+                )
                 return
         asyncio.run(
             run_dev_review_loop(
