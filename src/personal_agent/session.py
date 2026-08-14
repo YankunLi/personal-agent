@@ -218,8 +218,8 @@ class SessionManager:
                 session.touch()
                 self._save_session(session)
 
-    def load_all(self) -> list[Session]:
-        """Load all sessions from disk.
+    def _is_trusted_session_file(self, path: Path) -> bool:
+        """Return True if a session file may be loaded for this user.
 
         Skips any session file that is not owned by the current user or that
         grants group/other access — a tampered file could otherwise inject
@@ -228,40 +228,71 @@ class SessionManager:
         """
         import stat
 
+        try:
+            st = path.stat()
+        except OSError as e:
+            logger.warning("Cannot stat session file '%s': %s", path.name, e)
+            return False
+        # os.geteuid() is Unix-only; on Windows (and any platform without it)
+        # the ownership/permission check doesn't apply — Windows uses ACLs, not
+        # uid/mode bits. The previous code unconditionally called os.geteuid(),
+        # which raised AttributeError on Windows whenever a session file
+        # existed, crashing session loading and thus every CLI/server startup
+        # that tried to restore sessions.
+        if hasattr(os, "geteuid"):
+            if st.st_uid != os.geteuid():
+                logger.warning(
+                    "Skipping session file '%s': not owned by current user (uid=%d)",
+                    path.name, st.st_uid,
+                )
+                return False
+            if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+                logger.warning(
+                    "Skipping session file '%s': group/other access bits set (mode=%o)",
+                    path.name, st.st_mode & 0o777,
+                )
+                return False
+        return True
+
+    def load_all(self) -> list[Session]:
+        """Load all sessions from disk."""
         with self._lock:
             self._sessions.clear()
             for f in sorted(self._storage_dir.glob("*.json")):
-                try:
-                    st = f.stat()
-                except OSError as e:
-                    logger.warning("Cannot stat session file '%s': %s", f.name, e)
+                if not self._is_trusted_session_file(f):
                     continue
-                # os.geteuid() is Unix-only; on Windows (and any platform
-                # without it) the ownership/permission check doesn't apply —
-                # Windows uses ACLs, not uid/mode bits. The previous code
-                # unconditionally called os.geteuid(), which raised
-                # AttributeError on Windows whenever a session file existed,
-                # crashing load_all() and thus every CLI/server startup that
-                # tried to restore sessions.
-                if hasattr(os, "geteuid"):
-                    if st.st_uid != os.geteuid():
-                        logger.warning(
-                            "Skipping session file '%s': not owned by current user (uid=%d)",
-                            f.name, st.st_uid,
-                        )
-                        continue
-                    if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-                        logger.warning(
-                            "Skipping session file '%s': group/other access bits set (mode=%o)",
-                            f.name, st.st_mode & 0o777,
-                        )
-                        continue
                 try:
                     session = self._load_session_file(f)
                     self._sessions[session.id] = session
                 except Exception as e:
                     logger.warning("Failed to load session file '%s': %s", f.name, e)
             return sorted(self._sessions.values(), key=lambda s: s.updated_at, reverse=True)
+
+    def load_session(self, session_id: str) -> Session | None:
+        """Load a single session by ID, without loading the whole store.
+
+        Unlike load_all(), only the requested session is read from disk. A
+        one-shot CLI run references exactly one project session, so loading
+        every session just to look one up wastes time and memory as the
+        session count grows. Applies the same ownership/permission trust
+        check as load_all(). Returns None when the session does not exist or
+        cannot be trusted/loaded.
+        """
+        with self._lock:
+            if session_id in self._sessions:
+                return self._sessions[session_id]
+            path = self._storage_dir / f"{session_id}.json"
+            if not path.exists():
+                return None
+            if not self._is_trusted_session_file(path):
+                return None
+            try:
+                session = self._load_session_file(path)
+            except Exception as e:
+                logger.warning("Failed to load session file '%s': %s", path.name, e)
+                return None
+            self._sessions[session.id] = session
+            return session
 
     def cleanup_expired(self) -> list[str]:
         """Remove expired sessions from memory and disk.

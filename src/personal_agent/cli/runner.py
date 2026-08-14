@@ -38,27 +38,29 @@ async def run_one_shot(
     wd = workdir or Path.cwd()
 
     session_mgr = SessionManager()
-    session_mgr.load_all()
-
     project_data = load_project_at(wd)
 
+    # Load only the project-referenced session, not the entire store: a
+    # one-shot run touches a single session, and load_all() reads every
+    # session file on disk just to look one up.
     project_session_ok = False
     if project_data:
         sid = project_data.get("session_id")
-        if sid and session_mgr.has_session(sid):
-            session_mgr.switch(sid)
-            project_session_ok = True
-        elif sid:
-            # The project references a session that no longer exists (file
-            # deleted, different machine, etc.). Without this guard the run
-            # silently falls back to session_mgr.current — which load_all()
-            # set to whatever session was loaded last, an UNRELATED session
-            # — wiring the agent's memory to it and then overwriting that
-            # unrelated session's memory with this run's output. Skip
-            # session wiring entirely instead.
-            logger.warning(
-                "Project session '%s' not found; running without session memory", sid
-            )
+        if sid:
+            session = session_mgr.load_session(sid)
+            if session is not None:
+                session_mgr.switch(session.id)
+                project_session_ok = True
+            else:
+                # The project references a session that no longer exists (file
+                # deleted, different machine, etc.). Without this guard the run
+                # would fall back to session_mgr.current — an UNRELATED session
+                # or None — wiring the agent's memory to it and then
+                # overwriting that unrelated session's memory with this run's
+                # output. Skip session wiring entirely instead.
+                logger.warning(
+                    "Project session '%s' not found; running without session memory", sid
+                )
 
     # Build header panel
     header_lines: list[Text] = []
