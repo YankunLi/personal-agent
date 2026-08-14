@@ -195,11 +195,7 @@ class CLIChannel(Channel):
 
         # Cleanup
         try:
-            for task in list(self._background_tasks):
-                if not task.done():
-                    task.cancel()
-            if self._background_tasks:
-                await asyncio.gather(*self._background_tasks, return_exceptions=True)
+            await self._cancel_background_tasks()
             if self._agent:
                 await self._persist_session()
                 await self._agent.close()
@@ -349,6 +345,16 @@ class CLIChannel(Channel):
         async with self._current_session.memory_lock:
             agent.short_term = self._current_session.short_term
             agent.working = self._current_session.working
+
+    async def _cancel_background_tasks(self) -> None:
+        """Cancel and await any outstanding fire-and-forget slash tasks."""
+        if not self._background_tasks:
+            return
+        for task in list(self._background_tasks):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*self._background_tasks, return_exceptions=True)
+        self._background_tasks.clear()
 
     # ── Task processing ──────────────────────────────────────────────────────
 
@@ -855,12 +861,7 @@ class CLIChannel(Channel):
 
         console.print(Text("Restarting agent...", style="warning"))
 
-        for task in list(self._background_tasks):
-            if not task.done():
-                task.cancel()
-        if self._background_tasks:
-            await asyncio.gather(*self._background_tasks, return_exceptions=True)
-            self._background_tasks.clear()
+        await self._cancel_background_tasks()
 
         await self._persist_session()
 
