@@ -19,11 +19,9 @@ THEME = Theme(
         "tool.args": "dim",
         "thought": "dim yellow",
         "step.header": "bold dim",
-        "answer.title": "bold cyan",
         "banner": "bold cyan",
         "label": "bold",
         "value": "green",
-        "muted.value": "dim",
     }
 )
 
