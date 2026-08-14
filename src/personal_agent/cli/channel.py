@@ -165,16 +165,10 @@ class CLIChannel(Channel):
                     await self._confirm_and_exit()
                     break
 
-                if line.lower() == "clear":
-                    await self._clear_memory()
-                    continue
-
-                if line.lower() == "help":
-                    await self._commands.dispatch(self, "/help")
-                    continue
-
-                if line.lower() == "history":
-                    self._print_history()
+                if line.lower() in ("clear", "help", "history"):
+                    # Bare-word aliases for the corresponding slash commands;
+                    # dispatch keeps a single implementation of each.
+                    await self._commands.dispatch(self, "/" + line.lower())
                     continue
 
                 if line.strip() == '"""':
