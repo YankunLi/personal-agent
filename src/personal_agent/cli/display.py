@@ -22,12 +22,17 @@ _OUTPUT_PREVIEW_LINES = 5
 _MAX_INLINE_ARG_CHARS = 120
 
 
+def _serialize_compact(arguments: dict[str, Any]) -> str:
+    """Compact JSON serialization of tool arguments, with str() fallback."""
+    try:
+        return json.dumps(arguments, ensure_ascii=False)
+    except Exception:
+        return str(arguments)
+
+
 def _format_args(arguments: dict[str, Any]) -> str:
     """Compact JSON representation of tool arguments, truncated."""
-    try:
-        s = json.dumps(arguments, ensure_ascii=False)
-    except Exception:
-        s = str(arguments)
+    s = _serialize_compact(arguments)
     if len(s) > _MAX_INLINE_ARG_CHARS:
         return s[: _MAX_INLINE_ARG_CHARS - 3] + "..."
     return s
@@ -76,18 +81,15 @@ class RichDisplay:
 
     async def on_tool_call(self, name: str, arguments: dict[str, Any]) -> None:
         self._tool_count += 1
-        # Serialize once. The previous form called _format_args (which
-        # json.dumps) and then, on the long-args path, json.dumps'd again
-        # with indent=2 — double serialization on every long tool call.
-        # Also, _format_args truncates before the length check, so
-        # `len(args_str) > _MAX_INLINE_ARG_CHARS` was always False and the
-        # multi-line Syntax path was effectively dead for JSON-serializable
-        # args. Check the un-truncated length so long args actually get the
-        # multi-line treatment.
-        try:
-            compact = json.dumps(arguments, ensure_ascii=False)
-        except Exception:
-            compact = str(arguments)
+        # Serialize once, reusing the shared compact serializer. The previous
+        # form called _format_args (which json.dumps) and then, on the
+        # long-args path, json.dumps'd again with indent=2 — double
+        # serialization on every long tool call. Also, _format_args truncates
+        # before the length check, so `len(args_str) > _MAX_INLINE_ARG_CHARS`
+        # was always False and the multi-line Syntax path was effectively dead
+        # for JSON-serializable args. Check the un-truncated length so long
+        # args actually get the multi-line treatment.
+        compact = _serialize_compact(arguments)
         if "\n" in compact or len(compact) > _MAX_INLINE_ARG_CHARS:
             console.print(
                 Text.assemble(
