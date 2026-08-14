@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -313,29 +314,48 @@ def cmd_init(args: argparse.Namespace, workdir: Path) -> None:
     console.print(Text("  Run pa -i to start interactive mode with this session.", style="dim"))
 
 
-def _load_toml(path: Path) -> dict[str, Any]:
-    """Load a TOML file, returning a dict or empty dict on failure."""
+@lru_cache(maxsize=1)
+def _get_toml_loader() -> Any | None:
+    """Return the available TOML loader module, or None if neither is installed.
+
+    tomllib ships with Python 3.11+; tomli is the backport. Resolved once and
+    cached — project detection probes multiple .toml files in one invocation,
+    so the import dance (and its repeated ImportError attempts on old Python)
+    should not run per file.
+    """
     try:
         import tomllib
+
+        return tomllib
     except ImportError:
         try:
             import tomli as tomllib  # type: ignore
+
+            return tomllib
         except ImportError:
-            # Silent fallback masked a real environment problem: on
-            # Python < 3.11 without tomli installed, project detection
-            # silently produced an empty result and the user got a
-            # project named after the directory with no description.
-            logger.warning(
-                "Cannot parse %s: tomllib (Python 3.11+) and tomli are both "
-                "unavailable. Install tomli or upgrade to Python 3.11+.",
-                path,
-            )
-            return {}
+            return None
+
+
+def _load_toml(path: Path) -> dict[str, Any]:
+    """Load a TOML file, returning a dict or empty dict on failure."""
+    loader = _get_toml_loader()
+    if loader is None:
+        # Silent fallback masked a real environment problem: on
+        # Python < 3.11 without tomli installed, project detection
+        # silently produced an empty result and the user got a
+        # project named after the directory with no description.
+        logger.warning(
+            "Cannot parse %s: tomllib (Python 3.11+) and tomli are both "
+            "unavailable. Install tomli or upgrade to Python 3.11+.",
+            path,
+        )
+        return {}
     with open(path, "rb") as f:
         try:
-            return tomllib.load(f)
+            data = loader.load(f)
         except Exception:
             return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _detect_project_info(workdir: Path) -> dict[str, str]:
