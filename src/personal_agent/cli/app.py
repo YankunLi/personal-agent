@@ -71,6 +71,12 @@ def _resolve_workdir(workdir_arg: str | None) -> Path:
     return Path(workdir_arg).resolve() if workdir_arg else Path.cwd()
 
 
+def _resolve_relative(value: str, workdir: Path) -> Path:
+    """Resolve a user-supplied path against the workdir unless it is absolute."""
+    path = Path(value)
+    return path if path.is_absolute() else workdir / path
+
+
 def _run_init(argv: list[str]) -> None:
     """Handle the `pa init ...` subcommand."""
     init_parser = argparse.ArgumentParser(
@@ -120,14 +126,10 @@ def main(argv: list[str] | None = None) -> None:
             )
         )
     elif args.loop:
-        req_path = Path(args.req)
-        if not req_path.is_absolute():
-            req_path = workdir / req_path
+        req_path = _resolve_relative(args.req, workdir)
         review_guide: str | None = None
         if args.review_guide:
-            guide_path = Path(args.review_guide)
-            if not guide_path.is_absolute():
-                guide_path = workdir / guide_path
+            guide_path = _resolve_relative(args.review_guide, workdir)
             try:
                 review_guide = guide_path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as e:
