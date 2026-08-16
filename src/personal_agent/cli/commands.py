@@ -59,6 +59,18 @@ def _track_background_task(channel: CLIChannel, coro: Coroutine[Any, Any, Any]) 
 Handler = Callable[["CLIChannel", str], Awaitable[bool]]
 
 
+def _set_override(channel: CLIChannel, key: str, value: str, noun: str) -> None:
+    """Store a pattern/provider/model override and confirm it for next restart."""
+    channel._overrides[key] = value
+    console.print(
+        Text.assemble(
+            (f"✓ {noun} set to ", "success"),
+            (value, "value"),
+            (". Will take effect on next agent restart.", "dim"),
+        )
+    )
+
+
 class SlashCommandRegistry:
     """Maps slash command names to async handler functions."""
 
@@ -162,14 +174,7 @@ async def _cmd_pattern(channel: CLIChannel, arg: str) -> bool:
             )
         )
     elif arg in AGENT_PATTERNS:
-        channel._overrides["pattern"] = arg
-        console.print(
-            Text.assemble(
-                ("✓ Pattern set to ", "success"),
-                (arg, "value"),
-                (". Will take effect on next agent restart.", "dim"),
-            )
-        )
+        _set_override(channel, "pattern", arg, "Pattern")
     else:
         console.print(Text.assemble(("Invalid pattern: ", "error"), (arg, "error")))
     return True
@@ -187,14 +192,7 @@ async def _cmd_model(channel: CLIChannel, arg: str) -> bool:
         else:
             console.print(Text("Agent not initialized yet.", style="error"))
     else:
-        channel._overrides["model"] = arg
-        console.print(
-            Text.assemble(
-                ("✓ Model set to ", "success"),
-                (arg, "value"),
-                (". Will take effect on next agent restart.", "dim"),
-            )
-        )
+        _set_override(channel, "model", arg, "Model")
     return True
 
 
@@ -215,14 +213,7 @@ async def _cmd_provider(channel: CLIChannel, arg: str) -> bool:
             )
         )
     elif arg in PROVIDER_REGISTRY:
-        channel._overrides["provider"] = arg
-        console.print(
-            Text.assemble(
-                ("✓ Provider set to ", "success"),
-                (arg, "value"),
-                (". Will take effect on next agent restart.", "dim"),
-            )
-        )
+        _set_override(channel, "provider", arg, "Provider")
     else:
         console.print(Text.assemble(("Unknown provider: ", "error"), (arg, "error")))
     return True
