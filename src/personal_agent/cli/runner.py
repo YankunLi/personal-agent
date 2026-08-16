@@ -352,11 +352,11 @@ def _load_toml(path: Path) -> dict[str, Any]:
             path,
         )
         return {}
-    with open(path, "rb") as f:
-        try:
+    try:
+        with open(path, "rb") as f:
             data = loader.load(f)
-        except Exception:
-            return {}
+    except Exception:
+        return {}
     return data if isinstance(data, dict) else {}
 
 
@@ -375,11 +375,11 @@ def _detect_project_info(workdir: Path) -> dict[str, str]:
 
     pkg_json = workdir / "package.json"
     if pkg_json.exists():
-        with open(pkg_json, encoding="utf-8") as f:
-            try:
+        try:
+            with open(pkg_json, encoding="utf-8") as f:
                 data = json.load(f)
-            except json.JSONDecodeError:
-                return {"name": workdir.name, "description": ""}
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return {"name": workdir.name, "description": ""}
         name = data.get("name", "")
         desc = data.get("description", "")
         if name:
@@ -397,7 +397,10 @@ def _detect_project_info(workdir: Path) -> dict[str, str]:
     setup_cfg = workdir / "setup.cfg"
     if setup_cfg.exists():
         cfg = configparser.ConfigParser()
-        cfg.read(setup_cfg)
+        try:
+            cfg.read(setup_cfg)
+        except (OSError, UnicodeDecodeError, configparser.Error):
+            return {"name": workdir.name, "description": ""}
         if cfg.has_section("metadata"):
             name = cfg.get("metadata", "name", fallback="")
             desc = cfg.get("metadata", "description", fallback="")
