@@ -22,6 +22,15 @@ from personal_agent.selector import classify, explain
 logger = logging.getLogger(__name__)
 
 
+def _load_settings(
+    config_path: str | None,
+) -> tuple[Any, str | None]:
+    """Load settings plus the resolved config path (None if no config found)."""
+    settings = load_config(config_path)
+    loaded_path = config_path or _find_config_file()
+    return settings, loaded_path
+
+
 async def run_one_shot(
     task: str,
     config_path: str | None = None,
@@ -32,8 +41,7 @@ async def run_one_shot(
     from personal_agent.project import load_project_at
     from personal_agent.session import SessionManager
 
-    settings = load_config(config_path)
-    loaded_path = config_path or _find_config_file()
+    settings, loaded_path = _load_settings(config_path)
 
     wd = workdir or Path.cwd()
 
@@ -166,8 +174,7 @@ async def interactive_loop(
     from personal_agent.project import load_project_at
     from personal_agent.server import AgentServer
 
-    settings = load_config(config_path)
-    loaded_path = config_path or _find_config_file()
+    settings, loaded_path = _load_settings(config_path)
 
     wd = workdir
     project_data = load_project_at(wd)
