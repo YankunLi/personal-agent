@@ -161,14 +161,13 @@ class CLIChannel(Channel):
                 if not line.strip():
                     continue
 
-                if line.lower() in ("quit", "exit"):
-                    await self._confirm_and_exit()
-                    break
-
-                if line.lower() in ("clear", "help", "history"):
+                if line.lower() in ("quit", "exit", "clear", "help", "history"):
                     # Bare-word aliases for the corresponding slash commands;
-                    # dispatch keeps a single implementation of each.
-                    await self._commands.dispatch(self, "/" + line.lower())
+                    # dispatch keeps a single implementation of each. /quit and
+                    # /exit return False, which signals the loop to break.
+                    should_continue = await self._commands.dispatch(self, "/" + line.lower())
+                    if not should_continue:
+                        break
                     continue
 
                 if line.strip() == '"""':
