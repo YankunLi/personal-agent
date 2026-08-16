@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def _load_settings(
     config_path: str | None,
-) -> tuple[Any, str | None]:
+) -> tuple[Any, str | Path | None]:
     """Load settings plus the resolved config path (None if no config found)."""
     settings = load_config(config_path)
     loaded_path = config_path or _find_config_file()
