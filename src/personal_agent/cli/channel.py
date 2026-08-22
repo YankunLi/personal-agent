@@ -20,9 +20,8 @@ from rich.panel import Panel
 from rich.text import Text
 
 from personal_agent.channels.base import Channel, SessionKey
-from personal_agent.cli.callbacks import make_callbacks
 from personal_agent.cli.commands import build_default_registry
-from personal_agent.cli.display import RichDisplay
+from personal_agent.cli.display import install_display
 from personal_agent.cli.theme import PROMPT_MULTILINE, PROMPT_PRIMARY, console
 from personal_agent.server.router import MessageRouter
 
@@ -395,9 +394,7 @@ class CLIChannel(Channel):
                             )
                         )
 
-            display = RichDisplay()
-            self._agent._callbacks = make_callbacks(display)
-            self._agent._streaming_enabled = True
+            display = install_display(self._agent)
 
             try:
                 result = await self._agent.run(task)

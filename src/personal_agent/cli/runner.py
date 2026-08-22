@@ -12,8 +12,7 @@ from typing import Any
 from rich.panel import Panel
 from rich.text import Text
 
-from personal_agent.cli.callbacks import make_callbacks
-from personal_agent.cli.display import RichDisplay
+from personal_agent.cli.display import install_display
 from personal_agent.cli.theme import console
 from personal_agent.config import _find_config_file, load_config
 from personal_agent.factory import create_agent
@@ -126,9 +125,7 @@ async def run_one_shot(
             agent.short_term = current.short_term
             agent.working = current.working
 
-        display = RichDisplay()
-        agent._callbacks = make_callbacks(display)
-        agent._streaming_enabled = True
+        display = install_display(agent)
 
         result = await agent.run(task)
 

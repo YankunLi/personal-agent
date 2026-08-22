@@ -14,6 +14,7 @@ from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.text import Text
 
+from personal_agent.cli.callbacks import make_callbacks
 from personal_agent.cli.theme import console
 
 # Maximum lines of tool output / thought preview to show inline.
@@ -52,6 +53,19 @@ def format_answer(text: str) -> Markdown:
     Returns a rich renderable; callers print it via console.print().
     """
     return Markdown(text)
+
+
+def install_display(agent: Any) -> RichDisplay:
+    """Create a RichDisplay, wire it as the agent's callbacks, and return it.
+
+    Both the one-shot runner and the interactive CLIChannel enable streaming
+    and attach callbacks the same way; centralizing the wiring guarantees the
+    two never drift apart.
+    """
+    display = RichDisplay()
+    agent._callbacks = make_callbacks(display)
+    agent._streaming_enabled = True
+    return display
 
 
 class RichDisplay:
