@@ -247,18 +247,14 @@ class CLIChannel(Channel):
         from personal_agent.factory import create_agent
 
         try:
-            self._agent = await create_agent(self._settings, **self._overrides)
+            agent = await create_agent(self._settings, **self._overrides)
         except Exception as e:
             logger.exception("Failed to create agent: %s", e)
             console.print(Text(f"\nError creating agent: {e}", style="error"))
             console.print(Text("Check your provider configuration and API key.", style="dim"))
             raise
 
-        # Track the actual pattern used so "auto" mode can detect when a
-        # task's classified pattern differs and recreate the agent.
-        self._current_pattern = self._normalize_current_pattern()
-
-        await self._bind_agent_memory(self._agent)
+        await self._install_agent(agent)
 
     def _normalize_current_pattern(self) -> str:
         """Resolve the effective pattern, mapping "auto" -> "react".
@@ -269,6 +265,29 @@ class CLIChannel(Channel):
         """
         pattern = self._overrides.get("pattern", self._settings.agent.pattern)
         return "react" if pattern == "auto" else pattern
+
+    async def _install_agent(self, new_agent: Any, *, pattern: str | None = None) -> None:
+        """Install a freshly-created agent, retiring the current one.
+
+        Snapshots the current agent's memory into the session, closes it,
+        then binds the new agent to the session's memory and keeps the
+        tracked pattern in sync so auto-mode comparisons and /pattern display
+        never show a stale value. An explicit ``pattern`` wins (e.g. the
+        classified pattern in auto mode); otherwise the pattern is normalized
+        from the overrides/settings, mapping "auto" to "react" since there is
+        no task to classify at install time.
+        """
+        if self._agent is not None:
+            await self._snapshot_agent_memory()
+            try:
+                await self._agent.close()
+            except Exception:
+                logger.warning("Error closing previous agent", exc_info=True)
+
+        self._agent = new_agent
+        self._current_pattern = pattern or self._normalize_current_pattern()
+
+        await self._bind_agent_memory(self._agent)
 
     async def _recreate_agent_with_pattern(self, pattern: str) -> None:
         """Recreate the agent with a specific pattern (for auto-mode).
@@ -286,18 +305,7 @@ class CLIChannel(Channel):
 
         new_agent = await create_agent(self._settings, **overrides)
 
-        if self._agent is not None:
-            # Persist current memory before closing
-            await self._snapshot_agent_memory()
-            try:
-                await self._agent.close()
-            except Exception:
-                logger.warning("Error closing old agent during pattern switch", exc_info=True)
-
-        self._agent = new_agent
-        self._current_pattern = pattern
-
-        await self._bind_agent_memory(self._agent)
+        await self._install_agent(new_agent, pattern=pattern)
 
     async def _persist_session(self) -> None:
         """Copy agent memory into the current session and save it to disk.
@@ -866,19 +874,7 @@ class CLIChannel(Channel):
             console.print(Text("  Keeping the previous agent.", style="dim"))
             return
 
-        await self._agent.close()
-        self._agent = new_agent
-        # Keep the tracked pattern in sync with the recreated agent, otherwise
-        # auto-mode comparisons and /pattern display show a stale value (e.g.
-        # "react") after the user switches patterns and restarts. Mirror the
-        # normalization _create_agent applies ("auto" -> "react" when there is
-        # no task to classify): without it, _process_task's
-        # `suggested != self._current_pattern` is always true (classify never
-        # returns "auto"), so the very first task needlessly tears down and
-        # rebuilds the agent.
-        self._current_pattern = self._normalize_current_pattern()
-
-        await self._bind_agent_memory(self._agent)
+        await self._install_agent(new_agent)
 
         console.print(Text("✓ Agent restarted with current settings.", style="success"))
 
