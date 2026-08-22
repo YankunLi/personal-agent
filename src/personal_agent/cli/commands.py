@@ -59,6 +59,14 @@ def _track_background_task(channel: CLIChannel, coro: Coroutine[Any, Any, Any]) 
 Handler = Callable[["CLIChannel", str], Awaitable[bool]]
 
 
+def _split_arg(line: str) -> tuple[str, str]:
+    """Split an input line into (first_token_lowercased, remainder)."""
+    parts = line.split(maxsplit=1)
+    head = parts[0].lower()
+    rest = parts[1] if len(parts) > 1 else ""
+    return head, rest
+
+
 def _set_override(channel: CLIChannel, key: str, value: str, noun: str) -> None:
     """Store a pattern/provider/model override and confirm it for next restart."""
     channel._overrides[key] = value
@@ -85,9 +93,7 @@ class SlashCommandRegistry:
 
     async def dispatch(self, channel: CLIChannel, line: str) -> bool:
         """Parse and execute a slash command. Returns False to exit REPL."""
-        parts = line.split(maxsplit=1)
-        cmd = parts[0].lower()
-        arg = parts[1] if len(parts) > 1 else ""
+        cmd, arg = _split_arg(line)
         handler = self._handlers.get(cmd)
         if handler is None:
             console.print(
@@ -252,9 +258,7 @@ async def _cmd_skill(channel: CLIChannel, arg: str) -> bool:
     if not arg:
         channel._list_skills()
         return True
-    sub_parts = arg.split(maxsplit=1)
-    sub = sub_parts[0].lower()
-    sub_arg = sub_parts[1] if len(sub_parts) > 1 else ""
+    sub, sub_arg = _split_arg(arg)
 
     if sub == "list":
         channel._list_skills()
@@ -331,9 +335,7 @@ async def _cmd_session(channel: CLIChannel, arg: str) -> bool:
     if not arg:
         channel._session_info()
         return True
-    sub_parts = arg.split(maxsplit=1)
-    sub = sub_parts[0].lower()
-    sub_arg = sub_parts[1] if len(sub_parts) > 1 else ""
+    sub, sub_arg = _split_arg(arg)
 
     if sub == "list":
         channel._session_list()
