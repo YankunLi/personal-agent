@@ -522,14 +522,24 @@ class CLIChannel(Channel):
             )
         )
         for i, t in enumerate(self._session_tasks, 1):
-            task_preview = t["task"][:80]
+            # /load accepts arbitrary JSON, so entries may lack the keys that
+            # _process_task always writes; render defensively rather than
+            # crashing the REPL on a foreign or older history file.
+            if not isinstance(t, dict):
+                continue
+            task_preview = (t.get("task") or "")[:80]
+            try:
+                elapsed = float(t.get("elapsed_ms") or 0.0)
+                steps = int(t.get("steps") or 0)
+            except (TypeError, ValueError):
+                elapsed, steps = 0.0, 0
             console.print(
                 Text.assemble(
                     (f"  {i}. ", "success"),
                     (task_preview, "info"),
                 )
             )
-            console.print(Text(f"     {t['elapsed_ms']:.0f}ms | {t['steps']} steps", style="dim"))
+            console.print(Text(f"     {elapsed:.0f}ms | {steps} steps", style="dim"))
         console.print()
 
     async def _clear_memory(self) -> None:
